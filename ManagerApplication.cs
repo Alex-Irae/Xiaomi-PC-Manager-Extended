@@ -35,6 +35,10 @@ public sealed class ManagerApplication : ApplicationContext
     private readonly System.Windows.Forms.Timer policyTimer = new() { Interval = 30000 };
     private System.Windows.Forms.PowerLineStatus lastOsdPowerSource = SystemInformation.PowerStatus.PowerLineStatus;
     internal bool Exiting { get; private set; }
+    internal bool RestartAfterImport { get; private set; }
+    private SettingsBackup.Prepared? pendingBackup;
+
+    internal void ImportOnRestart(SettingsBackup.Prepared backup) => pendingBackup = backup;
 
     public ManagerApplication(string command)
     {
@@ -317,11 +321,14 @@ public sealed class ManagerApplication : ApplicationContext
             if (Exiting) return;
             if (command is MainWindow.BrighterMessage or MainWindow.DimmerMessage)
             {
-                await Task.Run(() =>
+                int confirmed = await Task.Run(() =>
                 {
                     int current = XiControl.SystemIntegration.Brightness.Get() ?? throw new InvalidOperationException("Brightness is unavailable.");
-                    Hardware.SetBrightness(Math.Clamp(current + (command == MainWindow.BrighterMessage ? 5 : -5), 1, 100));
+                    int target = Math.Clamp(current + (command == MainWindow.BrighterMessage ? 5 : -5), 1, 100);
+                    Hardware.SetBrightness(target);
+                    return target;
                 });
+                if (popup.Visible) popup.Send(new { brightness = confirmed });
             }
             else
             {
@@ -451,6 +458,11 @@ public sealed class ManagerApplication : ApplicationContext
             await Task.Run(Hardware.BeforeSuspend);
             await Task.Run(ManualDisplay.Restore);
             Advanced?.Shutdown();
+            if (pendingBackup is not null)
+            {
+                try { SettingsBackup.Restore(pendingBackup); RestartAfterImport = true; }
+                catch (Exception ex) { XiControl.Log.Ex("SettingsBackup.Restore", ex); MessageBox.Show("The backup could not be restored. Current settings were retained. Check the native log.", "PC Manager"); }
+            }
             sleepGuard.Dispose();
             SetThreadExecutionState(0x80000000u);
             popup.Close(); manager?.Close();

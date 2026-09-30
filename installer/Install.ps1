@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 $previousTaskXml = $null
 $taskName = $null
 $startupConfirmed = $false
+$oemWasIsolated = $true
+$oemScript = $null
 
 function Show-Result([string]$message, [bool]$failed = $false) {
     Write-Host $message
@@ -28,7 +30,12 @@ try {
         exit $child.ExitCode
     }
     $archive = Join-Path $PSScriptRoot 'payload.zip'
-    if (!(Test-Path -LiteralPath $archive)) { throw 'The package is incomplete: payload.zip is missing beside Install.ps1.' }
+    $portable = !(Test-Path -LiteralPath $archive) -and
+        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'XiaomiAIManager.exe')) -and
+        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'www\quick.html'))
+    if (!(Test-Path -LiteralPath $archive) -and !$portable) {
+        throw 'No setup payload or extracted PC Manager application was found beside this installer.'
+    }
     $dotnet = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
     if (!(Test-Path -LiteralPath $dotnet)) { throw '.NET 8 Desktop Runtime is missing. Install it from https://dotnet.microsoft.com/download/dotnet/8.0, then run this setup again.' }
     $runtimes = @(& $dotnet --list-runtimes)
@@ -88,16 +95,33 @@ try {
         Start-Sleep -Seconds 2
     }
     New-Item -ItemType Directory -Force -Path $destinationFull | Out-Null
-    Expand-Archive -LiteralPath $archive -DestinationPath $destinationFull -Force
+    if ($portable) {
+        if ($destinationFull.Equals([IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Choose an installation directory different from the extracted portable folder.'
+        }
+        Get-ChildItem -LiteralPath $PSScriptRoot -Force |
+            Where-Object { $_.Name -notin @('test-data','results') } |
+            Copy-Item -Destination $destinationFull -Recurse -Force
+    } else {
+        Expand-Archive -LiteralPath $archive -DestinationPath $destinationFull -Force
+    }
     if (!(Test-Path -LiteralPath $exe) -or !(Test-Path -LiteralPath (Join-Path $destinationFull 'www\quick.html')) -or
         !(Test-Path -LiteralPath (Join-Path $destinationFull 'tools\oem-service.ps1'))) {
         throw 'The archive did not extract a complete PC Manager application.'
     }
     $receipt = Join-Path $destinationFull 'install-receipt.json'
-    [pscustomobject]@{installedAt=(Get-Date).ToString('o'); executable=$exe; archiveSha256=(Get-FileHash -LiteralPath $archive).Hash;
+    [pscustomobject]@{installedAt=(Get-Date).ToString('o'); executable=$exe;
+        sourceSha256=$(if ($portable) { (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'XiaomiAIManager.dll')).Hash } else { (Get-FileHash -LiteralPath $archive).Hash });
         startupRequested=(!$NoStartup); dataDirectory=(Join-Path $env:LOCALAPPDATA 'XiaomiAIManager')} |
         ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
     if (!$NoStartup) {
+        $oemScript = Join-Path $destinationFull 'tools\oem-service.ps1'
+        $intent = Join-Path $env:LOCALAPPDATA ('XiaomiAIManager\service-state\' + $sid + '\oem-service-isolation.json')
+        $wasIsolated = (Test-Path -LiteralPath $intent) -and
+            ((Get-Content -LiteralPath $intent -Raw | ConvertFrom-Json).enabled -eq $true)
+        $oemWasIsolated = $wasIsolated
+        & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $oemScript -Action Disable
+        if ($LASTEXITCODE -ne 0) { throw 'Xiaomi OEM isolation failed. PC Manager startup was not registered.' }
         # Register first with a short-lived process, then let Task Scheduler start the resident independently.
         $registration = Start-Process -FilePath $exe -ArgumentList '--register-startup' -WorkingDirectory $destinationFull -WindowStyle Hidden -Wait -PassThru
         if ($registration.ExitCode -ne 0) { throw 'Windows refused the PC Manager startup task.' }
@@ -127,7 +151,7 @@ try {
         $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
         New-Item -Path $uninstallKey -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'PC Manager' -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.1' -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.3' -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $destinationFull -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name UninstallString `
             -Value ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '"') `
@@ -135,9 +159,14 @@ try {
     }
     Show-Result ("PC Manager installed at: " + $destinationFull + "`n" +
         $(if ($NoStartup) { 'Isolated file test completed; startup was not changed.' } else { 'It will run in the tray at sign-in. Open it with the tray icon.' }) +
-        "`nSettings and artwork remain in " + (Join-Path $env:LOCALAPPDATA 'XiaomiAIManager'))
+        "`nSettings and artwork remain in " + (Join-Path $env:LOCALAPPDATA 'XiaomiAIManager') +
+        $(if ($NoStartup) { '' } else { "`nXiaomi's original popup service was reversibly disabled." }))
     exit 0
 } catch {
+    if (!$oemWasIsolated -and !$startupConfirmed -and $oemScript) {
+        try { & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $oemScript -Action Restore | Out-Null }
+        catch { Write-Host 'OEM restoration after failed installation needs manual review; the recovery record remains in LocalAppData\XiaomiAIManager\service-state.' }
+    }
     if ($previousTaskXml -and !$startupConfirmed -and $taskName) {
         try { Register-ScheduledTask -TaskName $taskName -Xml $previousTaskXml -Force | Out-Null }
         catch { Write-Host 'The previous startup task could not be restored automatically; its exported XML remains in LocalAppData\XiaomiAIManager\installer-backups.' }

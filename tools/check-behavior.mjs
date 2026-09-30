@@ -161,6 +161,9 @@ document.documentElement.style = { setProperty: (key, value) => styleValues[key]
 evaluate('UI.applyPreferences({themePreset:"red",themeAccent:"#49b899"})');
 assert.equal(styleValues['--blue'], '#ff615e', 'A named preset must use its actual accent, not a stale custom color.');
 evaluate('showPage("settings")'); await settle('!reading');
+assert(element('page').innerHTML.includes('data-action="settings.backupExport"')
+  && element('page').innerHTML.includes('data-action="settings.backupImport"'));
+console.log('PASS settings page offers portable backup export and import.');
 const reorderedEditor = evaluate('(() => { customization.quickSystemActions = ["monitor", "screenoff"]; return customizationPage(); })()');
 assert(reorderedEditor.indexOf('data-system-choice="monitor"') < reorderedEditor.indexOf('data-system-choice="screenoff"'));
 assert(reorderedEditor.includes('data-action="system-move"') && reorderedEditor.includes('Move Monitor down'), 'Selected controls need ordering buttons.');

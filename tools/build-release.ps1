@@ -48,7 +48,7 @@ if (!(Test-Path -LiteralPath $compiler)) { throw 'The Windows .NET Framework C# 
 & $compiler /nologo /target:winexe /platform:x64 /reference:System.Windows.Forms.dll "/out:$setup" "/win32icon:$(Join-Path $projectRoot 'assets\app.ico')" "/resource:$(Join-Path $wrap 'payload.zip'),payload.zip" "/resource:$(Join-Path $wrap 'Install.ps1'),Install.ps1" (Join-Path $projectRoot 'installer\SetupBootstrap.cs')
 if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $setup)) { throw 'Windows C# compiler did not produce the setup executable.' }
 [pscustomobject]@{createdAt=(Get-Date).ToString('o'); frameworkDependent=$true; targetFramework='net8.0-windows';
-    requiredRuntime='.NET 8 Desktop Runtime and WebView2'; portable=$zip; setup=$setup; source=$sourceZip;
+    requiredRuntime='.NET 8 Desktop Runtime and WebView2'; portable=[IO.Path]::GetFileName($zip); setup=[IO.Path]::GetFileName($setup); source=[IO.Path]::GetFileName($sourceZip);
     portableSha256=(Get-FileHash -LiteralPath $zip).Hash; setupSha256=(Get-FileHash -LiteralPath $setup).Hash;
     sourceSha256=(Get-FileHash -LiteralPath $sourceZip).Hash;
     assemblySha256=(Get-FileHash -LiteralPath (Join-Path $publish 'XiaomiAIManager.dll')).Hash} |

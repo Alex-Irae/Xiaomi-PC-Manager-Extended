@@ -78,3 +78,10 @@ assert.deepEqual(buttons.filter(b=>b.dataset.system && !b.hidden).map(b=>b.datas
 assert(id('quick-tools').innerHTML.includes('Link 3'));
 assert(!id('quick-tools').innerHTML.includes('Link 4'));
 console.log('PASS selected system controls in saved order and four visible app links.');
+document.activeElement=id('brightness');
+const reads=requests.filter(r=>r.method==='quick.read').length;
+hostMessage({data:{brightness:65}});
+assert.equal(id('brightness').value,'65');
+assert.equal(id('brightness-value').textContent,'65%');
+assert.equal(requests.filter(r=>r.method==='quick.read').length,reads);
+console.log('PASS confirmed keyboard brightness updates the focused popup slider without a device-state round trip.');

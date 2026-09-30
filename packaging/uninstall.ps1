@@ -1,17 +1,49 @@
-# Purpose: remove this user's PC Manager installation and app-owned data, restoring OEM service isolation first.
+# Purpose: remove this user's PC Manager installation, optionally restoring Xiaomi's OEM service.
 # Dependencies: Windows PowerShell, installed tools/oem-service.ps1, administrator approval.
 # Outputs: removes the app, startup, API firewall rule, shortcuts, registry entry and app-owned data.
-# Command: powershell -NoProfile -ExecutionPolicy Bypass -File "Uninstall PC Manager.ps1"
-param([string]$ExpectedSid = '')
+# Command: powershell -NoProfile -ExecutionPolicy Bypass -File "Uninstall PC Manager.ps1" [-RestoreXiaomi] [-NoPrompt]
+param([string]$ExpectedSid = '', [switch]$RestoreXiaomi, [switch]$NoPrompt)
 $ErrorActionPreference = 'Stop'
 
 $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 if ($ExpectedSid -and $ExpectedSid -ne $currentSid) {
     throw 'The administrator prompt selected a different Windows account. Uninstall while signed in to an administrator account.'
 }
+if (!$NoPrompt) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'Uninstall PC Manager'
+    $form.StartPosition = 'CenterScreen'
+    $form.ClientSize = New-Object System.Drawing.Size(460, 155)
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = 'Remove PC Manager, its startup task, settings and cache?'
+    $label.SetBounds(18, 18, 420, 24)
+    $check = New-Object System.Windows.Forms.CheckBox
+    $check.Text = "Restore Xiaomi's original service and popup"
+    $check.Checked = [bool]$RestoreXiaomi
+    $check.SetBounds(18, 55, 420, 25)
+    $remove = New-Object System.Windows.Forms.Button
+    $remove.Text = 'Uninstall'
+    $remove.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $remove.SetBounds(259, 105, 85, 30)
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = 'Cancel'
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $cancel.SetBounds(354, 105, 85, 30)
+    $form.Controls.AddRange(@($label, $check, $remove, $cancel))
+    $form.AcceptButton = $remove
+    $form.CancelButton = $cancel
+    $choice = $form.ShowDialog()
+    $RestoreXiaomi = $check.Checked
+    $form.Dispose()
+    if ($choice -ne [System.Windows.Forms.DialogResult]::OK) { exit 2 }
+}
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (!$isAdmin) {
-    $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-ExpectedSid', $currentSid)
+    $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-ExpectedSid', $currentSid, '-NoPrompt')
+    if ($RestoreXiaomi) { $args += '-RestoreXiaomi' }
     $child = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList $args
     exit $child.ExitCode
 }
@@ -33,6 +65,7 @@ $exe = Join-Path $installRoot 'XiaomiAIManager.exe'
 $taskName = 'XiaomiAIManager_' + $currentSid
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $taskWasEnabled = $task -and $task.State -ne 'Disabled'
+$taskWasRunning = $task -and $task.State -eq 'Running'
 $completed = $false
 if ($task) {
     if (@($task.Actions | Where-Object { $_.Execute -eq $exe }).Count -ne 1) {
@@ -43,21 +76,22 @@ if ($task) {
 try {
     $running = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" |
         Where-Object { $_.ExecutablePath -eq $exe })
-    if ($running.Count) {
+    if ($running.Count -or $taskWasRunning) {
         Start-Process -FilePath $exe -ArgumentList '--quit' -WindowStyle Hidden -Wait
         for ($attempt = 0; $attempt -lt 40; $attempt++) {
             $remaining = @($running | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
-            if (!$remaining.Count) { break }
+            $stillRunning = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State -eq 'Running'
+            if (!$remaining.Count -and !$stillRunning) { break }
             Start-Sleep -Milliseconds 250
         }
-        if ($remaining.Count) {
+        if ($remaining.Count -or $stillRunning) {
             throw 'PC Manager did not exit cleanly; no installed files were removed.'
         }
     }
 
     $intent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) `
         ('XiaomiAIManager\service-state\' + $currentSid + '\oem-service-isolation.json')
-    if (Test-Path -LiteralPath $intent) {
+    if ($RestoreXiaomi -and (Test-Path -LiteralPath $intent)) {
         $isolation = Get-Content -LiteralPath $intent -Raw | ConvertFrom-Json
         if ($isolation.enabled) {
             $restore = Join-Path $installRoot 'tools\oem-service.ps1'
@@ -83,12 +117,19 @@ try {
     if ((Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction SilentlyContinue).InstallLocation -eq $installRoot) {
         Remove-Item -LiteralPath $uninstallKey
     }
-    # Only fixed, validated app-owned directories are removed. Shared runtimes are outside these roots.
-    if (Test-Path -LiteralPath $apiRoot) { Remove-Item -LiteralPath $apiRoot -Recurse -Force }
-    if (Test-Path -LiteralPath $dataRoot) { Remove-Item -LiteralPath $dataRoot -Recurse -Force }
-    Remove-Item -LiteralPath $installRoot -Recurse -Force
+    # WebView2 may release files slightly after the resident exits. Verify each app-owned root is gone.
+    foreach ($root in @($apiRoot, $dataRoot, $installRoot)) {
+        for ($attempt = 0; $attempt -lt 10 -and (Test-Path -LiteralPath $root); $attempt++) {
+            if ((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing to remove a redirected application directory: $root"
+            }
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $root) { Start-Sleep -Milliseconds 500 }
+        }
+        if (Test-Path -LiteralPath $root) { throw "Could not remove application directory: $root" }
+    }
     $completed = $true
-    Write-Host 'PASS PC Manager app files, settings, cache, startup, shortcut, API data and firewall rule removed.'
+    Write-Host ('PASS PC Manager removed; Xiaomi OEM service ' + $(if ($RestoreXiaomi) { 'restored to its saved state.' } else { 'left in its current state.' }))
 } finally {
     if (!$completed -and $taskWasEnabled) { Enable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null }
 }

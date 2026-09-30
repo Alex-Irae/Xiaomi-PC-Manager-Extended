@@ -12,7 +12,7 @@
     <Product>PC Manager</Product>
     <Description>PC Manager quick controls and hardware settings</Description>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>0.1.1</Version>
+    <Version>0.1.3</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);.test-environment\**;app\**;results\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
@@ -31,5 +31,6 @@
     <Content Include="Disable Xiaomi service.cmd" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Restore Xiaomi service.cmd" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="packaging\uninstall.ps1" Link="Uninstall PC Manager.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="installer\Install.ps1" Link="Install PC Manager.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

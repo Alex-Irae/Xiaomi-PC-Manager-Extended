@@ -25,6 +25,12 @@ internal static class Program
             catch (Exception ex) { Console.Error.WriteLine(ex.Message); Environment.ExitCode = 1; }
             return; // Pure checks do not initialize WinForms, elevate, subscribe or acquire hardware.
         }
+        if (args.SequenceEqual(new[] { "--check-backup" }))
+        {
+            try { Services.SettingsBackup.Check(); }
+            catch (Exception ex) { Console.Error.WriteLine(ex.Message); Environment.ExitCode = 1; }
+            return;
+        }
         ApplicationConfiguration.Initialize();
         TestMode = args.Contains("--test", StringComparer.Ordinal);
         var commands = args.Where(arg => arg != "--test").ToArray();
@@ -96,17 +102,25 @@ internal static class Program
             }
             return;
         }
-        using var instance = new Mutex(true, "Local\\" + InstanceName, out bool first);
-        if (!first)
+        bool restart = false;
+        using (var instance = new Mutex(true, "Local\\" + InstanceName, out bool first))
         {
-            MessageBox.Show("The manager is starting. Its quick panel will be available from the system tray.", "PC Manager");
-            return;
+            if (!first)
+            {
+                MessageBox.Show("The manager is starting. Its quick panel will be available from the system tray.", "PC Manager");
+                return;
+            }
+            using var hardwareOwner = new Mutex(true, "Local\\XiaomiAIManager.Hardware." + WindowsIdentity.GetCurrent().User!.Value, out bool onlyOwner);
+            if (!onlyOwner) { MessageBox.Show("A manager instance is starting or stopping. Only one daily/test hardware owner can run.", "PC Manager"); return; }
+            using var app = new ManagerApplication(command);
+            Application.Run(app);
+            restart = app.RestartAfterImport;
+            XiControl.Log.Write("Resident.MessageLoopEnded");
         }
-        using var hardwareOwner = new Mutex(true, "Local\\XiaomiAIManager.Hardware." + WindowsIdentity.GetCurrent().User!.Value, out bool onlyOwner);
-        if (!onlyOwner) { MessageBox.Show("A manager instance is starting or stopping. Only one daily/test hardware owner can run.", "PC Manager"); return; }
-        using var app = new ManagerApplication(command);
-        Application.Run(app);
-        XiControl.Log.Write("Resident.MessageLoopEnded");
+        if (restart) Process.Start(new ProcessStartInfo(Environment.ProcessPath!)
+        {
+            UseShellExecute = false, Arguments = (TestMode ? "--test " : "") + "--manager", WorkingDirectory = AppContext.BaseDirectory
+        });
     }
     internal static uint CommandMessage(string command) => command switch
     {

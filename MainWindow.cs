@@ -513,6 +513,7 @@ public sealed class MainWindow : Form
         string? id = null;
         bool held = false;
         bool oemHeld = false;
+        bool restartAfterReply = false;
         try
         {
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
@@ -653,6 +654,37 @@ public sealed class MainWindow : Form
                 case "settings.snapshot":
                     string snapshotPath = await Task.Run(app.Preferences.SaveSnapshot);
                     result = new { message = "Settings snapshot saved to " + snapshotPath, path = snapshotPath }; break;
+                case "settings.backupExport":
+                    modalOpen = true;
+                    try
+                    {
+                        using var save = new SaveFileDialog { Title = "Export PC Manager settings", Filter = "PC Manager backup (*.zip)|*.zip", DefaultExt = "zip",
+                            FileName = "PCManager-backup-" + DateTime.Now.ToString("yyyyMMdd") + ".zip" };
+                        if (save.ShowDialog(this) == DialogResult.OK)
+                        {
+                            await Task.Run(() => Services.SettingsBackup.Export(save.FileName, app.Preferences));
+                            result = new { message = "Backup saved outside app data: " + save.FileName };
+                        }
+                        else result = new { message = "Backup export cancelled." };
+                    }
+                    finally { modalOpen = false; }
+                    break;
+                case "settings.backupImport":
+                    modalOpen = true;
+                    try
+                    {
+                        using var open = new OpenFileDialog { Title = "Import PC Manager settings", Filter = "PC Manager backup (*.zip)|*.zip", CheckFileExists = true };
+                        if (open.ShowDialog(this) == DialogResult.OK)
+                        {
+                            var backup = await Task.Run(() => Services.SettingsBackup.Prepare(open.FileName));
+                            app.ImportOnRestart(backup);
+                            restartAfterReply = true;
+                            result = new { message = "Backup accepted. PC Manager is restarting to apply it." };
+                        }
+                        else result = new { message = "Backup import cancelled." };
+                    }
+                    finally { modalOpen = false; }
+                    break;
                 case "settings.minimizeToTray":
                     app.Preferences.MinimizeToTray = args.GetProperty("on").GetBoolean();
                     app.Preferences.Save(); result = new { message = "Minimize behavior updated." }; break;
@@ -728,6 +760,7 @@ public sealed class MainWindow : Form
             }
             if (before is not null) app.History.Record(before, await Task.Run(() => app.History.Capture(before.Physical)), Services.SettingsHistory.Describe(method, args));
             Send(new { id, ok = true, data = result });
+            if (restartAfterReply) BeginInvoke((Action)(async () => await app.QuitAsync("settings import")));
         }
         catch (Exception ex)
         {

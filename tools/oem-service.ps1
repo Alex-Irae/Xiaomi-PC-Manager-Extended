@@ -89,6 +89,32 @@ if ($Action -eq 'Disable') {
     if ([IO.Path]::GetFileName($suppliedRoot) -eq 'XiaomiPCManager') {
         $oemDirectories += @(Get-ChildItem -LiteralPath $suppliedRoot -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'XiaomiPcManager.exe')) } | ForEach-Object { $_.FullName })
     }
+    $hostTask = Get-ScheduledTask -TaskName 'XiaomiPCHostTask' -ErrorAction SilentlyContinue
+    if ($hostTask -and $hostTask.State -ne 'Disabled') {
+        $actions = @($hostTask.Actions | Where-Object { $_.Execute })
+        $expectedHosts = @($oemDirectories | ForEach-Object { Join-Path $_ 'XiaomiPcHost.exe' })
+        if ($actions.Count -ne 1 -or $actions[0].Execute.Trim('"') -notin $expectedHosts) {
+            throw 'XiaomiPCHostTask has an unexpected action; it was not changed.'
+        }
+        @{execute=$actions[0].Execute.Trim('"');wasEnabled=$true} | ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $dataRoot 'oem-host-task.json') -Encoding UTF8
+        Disable-ScheduledTask -TaskName 'XiaomiPCHostTask' | Out-Null
+    }
+    $runPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+    $run = Get-Item -LiteralPath $runPath
+    $expectedLaunchers = @($oemDirectories | ForEach-Object { Join-Path $_ 'Launch.exe' })
+    $savedRunEntries = @()
+    foreach ($name in $run.GetValueNames()) {
+        $command = [string]$run.GetValue($name)
+        if (@($expectedLaunchers | Where-Object { $command.Trim() -in @(($_ + ' --AutoRun=1'), ('"' + $_ + '" --AutoRun=1')) }).Count -eq 0) { continue }
+        $savedRunEntries += @{name=$name;command=$command;kind=[string]$run.GetValueKind($name)}
+    }
+    if ($savedRunEntries.Count) {
+        ConvertTo-Json -InputObject $savedRunEntries | Set-Content -LiteralPath (Join-Path $dataRoot 'oem-run-entry.json') -Encoding UTF8
+    }
+    foreach ($entry in $savedRunEntries) {
+        Remove-ItemProperty -LiteralPath $runPath -Name $entry.name
+    }
     $session = (Get-Process -Id $PID).SessionId
     if (-not ('XiaomiNativeProcessImage' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -122,6 +148,25 @@ public static class XiaomiNativeProcessImage {
 } else {
     Set-Startup $originalStartup
     if ($original.wasRunning) { Start-Service -Name $serviceName } else { Stop-Service -Name $serviceName }
+    $taskRecord = Join-Path $dataRoot 'oem-host-task.json'
+    if (Test-Path -LiteralPath $taskRecord) {
+        $savedTask = Get-Content -LiteralPath $taskRecord -Raw | ConvertFrom-Json
+        $hostTask = Get-ScheduledTask -TaskName 'XiaomiPCHostTask' -ErrorAction Stop
+        if (@($hostTask.Actions | Where-Object { $_.Execute.Trim('"') -eq $savedTask.execute }).Count -ne 1) {
+            throw 'XiaomiPCHostTask changed since isolation; its original state was not guessed.'
+        }
+        if ($savedTask.wasEnabled) { Enable-ScheduledTask -TaskName 'XiaomiPCHostTask' | Out-Null }
+    }
+    $runRecord = Join-Path $dataRoot 'oem-run-entry.json'
+    if (Test-Path -LiteralPath $runRecord) {
+        $savedRunEntries = @(Get-Content -LiteralPath $runRecord -Raw | ConvertFrom-Json)
+        $runPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+        foreach ($savedRun in $savedRunEntries) {
+            if ($null -eq (Get-Item -LiteralPath $runPath).GetValue($savedRun.name)) {
+                New-ItemProperty -LiteralPath $runPath -Name $savedRun.name -Value $savedRun.command -PropertyType $savedRun.kind | Out-Null
+            }
+        }
+    }
     @{enabled=$false;time=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $intentPath -Encoding UTF8
 }
 } finally {

@@ -182,7 +182,16 @@ $("brightness").addEventListener("input", event => {
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") Native.call("window.hide").catch(() => {});
 });
-Native.listen(message => { if (message.appearance) { if (snapshot?.hardware?.preferences) snapshot.hardware.preferences.appearance = message.appearance; UI.applyAppearance(message.appearance); } if (message.activated) refresh(); if (message.notice) notice(message.notice); });
+Native.listen(message => {
+  if (message.appearance) { if (snapshot?.hardware?.preferences) snapshot.hardware.preferences.appearance = message.appearance; UI.applyAppearance(message.appearance); }
+  if (Number.isInteger(message.brightness) && !BrightnessInput.pending) {
+    if (snapshot) snapshot.hardware.brightness = message.brightness;
+    $("brightness").value = String(message.brightness);
+    $("brightness-value").textContent = message.brightness + "%";
+  }
+  if (message.activated) refresh();
+  if (message.notice) notice(message.notice);
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 $("quick-tools").innerHTML = QuickTools.map(tool => `<button class="circle-tile" data-tool="${UI.escape(tool.id)}" disabled><span class="circle">${UI.icon(tool.icon)}</span><span>${UI.escape(tool.label)}</span></button>`).join("");
 $("quick-tools").hidden = QuickTools.length === 0;
