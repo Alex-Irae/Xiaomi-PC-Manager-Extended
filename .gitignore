@@ -1,0 +1,20 @@
+# Local build, runtime, and test state
+app/
+bin/
+obj/
+.test-environment/
+results/
+releases/
+snapshots/
+test-data/
+settings.json
+*.log
+*.pending
+
+# Editor and platform files
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

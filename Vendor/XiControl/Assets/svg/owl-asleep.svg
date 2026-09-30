@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- ушки -->
+  <path d="M34 36 L44 18 L54 34 Z" fill="#78909C"/>
+  <path d="M94 36 L84 18 L74 34 Z" fill="#78909C"/>
+  <!-- тело -->
+  <ellipse cx="64" cy="70" rx="38" ry="42" fill="#90A4AE"/>
+  <!-- крылья -->
+  <path d="M28 62 C24 80 30 96 40 104 C34 88 33 74 36 60 Z" fill="#78909C"/>
+  <path d="M100 62 C104 80 98 96 88 104 C94 88 95 74 92 60 Z" fill="#78909C"/>
+  <!-- живот -->
+  <ellipse cx="64" cy="90" rx="23" ry="17" fill="#CFD8DC"/>
+  <!-- глаза: закрытые веки -->
+  <circle cx="49" cy="55" r="15" fill="#B0BEC5"/>
+  <circle cx="79" cy="55" r="15" fill="#B0BEC5"/>
+  <path d="M41 56 a8 8 0 0 0 16 0" fill="none" stroke="#455A64" stroke-width="4" stroke-linecap="round"/>
+  <path d="M71 56 a8 8 0 0 0 16 0" fill="none" stroke="#455A64" stroke-width="4" stroke-linecap="round"/>
+  <!-- клюв -->
+  <path d="M64 64 L58.5 71 L64 77 L69.5 71 Z" fill="#FF9800"/>
+  <!-- лапки -->
+  <path d="M53 111 v6 M60 112 v6 M68 112 v6 M75 111 v6" stroke="#FF9800" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

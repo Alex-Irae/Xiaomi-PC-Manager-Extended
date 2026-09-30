@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://xiaomi-custom-assets.local; img-src 'self' https://xiaomi-icons.local https://xiaomi-assets.local https://xiaomi-custom-assets.local; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Xiaomi quick controls</title>
+  <link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="quick.css">
+  <script src="bridge.js" defer></script><script src="quick-tools.js" defer></script><script src="quick.js" defer></script>
+</head>
+<body>
+  <section class="quick-panel" aria-label="Xiaomi quick controls">
+    <header class="panel-header"><div class="device-avatar"><img class="app-logo profile-picture" src="https://xiaomi-assets.local/app.svg" alt=""></div><div class="device-name"><h1 id="panel-title">Quick controls</h1><p id="device-name">This PC</p></div><button class="icon-button" data-native="window.manager" data-page="home" title="Open manager home" aria-label="Open manager home" data-icon="home"></button><button class="icon-button" id="refresh-state" title="Refresh" aria-label="Refresh device state" data-icon="reload"></button></header>
+    <p id="panel-status" class="panel-status" role="status">Reading device state…</p>
+    <section class="brightness-control" aria-label="Display brightness">
+      <div class="control-row"><label for="brightness">Brightness</label><output id="brightness-value">Unavailable</output></div><input id="brightness" type="range" min="1" max="100" disabled>
+    </section>
+    <div class="section-label"><span>Performance <span id="power-source" class="source-badge">Unknown</span></span><span id="current-mode">Unavailable</span></div>
+    <div id="performance-modes" class="performance-tiles" role="group" aria-label="Performance mode"></div>
+    <div class="section-label"><span>Battery charge</span><span id="battery-status">Unavailable</span></div>
+    <div class="battery-controls"><button id="travel" class="travel-button" data-toggle="travel" title="Start or cancel one-off charging to 100%" aria-pressed="false" disabled><span data-icon="travel"></span><span id="travel-label">Travel charge</span></button><button id="battery-care" class="charge-summary" data-toggle="care" aria-pressed="false" disabled title="Persistent battery care: off charges to 100% until enabled again"><span id="charge-summary">Battery care</span><span id="charge-detail">Reading target…</span></button></div>
+    <div id="system-tools" class="quick-grid system-row" role="group" aria-label="Selected system controls"></div>
+    <div id="quick-tools" class="quick-grid extension-row" role="group" aria-label="Additional tools" hidden></div>
+    <div class="driver-links">
+      <button class="driver-tile" data-oem="drivers"><span data-icon="update"></span>Driver updates</button>
+      <button class="driver-tile" data-oem="tools"><span data-icon="tools"></span>Xiaomi tools</button>
+    </div>
+  </section>
+  <div id="notification" role="status" hidden></div>
+</body>
+</html>

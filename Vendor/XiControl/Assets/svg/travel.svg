@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <g transform="translate(64,72) scale(0.9) translate(-64,-72)">
+    <!-- ручка -->
+    <path d="M49 36 v-5 a15 15 0 0 1 30 0 v5" fill="none" stroke="#F57F17" stroke-width="7" stroke-linecap="round"/>
+    <!-- жёлтый корпус -->
+    <rect x="20" y="36" width="88" height="72" rx="12" fill="#FFC107" stroke="#F57F17" stroke-width="3"/>
+    <!-- уголки-застёжки -->
+    <rect x="34" y="32" width="8" height="10" rx="2" fill="#F57F17"/>
+    <rect x="86" y="32" width="8" height="10" rx="2" fill="#F57F17"/>
+    <!-- молния (режим включён) -->
+    <path d="M69 46 L48 76 H61 L57 98 L82 66 H67 Z" fill="#FFFFFF" stroke="#EF6C00" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+</svg>

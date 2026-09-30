@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <g transform="translate(64,72) scale(0.9) translate(-64,-72)">
+    <!-- только молния (для анимации поверх travel-off) -->
+    <path d="M69 46 L48 76 H61 L57 98 L82 66 H67 Z" fill="#FFFFFF" stroke="#EF6C00" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+</svg>

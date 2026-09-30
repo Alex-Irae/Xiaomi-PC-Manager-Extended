@@ -1,0 +1,1006 @@
+using XiControl.Config;
+using XiControl.Localization;
+using XiControl.SystemIntegration;
+using XiControl.Wmi;
+
+namespace XiControl.Ui;
+
+/// <summary>
+/// Командный слой приложения: все Set*/Toggle*-операции (заряд, «в дорогу», режимы,
+/// стратегии старта, профили, герцовка, сова, автозапуск, язык, тачпад/экран).
+/// Ядро сообщает результат именованными колбэками — UI (TrayApp) решает, что показать
+/// (OSD/панель/значок). Меню, панель, роутер и окно настроек зовут одни и те же методы.
+/// </summary>
+public sealed class AppController
+{
+    private readonly IMifsClient _mifs;
+    private readonly AppConfig _cfg;
+    private readonly IPowerEvents _power;
+    private readonly ILocalizer _loc;
+    private readonly ChargeGuard _charge;
+    private readonly RefreshRateGuard _hz;
+    private readonly PowerProfileGuard _profiles;
+    private readonly BrightnessCapGuard _capGuard;
+    private readonly AutoBrightnessGuard _autoGuard;
+    private readonly AlsWatcher _als;
+    private readonly TravelChargeMonitor _travel;
+    private readonly TouchpadControl _touchpad;
+    private readonly TouchscreenControl _touchscreen;
+    private readonly TouchpadDeadZone _deadZone;
+    private readonly TouchpadEdgeSliders _edges;
+    private readonly TouchpadHaptics? _haptics;
+    private readonly TouchpadHeavyPress? _heavy;
+
+    private PerfMode[] _modes = [];
+    private bool _autoStart;   // кэш состояния автозапуска (не дёргаем schtasks на каждое меню)
+
+    // Все режимы по нарастанию мощности — этот же порядок задаёт цикл Mi-кнопки
+    // и список в комбо профилей питания (вкладка «Производительность»).
+    internal static readonly PerfMode[] AllModes =
+        [PerfMode.Eco, PerfMode.Quiet, PerfMode.Auto, PerfMode.Turbo, PerfMode.FullSpeed];
+
+    // --- уведомления для UI: ядро сообщает «что случилось», не «что показать» ---
+    public Action<bool>? CareChanged;          // защита заряда переключена пользователем
+    public Action<bool>? TravelChanged;        // «в дорогу» вкл/выкл пользователем
+    public Action? TravelCancelled;            // тихий сброс «в дорогу» (отключили зарядник)
+    public Action<PerfMode>? ModeSet;          // явный выбор режима (меню/настройки)
+    public Action<PerfMode>? ModeCycled;       // переключение по кольцу (Mi-кнопка/клавиша)
+    public Action? ProfileModeApplied;         // режим применён из-за смены профиля питания
+    public Action? ModesReloaded;              // набор видимых режимов изменился
+    public Action<bool>? AutoHzChanged;        // авто-герцовка вкл/выкл
+    public Action<bool>? AutoBrightnessChanged; // авто-яркость вкл/выкл
+    public Action? RefreshRateFeatureChanged;  // фича «управление частотой» показана/скрыта
+    public Action? OwlFeatureChanged;          // фича «сова» показана/скрыта
+    public Action? AwakeChanged;               // сам режим совы переключён
+    public Action? LanguageChanged;            // язык интерфейса сменился
+    public Action? FlyoutThemeChanged;         // тема панелей/OSD сменилась — перерисовать видимые
+    public Action<bool>? TouchpadToggled;      // тачпад вкл/выкл (колбэк с фонового потока!)
+    public Action<bool>? TouchscreenToggled;   // сенсорный экран вкл/выкл (тоже фон)
+    public Action? FirmwareFailed;             // команда прошивке не прошла — UI показывает честную ошибку
+    public Action? TouchpadHeavyPressed;       // сильное нажатие на тачпад (поток касаний!) — XIC-78
+
+    public AppController(IMifsClient mifs, AppConfig cfg, IPowerEvents power, ILocalizer loc,
+        ChargeGuard charge, RefreshRateGuard hz, PowerProfileGuard profiles, BrightnessCapGuard capGuard,
+        AutoBrightnessGuard autoGuard, AlsWatcher als,
+        TravelChargeMonitor travel, TouchpadControl touchpad, TouchscreenControl touchscreen,
+        TouchpadDeadZone deadZone, TouchpadEdgeSliders edges,
+        TouchpadHaptics? haptics = null, TouchpadHeavyPress? heavy = null)
+    {
+        _mifs = mifs;
+        _cfg = cfg;
+        _power = power;
+        _loc = loc;
+        _charge = charge;
+        _hz = hz;
+        _profiles = profiles;
+        _capGuard = capGuard;
+        _autoGuard = autoGuard;
+        _als = als;
+        _als.LuxChanged += _autoGuard.OnLux; // датчик → авто-яркость (оба живут в DI весь сеанс)
+        _travel = travel;
+        _touchpad = touchpad;
+        _touchscreen = touchscreen;
+        _deadZone = deadZone;
+        _edges = edges;
+        _haptics = haptics; // null в тестах: юниты не должны писать в настоящий тачпад
+        _heavy = heavy;     // тоже null в тестах — касаний настоящего тачпада там нет
+        if (_heavy is not null) _heavy.Pressed += () => TouchpadHeavyPressed?.Invoke();
+        ApplyModeVisibility();
+    }
+
+    /// <summary>Видимые режимы по нарастанию мощности (Эко/Полная скрываются настройками).</summary>
+    public IReadOnlyList<PerfMode> VisibleModes => _modes;
+
+    /// <summary>Автозапуск включён (кэш; реальное состояние уточняется в фоне на старте).</summary>
+    public bool AutoStartEnabled => _autoStart;
+
+    /// <summary>
+    /// Стартовая бизнес-логика (зовёт TrayApp.Start): кэш автозапуска, ре-арм guard-ов,
+    /// возобновление «в дорогу», режим при старте, восстановление совы, страховка тачпада/экрана.
+    /// </summary>
+    public void Startup()
+    {
+        // пока показываем состояние из конфига; реальное уточняем в фоне —
+        // schtasks /query может блокировать до 10 с, старту это ни к чему
+        _autoStart = _cfg.AutoStart;
+        Task.Run(() =>
+        {
+            if (XiaomiAIManager.Program.TestMode) { _autoStart = false; return; }
+            bool registered = Safe(AutoStart.IsEnabled, false);
+            if (_cfg.AutoStart && !registered) registered = Safe(() => { AutoStart.Set(true); return AutoStart.IsEnabled(); }, false);
+            _autoStart = registered;
+            // самопочинка: после обновления/переноса exe задача указывает на пропавший путь
+            // и молча не стартует — пересоздаём на текущий exe
+            if (_autoStart) Safe(() => { AutoStart.RepairIfBroken(); return true; }, true);
+        });
+
+        // Тактильные настройки тачпада живут в нём самом — только прочитать для вкладки
+        // (запрос, который PC Manager шлёт на каждом своём старте); пишем лишь по выбору человека
+        if (_haptics is { } haptics) Task.Run(() => TouchpadHaptics = Safe(haptics.Read, null));
+
+        // Страж заряда и авто-герцовка: применить желаемое состояние на старте
+        _charge.Reapply();
+        // Windows stores manual refresh selections. Startup must not overwrite them on the same source.
+
+        // «В дорогу»: следим за достижением 100%. Если стартовали посреди режима — на зарядке
+        // продолжаем ждать, иначе (уже отключены) сбрасываем: режим живёт только на зарядке.
+        if (_cfg.TravelMode)
+        {
+            if (_power.IsOnline) _travel.Rearm();
+            else { _cfg.TravelMode = false; _cfg.Save(); }
+        }
+
+        // Режим при старте (прошивка сбрасывает его на ребуте):
+        //  • PowerProfiles → применить профиль текущего питания (режим + яркость);
+        //  • иначе RestoreMode → восстановить последний выбранный (если он ещё видим), иначе Auto;
+        //  • иначе, если задан ForceStartMode (только правкой конфига) → принудительно его.
+        if (_cfg.PowerProfiles)
+        {
+            _profiles.Reapply();
+        }
+        else if (_cfg.RestoreMode)
+        {
+            if (_cfg.StartPerfMode is PerfMode saved)
+                ApplyStartMode(_modes.Contains(saved) ? saved : PerfMode.Auto);
+        }
+        else if (_cfg.ForceStartMode is PerfMode forced)
+        {
+            ApplyStartMode(forced);
+        }
+
+        // «Запоминать яркость» — самостоятельная опция (без профилей): применить яркость
+        // текущего питания на старте (при профилях это уже сделал _profiles.Reapply выше).
+        if (_cfg.RememberBrightness && !_cfg.PowerProfiles) _profiles.Reapply();
+
+        // Лимит яркости (XIC-29): превышение на старте сводится тем же вежливым механизмом.
+        // Reapply выше уже сверяется сам; отдельная сверка нужна, когда включён только лимит.
+        if (_cfg.BrightnessCapEnabled && !_cfg.RememberBrightness && !_cfg.PowerProfiles)
+            Task.Run(_capGuard.Evaluate);
+
+        // Авто-яркость (XIC-30): датчик стартуем всегда (нужен вкладке «Экран», чтобы знать,
+        // показывать ли фичу); первые люксы придут событием и сами дадут сверку через дебаунс.
+        // Кривые сеем и здесь: фичу могли включить правкой config.json мимо SetAutoBrightness.
+        if (_cfg.AutoBrightness) SeedCurves();
+        _als.Start();
+
+        // Краевые ползунки тачпада (XIC-61): реестр на старте НЕ трогаем (зоны там уже лежат
+        // с прошлого включения), поднимаем только чтение касаний.
+        _edges.Start();
+        // Сильное нажатие (XIC-78): то же — только чтение касаний, в тачпад на старте не пишем
+        _heavy?.Start();
+
+        // «Режим совы»: восстановить после сбоя, включить заново, либо погасить, если фичу отключили
+        if (_cfg.Awake && !_cfg.OwlMode) { AwakeMode.Disable(_cfg); _cfg.Awake = false; _cfg.Save(); }
+        else if (_cfg.Awake) { _cfg.Awake = AwakeMode.Enable(_cfg); if (!_cfg.Awake) FirmwareFailed?.Invoke(); _cfg.Save(); }
+        else if (_cfg.AwakeSavedLidAc is not null) { AwakeMode.Disable(_cfg); _cfg.Save(); }
+
+        // Страховка «не залипает»: если тачпад/экран пришлось отключить персистентно,
+        // после перезагрузки включаем их сами (в фоне — PnP-вызовы небыстрые). Решение
+        // «включать или оставить» принимает сам RestoreAfterBoot по флагу намерения.
+        //
+        // Тумблер фичи здесь намеренно НЕ спрашивается, хотя напрашивается. Выключенная фича
+        // убирает устройство из меню и панели — то есть ровно тот путь, которым его можно
+        // включить обратно. Пропустив восстановление, мы оставили бы человека без тачпада с
+        // единственным выходом через Диспетчер устройств. «Оставить выключенным» — это
+        // отдельное намерение (TouchpadKeepOff / TouchscreenKeepOff), а не побочный эффект
+        // спрятанной кнопки (XIC-53).
+        if (_cfg.TouchpadPersistOff)
+            Task.Run(() => Safe(() => { _touchpad.RestoreAfterBoot(); return true; }, false));
+        if (_cfg.TouchscreenPersistOff)
+            Task.Run(() => Safe(() => { _touchscreen.RestoreAfterBoot(); return true; }, false));
+    }
+
+    /// <summary>Завершение работы: вернуть действие крышки; флаг Awake в конфиге не трогаем —
+    /// при следующем запуске режим включится снова.</summary>
+    public void Shutdown()
+    {
+        if (_cfg.Awake || _cfg.AwakeSavedLidAc is not null) { AwakeMode.Disable(_cfg); _cfg.Save(); }
+        _edges.Stop();
+        _heavy?.Dispose();
+    }
+
+    // ---- Заряд и «в дорогу» ----
+
+    /// <summary>Переключить лимит заряда «беречь X% ↔ 100%» (текущий читается из прошивки).</summary>
+    public void ToggleCharge()
+    {
+        int cur = Safe(() => _mifs.GetChargeLimit(), _cfg.ChargeCare ? _cfg.CarePercent() : 100) ?? 100;
+        ToggleCare(cur >= 100);   // сейчас 100 → включить «беречь X%»; иначе → 100
+    }
+
+    /// <summary>
+    /// Принять порог заряда из прошивки: внешнюю смену (Xiaomi PC Manager, чужая утилита) мы иначе
+    /// не заметим — канала уведомления в MIFS нет. Зовётся в момент показа панели и пересборки меню
+    /// трея, поэтому фонового опроса не появляется.
+    /// <para>Принимаем ТОЛЬКО валидный порог &lt; 100: другой уровень EC сам не породит — это всегда
+    /// чей-то осознанный SET. А вот «100%» неотличим от транзиента: EC теряет лимит после сна/смены
+    /// питания, и до ре-арма ChargeGuard (дебаунс 1.5 с) читается как 100. Принять его = сбросить
+    /// ChargeCare в конфиге и разоружить гард навсегда (панель, открытая сразу после resume/выдёргивания
+    /// зарядника, молча убивала бы защиту). Внешнее «выключить» гард всё равно перебивает на следующем
+    /// событии питания — это документированное поведение, поэтому «100» честно игнорируем.</para>
+    /// <para><see cref="CareChanged"/> здесь намеренно НЕ дёргаем: это не действие пользователя, а
+    /// подхват чужого. При скрытой панели TrayApp показывает на это событие OSD — то есть всплывашка
+    /// вылетала бы на каждое открытие панели. Панель и меню и так рисуются сразу после вызова.</para>
+    /// </summary>
+    /// <returns><c>true</c> — значение приняли, конфиг изменился.</returns>
+    public bool SyncCareFromFirmware()
+    {
+        // «В дорогу» намеренно держит 100% при включённой защите — это наше состояние, не внешнее
+        if (_cfg.TravelMode) return false;
+        if (Safe<int?>(() => _mifs.GetChargeLimit(), null) is not int live) return false;
+        if (live >= 100 || Mifs.ChargeCodeForPercent(live) is null) return false;
+
+        bool changed = false;
+        if (!_cfg.ChargeCare) { _cfg.ChargeCare = true; changed = true; }
+        if (live != _cfg.CareLimitPercent) { _cfg.CareLimitPercent = live; changed = true; }
+        if (!changed) return false;
+
+        Log.Write($"Заряд: принят порог прошивки — беречь {live}%");
+        _cfg.Save();
+        return true;
+    }
+
+    /// <summary>Установить «беречь батарею» (порог X% из настроек) либо 100%. Ручная смена отменяет
+    /// «В дорогу». Прошивка не приняла → конфиг не трогаем (реальное состояние не изменилось) и честно
+    /// сообщаем об ошибке вместо оптимистичного «успеха» (Фаза 6.2).</summary>
+    public void ToggleCare(bool on)
+    {
+        int percent = on ? _cfg.CarePercent() : 100;
+        if (!ApplyChargeLimit(percent)) { FirmwareFailed?.Invoke(); return; }
+        if (_cfg.TravelMode) { _cfg.TravelMode = false; _travel.Rearm(); }
+        _cfg.ChargeCare = on;
+        _cfg.Save();
+        CareChanged?.Invoke(on);
+    }
+
+    /// <summary>Сменить порог «беречь батарею» (%). На железе применяем сразу, только если защита
+    /// сейчас активна и не перебита «В дорогу»; иначе порог просто запоминается до включения.
+    /// Прошивка отвергла уровень (модель его не держит) → откатываем выбор и честно сообщаем.</summary>
+    public void SetCareLimit(int percent)
+    {
+        if (Mifs.ChargeCodeForPercent(percent) is null) return;   // не пишем вслепую неизвестный уровень
+        if (_cfg.ChargeCare && !_cfg.TravelMode
+            && !ApplyChargeLimit(percent)) { FirmwareFailed?.Invoke(); return; }
+        _cfg.CareLimitPercent = percent;
+        _cfg.Save();
+        CareChanged?.Invoke(_cfg.ChargeCare);   // обновить подписи (панель/меню/значок)
+    }
+
+    /// <summary>«В дорогу»: временный заряд до 100% поверх «беречь X%».
+    /// Доступно только при базовом ChargeCare=true (при постоянном 100% смысла нет).</summary>
+    public void SetTravel(bool on)
+    {
+        if (on && !_cfg.ChargeCare) return;
+        // on → снять защиту (заряд до 100); off → вернуть базовый порог X%.
+        // Сначала прошивка: не приняла → состояние не изменилось, конфиг не трогаем (6.2)
+        if (!ApplyChargeLimit(on ? 100 : _cfg.CarePercent())) { FirmwareFailed?.Invoke(); return; }
+        _cfg.TravelMode = on;
+        _cfg.Save();
+        _travel.Rearm();
+        TravelChanged?.Invoke(on);
+    }
+
+    /// <summary>
+    /// Написать порог в прошивку и заодно ЗАПОМНИТЬ, умеет ли эта машина такое вообще (XIC-74).
+    /// Единственная точка, где приложение ставит лимит по воле человека, поэтому и вывод
+    /// делается здесь: отказ — признак, что группы 0x10/0x02 на модели нет (так на TM2113),
+    /// успех — что есть. Гадать по названию модели не нужно, железо отвечает само.
+    ///
+    /// Сверка ChargeGuard сюда НЕ ходит намеренно: она переустанавливает лимит по событиям
+    /// питания, и разовый сбой на просыпающемся EC пометил бы рабочую машину как «не умеет».
+    /// Учимся только на явном действии пользователя.
+    /// </summary>
+    private bool ApplyChargeLimit(int percent)
+    {
+        bool ok = Safe(() => _mifs.SetChargeLimit(percent), false);
+        if (ok == !_cfg.ChargeLimitUnsupported) return ok;  // вывод не изменился — конфиг не трогаем
+        _cfg.ChargeLimitUnsupported = !ok;
+        _cfg.Save();
+        Log.Write(ok
+            ? "Заряд: прошивка приняла порог — аппаратный лимит есть"
+            : "Заряд: прошивка отвергла порог — аппаратного лимита на этой модели нет");
+        return ok;
+    }
+
+    /// <summary>Тихий сброс «В дорогу» (отключили зарядник): ChargeGuard сам вернёт «беречь 80%».</summary>
+    public void DisableTravel()
+    {
+        _cfg.TravelMode = false;
+        _cfg.Save();
+        _travel.Rearm();
+        TravelCancelled?.Invoke();
+    }
+
+    // ---- Режимы производительности ----
+
+    /// <summary>Явный выбор режима (меню/панель/настройки). Прошивка отказала (false или
+    /// исключение) → не запоминаем и честно сообщаем об ошибке (Фаза 6.2).</summary>
+    public void SetMode(PerfMode mode)
+    {
+        bool online = _power.IsOnline;
+        if (!Apply(mode)) { FirmwareFailed?.Invoke(); return; }
+        if (online == _power.IsOnline) _cfg.RememberMode(mode, online);
+        ModeSet?.Invoke(mode);
+    }
+
+    /// <summary>
+    /// Переключить на следующий режим по кругу (Mi-кнопка / клавиша).
+    ///
+    /// Отвергнутый прошивкой режим цикл не останавливает — пробуем следующий. Иначе кнопка
+    /// упирается в первый недоступный НАВСЕГДА: одного отказа мало, чтобы режим спрятался
+    /// (нужен отказ и от сети, и от батареи), и до смены питания человек оставался бы с
+    /// кнопкой, которая только показывает ошибку.
+    /// </summary>
+    public void CycleMode()
+    {
+        bool online = _power.IsOnline;
+        var cur = Safe<PerfMode?>(() => _mifs.GetPerfMode(), null) ?? PerfMode.Auto;
+        var modes = _modes;                       // снимок: Apply может спрятать режим и пересобрать набор
+        int start = Array.IndexOf(modes, cur) is int i && i >= 0 ? i + 1 : 0;
+
+        for (int step = 0; step < modes.Length; step++)
+        {
+            var next = modes[(start + step) % modes.Length];
+            if (next == cur) continue;            // сам в себя не переключаемся
+            if (!Apply(next)) continue;
+
+            if (online == _power.IsOnline) _cfg.RememberMode(next, online);
+            ModeCycled?.Invoke(next);
+            return;
+        }
+        FirmwareFailed?.Invoke();                 // прошивка отвергла всё, что было предложено
+    }
+
+    /// <summary>Применить режим; при явном отказе прошивки — запомнить его (XIC-44).</summary>
+    private bool Apply(PerfMode mode)
+    {
+        if (Safe(() => _mifs.SetPerfMode(mode), false)) return true;
+        LearnRejection(mode);
+        return false;
+    }
+
+    /// <summary>
+    /// Отказ отказу рознь. Хоронить режим можно, только когда прошивка ОТВЕТИЛА и показала
+    /// другой: молчащая прошивка, занятый EC или ошибка WMI — временное, и запоминать их
+    /// значит навсегда отобрать рабочий режим из-за одной случайной осечки.
+    ///
+    /// Отвергнут и от сети, и от батареи → убираем из видимых. Это и есть всё «автоопределение
+    /// набора»: без свипа, без анкеты на модель, без похода в интернет.
+    /// </summary>
+    private void LearnRejection(PerfMode mode)
+    {
+        if (Safe<PerfMode?>(() => _mifs.GetPerfMode(), null) is not PerfMode actual || actual == mode)
+            return;   // не ответила либо всё-таки применился — это не отказ
+
+        string? bios = Safe<string?>(() => SystemInfo.Current.Bios, null);  // WMI: в тестах и на чужом железе может молчать
+        ForgetLearnedOnBiosChange(bios);
+        _cfg.RejectedModes ??= [];
+        bool online = Safe(() => _power.IsOnline, true);
+        if (!ModeLearning.Record(_cfg.RejectedModes, mode, online)) return;   // уже знали
+
+        Log.Write($"Perf: прошивка отвергла {mode} ({ModeLearning.Source(online)}), стоит {actual}");
+        _cfg.RejectedModesBios = bios;
+
+        if (ModeLearning.RejectedEverywhere(_cfg.RejectedModes, mode))
+        {
+            Log.Write($"Perf: {mode} отвергнут на обоих источниках — убираю из видимых");
+            // прячем у ОБОИХ источников: режима на этой машине нет вовсе, и показывать его
+            // от батареи только потому, что отказ случился в розетке, было бы бессмысленно
+            SetModeVisible(mode, visible: false, online: true);
+            SetModeVisible(mode, visible: false, online: false);
+            return;
+        }
+        _cfg.Save();
+    }
+
+    /// <summary>Обновили BIOS — выученное забываем: набор режимов мог измениться.</summary>
+    private void ForgetLearnedOnBiosChange(string? bios)
+    {
+        if (!ModeLearning.Expired(_cfg.RejectedModesBios, bios)) return;
+        Log.Write("Perf: версия BIOS изменилась — забываю выученные отказы режимов");
+        _cfg.RejectedModes = null;
+    }
+
+    /// <summary>
+    /// Показать/скрыть один режим. Последние два скрыть нельзя — набор, из которого нечего
+    /// выбирать, бессмысленен; попытка молча игнорируется (UI такой тумблер и не даёт нажать).
+    /// </summary>
+    public void SetModeVisible(PerfMode mode, bool visible) => SetModeVisible(mode, visible, OnlineNow);
+
+    /// <summary>
+    /// То же, но для конкретного источника питания (XIC-65): вкладка настроек правит и тот
+    /// набор, который сейчас не активен — человек настраивает «от батареи», сидя в розетке.
+    /// </summary>
+    public void SetModeVisible(PerfMode mode, bool visible, bool online)
+    {
+        if (!ModeVisibility.IsAvailable(mode, online)) return;
+        var bySource = _cfg.HiddenModesBySource ??= ModeVisibility.Split(_cfg.HiddenModes);
+        string key = ModeLearning.Source(online);
+        var current = ModeVisibility.For(bySource, online);
+
+        var next = ModeVisibility.Toggle(ModeVisibility.Available(online), current, mode, visible);
+        if (next.Length == current.Count && next.All(current.Contains)) return;  // запрет или без изменений
+
+        bySource[key] = [.. next];
+        _cfg.Save();
+        ApplyModeVisibility();
+        ModesReloaded?.Invoke();
+    }
+
+    /// <summary>Пересобрать набор под текущий источник питания и сообщить UI (XIC-65).
+    /// Зовётся на переходе AC↔батарея: составы у источников разные.</summary>
+    public void ReloadModeVisibility()
+    {
+        var before = _modes;
+        ApplyModeVisibility();
+        if (before.Length == _modes.Length && before.SequenceEqual(_modes)) return;
+        ModesReloaded?.Invoke();
+    }
+
+    /// <summary>Скрытые режимы для источника — вкладке настроек, чтобы рисовать два тумблера.</summary>
+    public IReadOnlyList<PerfMode> HiddenModesFor(bool online) =>
+        ModeVisibility.For(_cfg.HiddenModesBySource, online);
+
+    /// <summary>Сколько режимов останется видимо у источника — для гашения его тумблеров.</summary>
+    public bool CanHideModeFor(bool online) =>
+        ModeVisibility.CanHide(ModeVisibility.Visible(ModeVisibility.Available(online), HiddenModesFor(online)).Length);
+
+    /// <summary>Можно ли скрыть ещё один режим (для гашения тумблеров в настройках).</summary>
+    public bool CanHideMode => ModeVisibility.CanHide(_modes.Length);
+
+    private bool OnlineNow => Safe(() => _power.IsOnline, true);
+
+    // Применить желаемый стартовый режим; если прошивка не приняла (напр. Full-speed на батарее) — Auto.
+    private void ApplyStartMode(PerfMode mode)
+    {
+        if (!Safe(() => _mifs.SetPerfMode(mode), false))
+            Safe(() => _mifs.SetPerfMode(PerfMode.Auto), false);
+    }
+
+    // Набор зависит от источника питания (XIC-65) — пересобирается и при смене розетки
+    private void ApplyModeVisibility() =>
+        _modes = ModeVisibility.Visible(ModeVisibility.Available(OnlineNow), ModeVisibility.For(_cfg.HiddenModesBySource, OnlineNow));
+
+    // ---- Стратегия режима при старте ----
+
+    /// <summary>
+    /// Текущая стратегия — производная от трёх взаимоисключающих флагов конфига
+    /// (порядок проверки = приоритет на случай рассинхрона после ручной правки config.json).
+    /// </summary>
+    public StartStrategy CurrentStartStrategy =>
+        _cfg.PowerProfiles ? StartStrategy.Profiles
+        : _cfg.ForceStartMode is not null ? StartStrategy.Pin
+        : _cfg.RestoreMode ? StartStrategy.Restore
+        : StartStrategy.None;
+
+    /// <summary>Radio в окне настроек → взаимоисключающая логика стратегий старта.</summary>
+    public void SetStartStrategy(StartStrategy s)
+    {
+        switch (s)
+        {
+            case StartStrategy.None:
+                _cfg.RestoreMode = false; _cfg.ForceStartMode = null; _cfg.PowerProfiles = false; _cfg.Save();
+                break;
+            case StartStrategy.Restore:
+                SetStartRestore(true);
+                break;
+            case StartStrategy.Pin:
+                if (_cfg.ForceStartMode is null) PinCurrentStartMode(); // закрепить текущий (Авто закрепить нельзя)
+                else { _cfg.RestoreMode = false; _cfg.PowerProfiles = false; _cfg.Save(); }
+                break;
+            case StartStrategy.Profiles:
+                SetPowerProfiles(true);
+                break;
+        }
+    }
+
+    // «Восстанавливать последний» (взаимоисключающе с «закрепить»). При первом включении
+    // (StartPerfMode ещё пуст) запоминаем текущий режим сразу — чтобы было что восстанавливать;
+    // при повторном значение не трогаем, поэтому вернётся всё как было до отключения.
+    private void SetStartRestore(bool on)
+    {
+        _cfg.RestoreMode = on;
+        if (on)
+        {
+            _cfg.ForceStartMode = null;   // включили восстановление — снимаем закреп
+            _cfg.PowerProfiles = false;   // …и профили питания (три стратегии взаимоисключающи)
+            if (_cfg.StartPerfMode is null)
+                _cfg.StartPerfMode = Safe<PerfMode?>(() => _mifs.GetPerfMode(), null);
+        }
+        _cfg.Save();
+    }
+
+    // «Закрепить текущий режим» — переключатель: уже закреплён → снять (обе галки пустые);
+    // не закреплён → закрепить текущий (Авто/не прочитался — закреплять нечего). Закрепление
+    // взаимоисключающе гасит «восстанавливать последний».
+    private void PinCurrentStartMode()
+    {
+        if (_cfg.ForceStartMode is not null)
+        {
+            _cfg.ForceStartMode = null; // снять закреп
+        }
+        else if (Safe<PerfMode?>(() => _mifs.GetPerfMode(), null) is PerfMode m && m != PerfMode.Auto && ModeVisibility.IsAvailable(m, OnlineNow))
+        {
+            _cfg.ForceStartMode = m;
+            _cfg.RestoreMode = false;
+            _cfg.PowerProfiles = false; // закрепили режим — профили питания выключаем
+        }
+        _cfg.Save();
+    }
+
+    // «Профили питания» (взаимоисключающе с «восстанавливать»/«закрепить»): включаем —
+    // засеваем текущую яркость в слот текущего питания (чтоб было что вспоминать) и применяем.
+    private void SetPowerProfiles(bool on)
+    {
+        _cfg.PowerProfiles = on;
+        if (on)
+        {
+            _cfg.RestoreMode = false;
+            _cfg.ForceStartMode = null;
+            if (_cfg.RememberBrightness) SeedCurrentBrightness();
+        }
+        _cfg.Save();
+        if (on) _profiles.Reapply();
+    }
+
+    /// <summary>Выбор режима профиля (ac=true — сеть, иначе батарея; mode=null — «не менять»).
+    /// Если это профиль текущего питания — применяем сразу для мгновенной обратной связи.</summary>
+    public void SetProfileMode(bool ac, PerfMode? mode)
+    {
+        if (mode is PerfMode selected && !ModeVisibility.IsAvailable(selected, ac)) { FirmwareFailed?.Invoke(); return; }
+        if (ac) _cfg.AcPerfMode = mode; else _cfg.BatteryPerfMode = mode;
+        _cfg.Save();
+        if (_cfg.PowerProfiles && ac == _power.IsOnline) _profiles.Reapply();
+    }
+
+    // ---- Яркость ----
+
+    /// <summary>Явная установка «запоминать яркость» (окно даёт тумблер, а не переключатель).</summary>
+    public void SetRememberBrightness(bool on)
+    {
+        if (_cfg.RememberBrightness == on) return;
+        _cfg.RememberBrightness = on;
+        if (on) SeedCurrentBrightness();
+        _cfg.Save();
+    }
+
+    // Запомнить текущую яркость в слот текущего питания (при включении опции — чтобы был старт).
+    private void SeedCurrentBrightness()
+    {
+        if (Brightness.Get() is not int lvl) return;
+        if (_power.IsOnline) _cfg.AcBrightness = lvl;
+        else _cfg.BatteryBrightness = lvl;
+    }
+
+    /// <summary>Лимит яркости вкл/выкл (XIC-29). Включили — текущее превышение сводится тем же
+    /// вежливым механизмом схождения; выключили — guard сам останавливает всё, включая паузу.</summary>
+    public void SetBrightnessCap(bool on)
+    {
+        if (_cfg.BrightnessCapEnabled == on) return;
+        _cfg.BrightnessCapEnabled = on;
+        _cfg.Save();
+        _capGuard.ResetBackoff();
+        Task.Run(_capGuard.Evaluate); // сверка читает WMI — не с UI-потока
+    }
+
+    /// <summary>Авто-яркость по датчику (XIC-30). Включение сеет дефолтную кривую и гасит
+    /// «Запоминать яркость» (кривая заменяет слоты); выключение ничего не трогает —
+    /// кривая остаётся в конфиге до следующего раза.</summary>
+    public void SetAutoBrightness(bool on)
+    {
+        if (_cfg.AutoBrightness == on) return;
+        _cfg.AutoBrightness = on;
+        if (on)
+        {
+            SeedCurves();
+            _cfg.RememberBrightness = false; // взаимоисключение: два хозяина яркости не нужны
+        }
+        _cfg.Save();
+        if (on) Task.Run(_autoGuard.Evaluate); // сверка может читать WMI — не с UI-потока
+        AutoBrightnessChanged?.Invoke(on);     // клавиша ждёт OSD, настройки — перерисовки панели
+    }
+
+    /// <summary>«Обучение кривой» (XIC-37): выкл — правки яркости временные, кривая заморожена;
+    /// дальше действует «возврат к выученному» (SetAutoBrightnessRevert).</summary>
+    public void SetAutoBrightnessLearning(bool on)
+    {
+        if (_cfg.AutoBrightnessLearning == on) return;
+        _cfg.AutoBrightnessLearning = on;
+        _cfg.Save();
+        _autoGuard.LearningModeChanged(); // недоигранное схождение/уступка/серия обучения — в мусор
+    }
+
+    /// <summary>Режим возврата к выученному (XIC-37): null — всегда, "battery" — только на
+    /// батарее, "off" — не возвращать (правка живёт до смены света).</summary>
+    public void SetAutoBrightnessRevert(string? mode)
+    {
+        _cfg.AutoBrightnessRevert = mode;
+        _cfg.Save();
+        _autoGuard.LearningModeChanged(); // сменили правила на ходу — текущий эпизод неактуален
+    }
+
+    // Пустые кривые (первое включение / ручная правка конфига) заполняем дефолтом — обеим:
+    // кривых две, для сети и батареи (комфорт в одних люксах у розетки и в дороге разный).
+    private void SeedCurves()
+    {
+        if (_cfg.AutoBrightnessPointsAc.Count == 0)
+            _cfg.AutoBrightnessPointsAc.AddRange(BrightnessCurve.DefaultPoints());
+        if (_cfg.AutoBrightnessPointsBattery.Count == 0)
+            _cfg.AutoBrightnessPointsBattery.AddRange(BrightnessCurve.DefaultPoints());
+    }
+
+    /// <summary>Есть ли датчик освещённости (для видимости фичи на вкладке «Экран»).</summary>
+    public bool AlsAvailable => _als.Available;
+
+    /// <summary>Текущая освещённость, лк (NaN — событий ещё не было) — живой индикатор в настройках.</summary>
+    public float CurrentLux => _als.LastLux;
+
+    /// <summary>«Инерция» датчика: окно медианы, сек (0 — мгновенные значения). Новые сэмплы
+    /// подхватят окно сами — guard дёргать не нужно.</summary>
+    public void SetBrightnessMedianSec(int seconds)
+    {
+        _cfg.AutoBrightnessMedianSec = Math.Clamp(seconds, 0, 600);
+        _cfg.Save();
+    }
+
+    /// <summary>Сброс кривой обучения — только по явной кнопке (выкл/вкл фичи кривую не трогает).</summary>
+    public void ResetBrightnessCurve() => _autoGuard.ResetCurve();
+
+    /// <summary>Снимок кривой (сеть/батарея) для отрисовки графика на вкладке «Экран».</summary>
+    public Config.BrightnessPoint[] BrightnessCurvePoints(bool online) => _autoGuard.CurveSnapshot(online);
+
+    /// <summary>Кривая, правленная мышью на графике (XIC-33/XIC-66): сохранить и применить.</summary>
+    public void SetBrightnessCurve(bool online, IReadOnlyList<Config.BrightnessPoint> points) =>
+        _autoGuard.SetCurve(online, points);
+
+    /// <summary>Лимиты яркости из окна настроек (сеть, батарея) — сохранить и свериться.</summary>
+    public void SetBrightnessCaps(int ac, int batt)
+    {
+        _cfg.BrightnessCapAc = ac;
+        _cfg.BrightnessCapBattery = batt;
+        _cfg.Save();
+        if (!_cfg.BrightnessCapEnabled) return;
+        _capGuard.ResetBackoff(); // лимит сменили осознанно — старая пауза больше не про эти условия
+        Task.Run(_capGuard.Evaluate);
+    }
+
+    // ---- Авто-герцовка ----
+
+    /// <summary>Авто-герцовка: вкл — сразу применить частоту по текущему питанию, выкл — не трогаем.</summary>
+    public void ToggleAutoHz(bool on)
+    {
+        _cfg.AutoRefreshRate = on;
+        _cfg.Save();
+        if (on) _hz.Reapply();
+        AutoHzChanged?.Invoke(on);
+    }
+
+    /// <summary>
+    /// Показ/скрытие «управления частотой» как фичи (меню/панель/вкладка «Экран»).
+    /// Выключаем — активная авто-герцовка гасится (как <see cref="ToggleOwlFeature"/> гасит
+    /// активный Awake): сначала возвращаем сеть-частоту, если «батарейная» успела примениться
+    /// (иначе пользователь остался бы на 60 Гц без UI, чтобы это поправить), затем снимаем
+    /// флаг — «взведённый» AutoRefreshRate без единой видимой поверхности врал бы читателям
+    /// (OSD питания рисовал «• N Гц» при выключенной фиче), а повторное включение фичи
+    /// молча возобновляло бы переключения.
+    /// </summary>
+    public void ToggleRefreshRateFeature(bool on)
+    {
+        _cfg.RefreshRateFeature = on;
+        if (!on && _cfg.AutoRefreshRate)
+        {
+            int ac = _cfg.AcRefreshRate; // снять возможный батарейный троттлинг, не блокируя UI-поток
+            Task.Run(() => Safe(() => RefreshRate.Apply(ac), false));
+            _cfg.AutoRefreshRate = false;
+        }
+        else if (on && _cfg.AutoRefreshRate)
+        {
+            _hz.Reapply(); // флаг взведён только ручной правкой config.json — уважаем и применяем
+        }
+        _cfg.Save();
+        RefreshRateFeatureChanged?.Invoke(); // перестроить панель/меню (ячейка герцовки уходит/появляется)
+    }
+
+    /// <summary>
+    /// «Удерживать частоту»: возвращать заданную, если режим экрана сменили извне.
+    /// Включение сразу подтягивает текущее состояние — экран мог уже уехать до того,
+    /// как пользователь дошёл до тумблера.
+    /// </summary>
+    public void SetHoldRefreshRate(bool on)
+    {
+        _cfg.HoldRefreshRate = on;
+        _cfg.Save();
+        if (on) _hz.Reapply();
+    }
+
+    /// <summary>Частоты из окна настроек: сохранить и, если режим включён, применить сейчас.</summary>
+    public void SetRefreshRates(int ac, int batt)
+    {
+        _cfg.AcRefreshRate = ac;
+        _cfg.BatteryRefreshRate = batt;
+        _cfg.Save();
+        if (_cfg.AutoRefreshRate) _hz.Reapply();
+    }
+
+    /// <summary>
+    /// Включить/исключить частоту из перебора по клавише (XIC-69). Храним ВЫБРАННЫЕ, а не
+    /// исключённые: набор режимов зависит от панели, и на другом экране список «исключить»
+    /// означал бы неизвестно что. Пустой список = «все» — ровно поведение до настройки.
+    /// </summary>
+    public void SetCycleRate(int hz, bool on)
+    {
+        var rates = _cfg.CycleRefreshRates ??= [.. RefreshRate.Supported()];
+        if (on) { if (!rates.Contains(hz)) rates.Add(hz); }
+        else rates.Remove(hz);
+        rates.Sort();
+        _cfg.Save();
+    }
+
+    // ---- «Сова», автозапуск, язык ----
+
+    /// <summary>Показ/скрытие «режима совы» как фичи; при скрытии активный режим гасится.</summary>
+    public void ToggleOwlFeature(bool on)
+    {
+        _cfg.OwlMode = on;
+        if (!on && _cfg.Awake) { AwakeMode.Disable(_cfg); _cfg.Awake = false; }
+        _cfg.Save();
+        OwlFeatureChanged?.Invoke(); // перестроить раскладку панели (сова появляется/уходит)
+    }
+
+    /// <summary>«Режим совы»: включить/выключить «не спать».</summary>
+    public void ToggleAwake()
+    {
+        if (_cfg.Awake) { AwakeMode.Disable(_cfg); _cfg.Awake = false; }
+        else if (AwakeMode.Enable(_cfg)) { _cfg.Awake = true; }
+        _cfg.Save();
+        AwakeChanged?.Invoke();
+    }
+
+    /// <summary>Автозапуск. schtasks может блокировать до 10 с (WaitForExit) — не с UI-потока.</summary>
+    public void ToggleAutoStart(bool on)
+    {
+        Task.Run(() =>
+        {
+            Safe(() => { AutoStart.Set(on); return true; }, false);
+            _autoStart = Safe(AutoStart.IsEnabled, on);  // перечитать реальное состояние
+            _cfg.AutoStart = _autoStart;
+            _cfg.Save();
+        });
+    }
+
+    /// <summary>Доступные языки (культура + родное название) — для комбо настроек.</summary>
+    public IReadOnlyList<LangInfo> Languages => _loc.Available;
+
+    /// <summary>Текущий язык интерфейса (культурный код).</summary>
+    public string CurrentLanguage => _loc.Current;
+
+    /// <summary>Тема флайаутов (панель/OSD/«Монитор»): null — тёмная, "light", "system".
+    /// Применяется сразу; TrayApp перерисует видимые окна по колбэку.</summary>
+    public void SetFlyoutTheme(string? theme)
+    {
+        _cfg.FlyoutTheme = theme;
+        _cfg.Save();
+        FlyoutPalette.Apply(theme);
+        FlyoutThemeChanged?.Invoke();
+    }
+
+    /// <summary>Смена языка (культурный код): применяется сразу; UI сам пересоберёт свои подписи.</summary>
+    public void SetLanguage(string culture)
+    {
+        _loc.Current = culture;        // Loc нормализует неизвестную культуру к базовой
+        _cfg.Language = _loc.Current;
+        _cfg.Save();
+        LanguageChanged?.Invoke();
+    }
+
+    // ---- Тачпад / сенсорный экран ----
+
+    /// <summary>Тачпад вкл/выкл: CM-вызовы небыстрые (сотни мс) — в фоне; колбэк придёт с фона.</summary>
+    public void ToggleTouchpad() => Task.Run(() =>
+    {
+        bool? on = Safe<bool?>(() => _touchpad.Toggle(), null);
+        if (on is bool b) TouchpadToggled?.Invoke(b);
+    });
+
+    /// <summary>Сенсорный экран вкл/выкл — то же самое, но для дигитайзера экрана.</summary>
+    public void ToggleTouchscreen() => Task.Run(() =>
+    {
+        bool? on = Safe<bool?>(() => _touchscreen.Toggle(), null);
+        if (on is bool b) TouchscreenToggled?.Invoke(b);
+    });
+
+    // ---- Проверка обновлений (XIC-20) ----
+
+    /// <summary>Последний найденный релиз (не обязательно новее нас — см. <see cref="LastUpdateCheck"/>).
+    /// Держим на всю сессию: окно настроек пересобирается на каждый показ (и на смену темы/DPI/языка),
+    /// запрос оттуда улетал бы по нескольку раз.</summary>
+    public ReleaseInfo? Update { get; private set; }
+
+    /// <summary>Чем закончилась последняя проверка — «О программе» отвечает пользователю,
+    /// нажавшему «Проверить обновления», а не молчит.</summary>
+    public UpdateStatus LastUpdateCheck { get; private set; } = UpdateStatus.NotChecked;
+
+    /// <summary>Новая версия найдена — TrayApp решает, показывать ли тост.</summary>
+    public Action<ReleaseInfo>? UpdateFound;
+
+    /// <summary>
+    /// Проверить выход новой версии. Тумблер выключен — не ходим в сеть вообще (он и есть
+    /// выключатель трафика). Обычная проверка — не чаще раза в сутки; force (кнопка «Проверить
+    /// сейчас») это окно игнорирует, потому что это явное действие пользователя.
+    /// </summary>
+    public async Task CheckUpdatesAsync(bool force)
+    {
+        if (!force && !UpdateCheck.DueForCheck(_cfg.CheckUpdates, _cfg.LastUpdateCheckUtc, DateTime.UtcNow)) return;
+        if (force && !_cfg.CheckUpdates) return; // выключено — молчим даже по кнопке
+
+        _cfg.LastUpdateCheckUtc = DateTime.UtcNow;
+        _cfg.Save();
+
+        var release = await UpdateCheck.FetchLatestAsync().ConfigureAwait(false);
+        if (release is null)
+        {
+            LastUpdateCheck = UpdateStatus.Failed; // нет сети/таймаут/лимит — так и скажем
+            return;
+        }
+
+        var current = UpdateCheck.CurrentVersion();
+        // дев-сборку не называем «последней версией»: релиз на GitHub заведомо свежее её 0.0.0
+        LastUpdateCheck = UpdateCheck.IsDevBuild(current) ? UpdateStatus.DevBuild
+            : UpdateCheck.IsNewer(release.Version, current) ? UpdateStatus.Available
+            : UpdateStatus.UpToDate;
+        // отметку на «О программе» держим, только если релиз реально новее: иначе на свежей
+        // установке вкладка писала бы «доступна X», когда X и так стоит
+        Update = release; // что именно показать — решает статус выше, а не сам факт находки
+
+        // тост — раз на версию; отметка на «О программе» при этом остаётся
+        if (UpdateCheck.ShouldNotify(release.Version, current, _cfg.SkippedVersion))
+            UpdateFound?.Invoke(release);
+    }
+
+    /// <summary>Тумблер «Проверять обновления». Включили — сразу проверяем, иначе пришлось бы
+    /// ждать следующего запуска.</summary>
+    public void SetCheckUpdates(bool on)
+    {
+        _cfg.CheckUpdates = on;
+        _cfg.Save();
+        if (on) _ = Task.Run(() => CheckUpdatesAsync(force: true));
+    }
+
+    /// <summary>
+    /// Мёртвая зона у нижнего края тачпада вкл/выкл. Реестр правим только отсюда — то есть
+    /// только по явному переключению пользователем; перезапуск узла тачпада (сотни мс, панель
+    /// на секунду пропадает) — в фоне, чтобы не морозить окно настроек.
+    /// </summary>
+    public void SetTouchpadDeadZone(bool on)
+    {
+        _cfg.TouchpadDeadZone = on;
+        _cfg.Save();
+        Task.Run(() => { if (!Safe(_deadZone.Apply, false)) FirmwareFailed?.Invoke(); });
+    }
+
+    /// <summary>Высота мёртвой зоны (мм). Применяем сразу, но только если зона включена —
+    /// иначе выбор высоты «про запас» молча включил бы её.</summary>
+    public void SetTouchpadDeadZoneMm(int mm)
+    {
+        _cfg.TouchpadDeadZoneMm = mm;
+        _cfg.Save();
+        if (_cfg.TouchpadDeadZone) Task.Run(() => { if (!Safe(_deadZone.Apply, false)) FirmwareFailed?.Invoke(); });
+    }
+
+    /// <summary>
+    /// Краевые ползунки тачпада вкл/выкл (XIC-61). Как и мёртвая зона, трогает реестр только
+    /// по явному переключению; перезапуск узла и подъём чтения касаний — в фоне, окно настроек
+    /// не морозим.
+    /// </summary>
+    public void SetTouchpadEdgeSliders(bool on)
+    {
+        _cfg.TouchpadEdgeSliders = on;
+        _cfg.Save();
+        Task.Run(() => { if (!Safe(_edges.Apply, false)) FirmwareFailed?.Invoke(); });
+    }
+
+    /// <summary>Ширина краевых полос (мм). Применяем сразу, но только при включённой фиче —
+    /// иначе выбор «про запас» молча включил бы её.</summary>
+    public void SetTouchpadEdgeWidthMm(int mm)
+    {
+        _cfg.TouchpadEdgeWidthMm = mm;
+        _cfg.Save();
+        if (_cfg.TouchpadEdgeSliders) Task.Run(() => { if (!Safe(_edges.Apply, false)) FirmwareFailed?.Invoke(); });
+    }
+
+    /// <summary>Чувствительность краевых ползунков (проходов на всю шкалу). Реестра не касается —
+    /// пересобираем только пересчёт шагов, поэтому ни перезапуска узла, ни перечитывания зон.</summary>
+    public void SetTouchpadEdgeSwipes(int swipes)
+    {
+        _cfg.TouchpadEdgeSwipesPerRange = swipes;
+        _cfg.Save();
+        Safe(() => { _edges.Reconfigure(); return true; }, false);
+    }
+
+    /// <summary>Поменять края местами. Реестра не касается — меняется только трактовка жеста,
+    /// поэтому ни перезапуска узла, ни перечитывания зон не нужно.</summary>
+    public void SetTouchpadEdgeSwap(bool on)
+    {
+        _cfg.TouchpadEdgeSwap = on;
+        _cfg.Save();
+    }
+
+    /// <summary>Щелчок мотора на шаге краевого ползунка (XIC-73). Ползунки читают флаг на
+    /// каждом шаге, так что ни перезапуска узла, ни пересборки жеста не нужно.</summary>
+    public void SetTouchpadEdgeHaptics(bool on)
+    {
+        _cfg.TouchpadEdgeHaptics = on;
+        _cfg.Save();
+    }
+
+    /// <summary>Действие на сильное нажатие тачпада (XIC-78). Смена одного действия на другое —
+    /// только конфиг; включение/выключение фичи ещё и переключает второй щелчок прошивки (0x59)
+    /// и подписку на касания — в фоне, запись в тачпад ~0,5 с.</summary>
+    public void SetTouchpadHeavyPress(string action)
+    {
+        bool was = _heavy?.Enabled ?? false;
+        _cfg.TouchpadHeavyPressAction = action;
+        _cfg.Save();
+        if (_heavy is { } heavy && heavy.Enabled != was)
+            Task.Run(() => Safe(() => { heavy.Apply(); return true; }, false));
+    }
+
+    /// <summary>Команда для действия «Запустить программу» на сильном нажатии.</summary>
+    public void SetTouchpadHeavyPressCommand(string? command)
+    {
+        _cfg.TouchpadHeavyPressCommand = command;
+        _cfg.Save();
+    }
+
+    /// <summary>Минимальный промежуток между щелчками краевых ползунков, мс. Ползунки читают
+    /// его на каждом шаге — применяется сразу.</summary>
+    public void SetTouchpadEdgeHapticsMs(int ms)
+    {
+        _cfg.TouchpadEdgeHapticsMs = ms;
+        _cfg.Save();
+    }
+
+    /// <summary>Сила щелчка краевых ползунков (XIC-73). Живёт в самом тачпаде, как и прочие
+    /// тактильные настройки, — запись с проверкой чтением, в фоне.</summary>
+    public void SetTouchpadSlideStrength(int strength) =>
+        WriteHaptics(h => h.SetSlide(strength), s => s with { Slide = strength });
+
+    /// <summary>Сила вибрации и порог нажатия, прочитанные из тачпада на старте (XIC-77).
+    /// null — тачпада с вендорским каналом нет (другая модель) или он не ответил: вкладка
+    /// тогда раздел не показывает.</summary>
+    public TouchpadHapticsState? TouchpadHaptics { get; private set; }
+    public Action? HapticsChanged;
+
+    /// <summary>Сила вибрации тачпада. Пишется в сам тачпад (переживает сон и перезагрузку,
+    /// поэтому в конфиг не попадает); запись с проверкой чтением — в фоне, ~0,5 с.</summary>
+    public void SetTouchpadVibration(HapticsVibration level) =>
+        WriteHaptics(h => h.SetVibration(level), s => s with { Vibration = level });
+
+    /// <summary>Порог нажатия тачпада в единицах прошивки (ступени — PressurePresets).</summary>
+    public void SetTouchpadPressure(int threshold) =>
+        WriteHaptics(h => h.SetPressure(threshold), s => s with { Pressure = threshold });
+
+    private void WriteHaptics(Func<TouchpadHaptics, bool> write, Func<TouchpadHapticsState, TouchpadHapticsState> update)
+    {
+        if (_haptics is not { } haptics) return;
+        Task.Run(() =>
+        {
+            if (Safe(() => write(haptics), false))
+            {
+                if (TouchpadHaptics is { } s) TouchpadHaptics = update(s);
+                HapticsChanged?.Invoke();
+            }
+            else FirmwareFailed?.Invoke(); // тачпад не подтвердил — честная ошибка, кэш не трогаем
+        });
+    }
+
+    /// <summary>Тачпад в системе есть — иначе опция в настройках бессмысленна.</summary>
+    public bool TouchpadEdgesAvailable => Safe(() => _edges.Available, false);
+
+    private static T Safe<T>(Func<T> f, T fallback,
+        [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        try { return f(); }
+        catch (Exception ex) { Log.Ex($"AppController.{caller}", ex); return fallback; }
+    }
+}

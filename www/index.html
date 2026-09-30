@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://xiaomi-custom-assets.local; img-src 'self' data: https://xiaomi-icons.local https://xiaomi-assets.local https://xiaomi-custom-assets.local; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PC Manager</title>
+  <link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="style.css">
+  <script src="bridge.js" defer></script>
+  <script src="quick-tools.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="MiSidebar" aria-label="Main navigation">
+      <a class="brand" href="#home" aria-label="PC Manager home"><img class="app-logo profile-picture" src="https://xiaomi-assets.local/app.svg" alt=""></a>
+      <nav id="navigation"></nav>
+      <div class="sidebar-bottom"><span class="local-dot"></span><span>Local</span></div>
+    </aside>
+    <main>
+      <header class="app-header"><div class="header-brand"><span>PC Manager</span><button id="store-shortcut" class="icon-button" data-action="xiaomi.open" data-args="{&quot;section&quot;:&quot;store&quot;}" aria-label="Open Xiaomi Store" title="Open Xiaomi Store"></button></div><div class="header-search"><input id="setting-search" type="search" placeholder="Search settings" aria-label="Search settings" autocomplete="off" aria-controls="setting-search-results"><div id="setting-search-results" class="search-results" role="listbox" hidden></div></div><div class="header-right"><span id="connection" class="MiStatusPill">Connecting</span><button id="undo" class="icon-button" aria-label="Undo settings change" title="Undo (Ctrl+Z)" disabled></button><button id="redo" class="icon-button" aria-label="Redo settings change" title="Redo (Ctrl+Y)" disabled></button><button id="refresh" class="icon-button" aria-label="Reconnect device controls" title="Reconnect device controls">↻</button><button id="minimize" class="icon-button" aria-label="Minimize manager" title="Minimize">−</button><button id="maximize" class="icon-button" aria-label="Maximize or restore manager" title="Maximize / restore"></button><button id="hide-manager" class="icon-button" aria-label="Close to tray" title="Close to tray">×</button></div></header>
+      <div id="status-banner" class="status-banner" role="status" hidden></div>
+      <section id="page" aria-live="polite"></section>
+      <footer><span>English edition · Local device management</span><span id="last-updated">Waiting for device data</span></footer>
+    </main>
+  </div>
+  <div id="toast" class="MiToast" role="status" hidden></div>
+  <noscript>This interface requires JavaScript. Open XiaomiAIManager.exe for hardware controls.</noscript>
+</body>
+</html>
+
