@@ -32,7 +32,7 @@ internal static class Program
         {
             "--toggle" => "toggle", "--manager" => "manager", "--tray" => "tray",
             "--monitor-small" => "monitor-small", "--monitor-medium" => "monitor-medium", "--monitor-large" => "monitor-large",
-            "--hide" => "hide", "--quit" => "quit", "--install-startup" => "install-startup",
+            "--hide" => "hide", "--quit" => "quit", "--install-startup" => "install-startup", "--register-startup" => "register-startup",
             "--cycle-mode" => "cycle-mode", "--brightness-up" => "brightness-up", "--brightness-down" => "brightness-down", "--toggle-travel" => "toggle-travel", "--screen-off" => "screen-off", "--verify-hardware" => "verify-hardware", "--reapply-policies" => "reapply-policies", "--validate-controls" => "validate-controls", "--validate-oem" => "validate-oem", "--validate-ui" => "validate-ui", "--validate-brightness" => "validate-brightness", _ => "invalid"
         } : "invalid";
         if (commands.SequenceEqual(new[] { "--validate-ui" })) command = "validate-ui";
@@ -51,6 +51,13 @@ internal static class Program
             return;
         }
         bool admin = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+        if (command == "register-startup" && admin)
+        {
+            if (TestMode) { Environment.ExitCode = 1; return; }
+            XiControl.SystemIntegration.AutoStart.Set(true);
+            if (!XiControl.SystemIntegration.AutoStart.IsEnabled()) Environment.ExitCode = 1;
+            return;
+        }
         if (command == "install-startup" && admin)
         {
             if (TestMode) { MessageBox.Show("Startup registration is disabled for test mode."); return; }
@@ -60,7 +67,7 @@ internal static class Program
         }
         // Only fixed, validated commands cross the privilege boundary. No paths or arbitrary code.
         IntPtr popup = FindWindowW(null, PopupTitle);
-        if (popup != IntPtr.Zero && command != "install-startup")
+        if (popup != IntPtr.Zero && command is not ("install-startup" or "register-startup"))
         {
             if (command != "tray")
             {

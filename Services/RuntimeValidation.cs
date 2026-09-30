@@ -39,7 +39,7 @@ internal static class RuntimeValidation
             .Select(p => { using (p) return (object)new { p.ProcessName, p.Id, image = ProcessImage.PathFor(p.Id) }; }).ToArray();
         var oemBefore = OemProcesses();
         object[]? oemDuring = null;
-        string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "results"));
+        string root = Path.Combine(AppContext.BaseDirectory, "results");
         Directory.CreateDirectory(root);
         int next = Directory.EnumerateDirectories(root).Select(path => int.TryParse(Path.GetFileName(path).Split('_')[0], out int n) ? n : 0).DefaultIfEmpty().Max() + 1;
         string run = Path.Combine(root, $"{next:D3}_{DateTime.Now:yyyyMMddTHHmmssfff}_{phase}");

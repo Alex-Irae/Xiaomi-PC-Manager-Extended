@@ -1,9 +1,7 @@
-# PC Manager v0.1.0
+# PC Manager v0.1.1
 
-First public Windows release of the English Xiaomi-style quick panel, full manager, and XiControl-backed hardware monitor.
+This release adds **Settings > Save settings snapshot**, which writes a timestamped copy of the current settings, including XiControl configuration, under `%LOCALAPPDATA%\XiaomiAIManager\settings-snapshots`. Snapshots stay on the user's PC and are removed by a full uninstall. The setup now registers startup in a short-lived helper before starting the resident, so its completion dialog no longer waits on the background app. The uninstaller removes app-owned files, data, startup, shortcuts, registry entry and API firewall rule while restoring the recorded Xiaomi service state.
 
-Download `PCManager-Setup.exe` to install for the current Windows user. `PCManager-portable.zip` provides the same application without startup registration. `PCManager-source.zip` contains the complete public source, including the vendored XiControl GPLv3 code and license.
+On the tested Xiaomi Book Pro 14, the packaged installer started the resident and its per-user startup task. The installed UI validation recorded 46 passes, one baseline observation, zero errors, and restored settings. The full uninstaller was tested on the immediately preceding build using the same uninstall script; no app-owned paths or registrations remained. The portable ZIP extracted and passed its pure settings check. Its DLL matched the installed UI-tested build, but a separate portable graphical test could not run concurrently with the supervised daily resident.
 
-The release begins with no profile photo, custom app links, saved optional Xiaomi executable paths, or personal settings. The screenshots in the repository are privacy-safe illustrations based on the tested UI.
-
-Requires Windows x64, .NET 8 Desktop Runtime, and Microsoft Edge WebView2 Runtime. Hardware controls require a compatible Xiaomi laptop and its firmware interface. Xiaomi PC Manager, XiaoAI, and Xiaomi Store are optional for their respective shortcuts. The setup executable is unsigned. The full elevated setup path on a second laptop and all model-specific controls remain unverified; see `README.md` and `docs/RUNTIME_TEST_REPORT.md` for the test scope.
+Download `PCManager-Setup.exe` for the per-user installer, `PCManager-portable.zip` for manual launch, and `PCManager-source.zip` for the full source including the XiControl-derived GPLv3 code. Requires Windows x64, .NET 8 Desktop Runtime and Microsoft Edge WebView2 Runtime. The setup EXE is unsigned. Device controls on other Xiaomi models, physical AC charging in this final run, and an actual new-user sign-in remain unverified. See the README and runtime test report for details.

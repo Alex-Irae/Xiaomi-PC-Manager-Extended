@@ -118,6 +118,19 @@ public sealed class Preferences
         File.Move(pending, SettingsPath, overwrite: true);
         }
     }
+
+    public string SaveSnapshot()
+    {
+        lock (saveSync)
+        {
+            Save();
+            string folder = Path.Combine(DataDirectory, "settings-snapshots");
+            Directory.CreateDirectory(folder);
+            string path = Path.Combine(folder, $"settings-{DateTime.Now:yyyyMMddTHHmmssfff}-{Guid.NewGuid():N}.json");
+            File.Copy(SettingsPath, path);
+            return path;
+        }
+    }
 }
 
 public sealed class KeyboardShortcut

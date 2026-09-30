@@ -19,9 +19,10 @@ globalThis.runControlValidation = async function (token, phase) {
   async function validateSettings() {
     const toRgb = hex => `rgb(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
     const settings = await Native.call("settings.read");
-    rows.push({ name: "settings-catalog", status: settings.rows.length >= 80 && settings.keys.enabled && settings.keys.running ? "pass" : "fail", rows: settings.rows.length, keys: settings.keys,
+    rows.push({ name: "settings-catalog", status: settings.rows.length >= 80 && (baseline.testMode ? !settings.keys.running : settings.keys.enabled && settings.keys.running) ? "pass" : "fail", rows: settings.rows.length, keys: settings.keys,
       keyActions: Object.fromEntries(settings.rows.filter(s => /^(MiClick|SettingsKey|AiKey|ProjKey)Action$/.test(s.key)).map(s => [s.key, s.value])) });
     rows.push({ name: "catalog-defaults-valid", status: settings.defaultErrors?.length === 0 && settings.rows.every(s => Object.hasOwn(s, "defaultValue")) ? "pass" : "fail", errors: settings.defaultErrors });
+    await check("settings-snapshot", "settings.snapshot", {}, (_, result) => /[\\/]settings-snapshots[\\/]settings-.*\.json$/i.test(result.path || ""));
     for (const theme of ["dark", "light"]) {
       await Native.call("settings.save", { appearance: theme, closeToTray: baseline.preferences.closeToTray !== false });
       await pause(100);

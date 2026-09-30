@@ -11,10 +11,6 @@ $startupConfirmed = $false
 
 function Show-Result([string]$message, [bool]$failed = $false) {
     Write-Host $message
-    if ($Quiet) { return }
-    Add-Type -AssemblyName System.Windows.Forms
-    $icon = if ($failed) { [Windows.Forms.MessageBoxIcon]::Error } else { [Windows.Forms.MessageBoxIcon]::Information }
-    [void][Windows.Forms.MessageBox]::Show($message, 'PC Manager Setup', [Windows.Forms.MessageBoxButtons]::OK, $icon)
 }
 
 try {
@@ -74,10 +70,10 @@ try {
             $oldExe = $actions[0].Execute.Trim('"')
             Disable-ScheduledTask -TaskName $taskName | Out-Null
             if (Test-Path -LiteralPath $oldExe) {
+                $oldPids = @(Get-Process -Name XiaomiAIManager -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
                 Start-Process -FilePath $oldExe -ArgumentList '--quit' -WindowStyle Hidden -Wait | Out-Null
                 for ($attempt = 0; $attempt -lt 40; $attempt++) {
-                    $active = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" -ErrorAction SilentlyContinue |
-                        Where-Object { $_.ExecutablePath -eq $oldExe })
+                    $active = @($oldPids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
                     if ($active.Count -eq 0) { break }
                     Start-Sleep -Milliseconds 250
                 }
@@ -102,8 +98,9 @@ try {
         startupRequested=(!$NoStartup); dataDirectory=(Join-Path $env:LOCALAPPDATA 'XiaomiAIManager')} |
         ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
     if (!$NoStartup) {
-        # This app's own elevated registration creates the user-scoped sign-in and recovery task.
-        Start-Process -FilePath $exe -ArgumentList '--install-startup' -WorkingDirectory $destinationFull -WindowStyle Hidden -Wait
+        # Register first with a short-lived process, then let Task Scheduler start the resident independently.
+        $registration = Start-Process -FilePath $exe -ArgumentList '--register-startup' -WorkingDirectory $destinationFull -WindowStyle Hidden -Wait -PassThru
+        if ($registration.ExitCode -ne 0) { throw 'Windows refused the PC Manager startup task.' }
         $registered = $false
         for ($attempt = 0; $attempt -lt 30; $attempt++) {
             $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -111,6 +108,12 @@ try {
             Start-Sleep -Seconds 1
         }
         if (!$registered) { throw 'Files installed, but the startup task was not confirmed. Run PC Manager from its install folder and approve the administrator prompt.' }
+        Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            if ((Get-ScheduledTask -TaskName $taskName).State -eq 'Running') { break }
+            Start-Sleep -Seconds 1
+        }
+        if ((Get-ScheduledTask -TaskName $taskName).State -ne 'Running') { throw 'PC Manager installed, but its startup task did not start the resident.' }
         $startupConfirmed = $true
         $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'PC Manager.lnk'
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenu)
@@ -124,7 +127,7 @@ try {
         $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
         New-Item -Path $uninstallKey -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'PC Manager' -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.0' -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.1' -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $destinationFull -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name UninstallString `
             -Value ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '"') `
@@ -133,6 +136,7 @@ try {
     Show-Result ("PC Manager installed at: " + $destinationFull + "`n" +
         $(if ($NoStartup) { 'Isolated file test completed; startup was not changed.' } else { 'It will run in the tray at sign-in. Open it with the tray icon.' }) +
         "`nSettings and artwork remain in " + (Join-Path $env:LOCALAPPDATA 'XiaomiAIManager'))
+    exit 0
 } catch {
     if ($previousTaskXml -and !$startupConfirmed -and $taskName) {
         try { Register-ScheduledTask -TaskName $taskName -Xml $previousTaskXml -Force | Out-Null }

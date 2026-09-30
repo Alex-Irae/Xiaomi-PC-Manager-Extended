@@ -650,6 +650,9 @@ public sealed class MainWindow : Form
                 case "settings.save":
                     result = await Task.Run(() => app.Router.Handle(method, args));
                     app.ApplyAppearance(); break;
+                case "settings.snapshot":
+                    string snapshotPath = await Task.Run(app.Preferences.SaveSnapshot);
+                    result = new { message = "Settings snapshot saved to " + snapshotPath, path = snapshotPath }; break;
                 case "settings.minimizeToTray":
                     app.Preferences.MinimizeToTray = args.GetProperty("on").GetBoolean();
                     app.Preferences.Save(); result = new { message = "Minimize behavior updated." }; break;

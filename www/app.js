@@ -218,6 +218,7 @@ function settingsPage() {
     row("Also open the original Xiaomi popup", "Optional OEM session. Our popup moves left; cleanup follows when the original closes.", toggle("original-popup", p.originalPopupEnabled))+
     `<p class="inline-note">All three colors preview and save immediately. Editing a color switches to Custom; Save preset stores it as a named palette.</p>`, "settings")+
     card("Background behavior", row("Prevent sleep", "On AC, request continued background work while the display can turn off. On battery Modern Standby, Windows can end this request about five minutes after the sleep timeout. Lid close and explicit Sleep still work.", toggle("sleepoff", sleepOff)) + row("Stay awake", "XiControl wake control. Depending on its display setting, this can also keep the screen on; use Prevent sleep to let the OLED turn off.", toggle("awake", awake)) + row("Minimize to tray", "Also hide the large manager when minimized from its button or the taskbar. Off keeps it on the taskbar.", toggle("minimize-tray", p.minimizeToTray)) + `<p class="inline-note">Closing either window keeps the app in the tray. Startup at sign-in: ${settingState?.startupRegistered ? "registered" : "not confirmed"}.</p>`)+
+    card("Settings snapshots", `<p class="inline-note">Save the current preferences and XiControl controls to a timestamped JSON file in your local app data. Full uninstall removes these snapshots, so copy one elsewhere before uninstall if you need it later.</p>${button("Save settings snapshot", "settings.snapshot", {}, settingState != null)}`, "settings")+
     customizationPage() + card("Optional Xiaomi apps", [["manager", "Xiaomi PC Manager", "Driver scan and original manager"], ["store", "Xiaomi Store", "Standalone app store"], ["ai", "XiaoAI", "AI/F7 key action"]].map(([kind, label, use]) =>
       row(label, `${use}. ${components?.[kind] ? "Installed path found." : "Component not installed or not found."}`,
         `<div class="companion-control"><p class="small break-path">${UI.escape(components?.[kind] || "No executable found")}</p>${button("Choose executable…", "settings.selectXiaomi", { kind })}</div>`)).join("")+
@@ -327,7 +328,7 @@ function change(method, args = {}) {
   busy = true; pendingWrites++;
   const task = writeTail.then(async () => {
   let result, failed = false;
-  try { result = await Native.call(method, args); if (result?.message && (prefs().developerMode || result.complete === false)) notice(result.message); }
+  try { result = await Native.call(method, args); if (result?.message && (method === "settings.snapshot" || prefs().developerMode || result.complete === false)) notice(result.message); }
   catch (error) { failed = true; notice(error.message, true); }
   finally { if (--pendingWrites === 0) { busy = false; dirty = failed; if (!failed) await refresh(true); } }
   if (result?.token && $("api-token")) { $("api-token").textContent = result.token; dirty = true; }

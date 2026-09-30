@@ -36,6 +36,11 @@ internal static class SetupBootstrap
             {
                 if (process == null) throw new InvalidOperationException("Windows PowerShell could not start.");
                 process.WaitForExit();
+                MessageBox.Show(process.ExitCode == 0
+                    ? "PC Manager is installed and will start in the tray at sign-in. You can open it from Start."
+                    : "PC Manager setup did not finish. Run the extracted Install.ps1 from a PowerShell window to see the error.",
+                    "PC Manager Setup", MessageBoxButtons.OK,
+                    process.ExitCode == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Error);
                 return process.ExitCode;
             }
         }
