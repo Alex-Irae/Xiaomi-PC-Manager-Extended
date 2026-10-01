@@ -33,6 +33,8 @@ internal sealed class SettingsHistory(ManagerApplication app)
             "settings.keyApp" => "Key application",
             "settings.appearance" or "settings.save" => "Appearance",
             "settings.paletteSave" => "Save named palette",
+            "settings.paletteRename" => "Rename named palette",
+            "settings.paletteDelete" => "Delete named palette",
             "settings.profile" or "settings.profileReset" => "Profile picture",
             "performance.set" => "Performance mode",
             "performance.profiles" => "Power-source profiles",
@@ -48,7 +50,7 @@ internal sealed class SettingsHistory(ManagerApplication app)
             _ => Nice(method.Split('.').Last())
         };
     }
-    internal static bool Tracks(string method) => method is "settings.apply" or "settings.reset" or "settings.save" or "settings.appearance" or "settings.paletteSave"
+    internal static bool Tracks(string method) => method is "settings.apply" or "settings.reset" or "settings.save" or "settings.appearance" or "settings.paletteSave" or "settings.paletteRename" or "settings.paletteDelete"
         or "settings.profile" or "settings.profileReset" or "settings.shortcuts" or "settings.customize" or "settings.addApp" or "settings.keyApp"
         or "settings.selectXiaomi" or "performance.set" or "performance.profiles" or "battery.limit" or "battery.travel"
         or "battery.care" or "display.cycle" or "display.refresh" or "display.automatic" or "input.enabled" or "touchpad.vibration" or "touchpad.pressure" or "window.awake";

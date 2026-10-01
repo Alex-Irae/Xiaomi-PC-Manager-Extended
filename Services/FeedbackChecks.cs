@@ -29,7 +29,23 @@ public sealed partial class AdvancedControls
         foreach (string invalid in new[] { "Fn+K", "K", "Ctrl+Ctrl+K", "Ctrl+NeverAKey" })
         { try { GlobalShortcuts.Parse(invalid); throw new InvalidOperationException("Invalid shortcut accepted: " + invalid); } catch (ArgumentException) { } }
         if (!AppearanceOptions.ValidColor("#a1B2c3") || AppearanceOptions.ValidColor("red; background:url(x)") || AppearanceOptions.ValidColor("#123")) throw new InvalidOperationException("Theme color validation failed.");
-        Console.WriteLine("PASS refresh transitions/manual override, shortcut parsing and theme boundary.");
+        var paletteId = "saved:" + new string('a', 32);
+        var preferences = new Preferences { ThemePreset = paletteId, ThemePalettes = [
+            new ThemePalette { Id = paletteId, Name = "Evening", Accent = "#112233", Background = "#222222", Surface = "#333333" },
+            new ThemePalette { Id = "saved:" + new string('b', 32), Name = "Morning" }
+        ] };
+        AppearanceOptions.RenamePaletteInMemory(preferences, paletteId, "Night");
+        if (preferences.ThemePalettes[0].Name != "Night" || preferences.ThemePreset != paletteId)
+            throw new InvalidOperationException("Palette rename changed its identity or selection.");
+        try { AppearanceOptions.RenamePaletteInMemory(preferences, paletteId, "Morning"); throw new InvalidOperationException("Duplicate palette name accepted."); }
+        catch (ArgumentException) { }
+        try { AppearanceOptions.DeletePaletteInMemory(preferences, "blue"); throw new InvalidOperationException("Built-in palette deletion accepted."); }
+        catch (ArgumentException) { }
+        AppearanceOptions.DeletePaletteInMemory(preferences, paletteId);
+        if (preferences.ThemePreset != "custom" || preferences.ThemePalettes.Count != 1
+            || preferences.ThemeAccent != "#112233" || preferences.ThemeBackground != "#222222" || preferences.ThemeSurface != "#333333")
+            throw new InvalidOperationException("Deleting the active palette lost its current colors.");
+        Console.WriteLine("PASS refresh transitions/manual override, shortcut parsing and palette rename/delete boundaries.");
     }
     private sealed class CheckPower : IPowerEvents, IDisplayEvents
     {

@@ -32,15 +32,9 @@ internal static class AppearanceOptions
     internal static object SavePalette(Preferences p, JsonElement args)
     {
         string name = (args.GetProperty("name").GetString() ?? "").Trim();
-        if (name.Length is < 1 or > 40 || name.Any(char.IsControl))
-            throw new ArgumentException("Enter a palette name of 1 to 40 characters.");
-        if (name.Equals("Custom", StringComparison.OrdinalIgnoreCase)
-            || new[] { "Blue", "Red", "Pink", "Green" }.Contains(name, StringComparer.OrdinalIgnoreCase))
-            throw new ArgumentException("Choose a name different from the built-in presets.");
+        ValidatePaletteName(p, name);
         if (p.ThemePreset != "custom") throw new InvalidOperationException("Edit a color before saving a new palette.");
         if (p.ThemePalettes.Count >= 20) throw new InvalidOperationException("The 20-palette limit is reached.");
-        if (p.ThemePalettes.Any(palette => string.Equals(palette.Name, name, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("A palette with that name already exists.");
         if (!ValidColor(p.ThemeAccent) || !ValidColor(p.ThemeBackground) || !ValidColor(p.ThemeSurface))
             throw new ArgumentException("The selected colors are invalid.");
         var palette = new ThemePalette { Id = "saved:" + Guid.NewGuid().ToString("N"), Name = name,
@@ -49,6 +43,52 @@ internal static class AppearanceOptions
         p.ThemePreset = palette.Id;
         p.Save();
         return new { palette.Id, message = "Palette saved." };
+    }
+    internal static object RenamePalette(Preferences p, JsonElement args)
+    {
+        string id = args.GetProperty("id").GetString() ?? "";
+        string name = (args.GetProperty("name").GetString() ?? "").Trim();
+        RenamePaletteInMemory(p, id, name);
+        p.Save();
+        return new { message = "Palette renamed." };
+    }
+    internal static object DeletePalette(Preferences p, JsonElement args)
+    {
+        string id = args.GetProperty("id").GetString() ?? "";
+        DeletePaletteInMemory(p, id);
+        p.Save();
+        return new { message = "Palette deleted. Its colors remain as Custom." };
+    }
+    internal static void RenamePaletteInMemory(Preferences p, string id, string name)
+    {
+        var palette = p.ThemePalettes.FirstOrDefault(item => item.Id == id)
+            ?? throw new ArgumentException("Select a saved palette to rename.");
+        ValidatePaletteName(p, name, id);
+        palette.Name = name;
+    }
+    internal static void DeletePaletteInMemory(Preferences p, string id)
+    {
+        var palette = p.ThemePalettes.FirstOrDefault(item => item.Id == id)
+            ?? throw new ArgumentException("Select a saved palette to delete.");
+        if (p.ThemePreset == id)
+        {
+            // Keep the displayed colors, but stop referring to a deleted palette.
+            p.ThemePreset = "custom";
+            p.ThemeAccent = palette.Accent;
+            p.ThemeBackground = palette.Background;
+            p.ThemeSurface = palette.Surface;
+        }
+        p.ThemePalettes.Remove(palette);
+    }
+    private static void ValidatePaletteName(Preferences p, string name, string? currentId = null)
+    {
+        if (name.Length is < 1 or > 40 || name.Any(char.IsControl))
+            throw new ArgumentException("Enter a palette name of 1 to 40 characters.");
+        if (name.Equals("Custom", StringComparison.OrdinalIgnoreCase)
+            || new[] { "Blue", "Red", "Pink", "Green" }.Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("Choose a name different from the built-in presets.");
+        if (p.ThemePalettes.Any(palette => palette.Id != currentId && string.Equals(palette.Name, name, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("A palette with that name already exists.");
     }
     internal static void PickProfile(Preferences p, IWin32Window owner)
     {

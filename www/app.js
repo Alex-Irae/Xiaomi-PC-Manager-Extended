@@ -204,10 +204,12 @@ function settingsPage() {
   const p = prefs();
   const palette = UI.palette(p);
   const presetOptions = ["blue","red","pink","green","custom"].map(n => [n, friendly(n)]).concat((p.themePalettes || []).map(saved => [saved.id, saved.name]));
+  const selectedPalette = (p.themePalettes || []).find(saved => saved.id === p.themePreset);
   const savePalette = `<span id="palette-save" class="palette-save"${p.themePreset !== "custom" ? " hidden" : ""}><input id="palette-name" class="field-input" type="text" maxlength="40" placeholder="Palette name" aria-label="New palette name">${button("Save preset", "save-palette")}</span>`;
+  const managePalette = `<span id="palette-manage" class="palette-save"${selectedPalette ? "" : " hidden"}><input id="palette-rename" class="field-input" type="text" maxlength="40" value="${UI.escape(selectedPalette?.name || "")}" aria-label="Saved palette name">${button("Rename", "rename-palette")}${button("Delete", "delete-palette")}</span>`;
   return heading("Settings", "Appearance, quick-panel layout and background behavior.") + card("Appearance",
     row("Theme", "Applies immediately to both windows.", select("appearance", [["light","Light"],["dark","Dark"],["system","Follow Windows"]], p.appearance || "light"))+
-    row("Color preset", "Built-in palettes adapt to the light or dark theme. Save edited colors under a new name.", `<span class="palette-picker">${select("theme-preset", presetOptions, p.themePreset || "blue")}${savePalette}</span>`)+
+    row("Color preset", "Built-in palettes adapt to the light or dark theme. Save edited colors under a new name. Select a saved palette to rename or delete it.", `<span class="palette-picker">${select("theme-preset", presetOptions, p.themePreset || "blue")}${savePalette}${managePalette}</span>`)+
     row("Accent", "", `<input id="theme-accent" type="color" value="${palette.accent}" aria-label="Accent">`)+
     row("Background", "", `<input id="theme-background" type="color" value="${palette.background}" aria-label="Background">`)+
     row("Card color", "Choose readable colors with enough text contrast.", `<input id="theme-surface" type="color" value="${palette.surface}" aria-label="Card color">`)+
@@ -345,6 +347,18 @@ function performAction(action, args = {}) {
     if (!name) return notice("Enter a name before saving this palette.", true);
     return change("settings.paletteSave", { name });
   }
+  if (action === "rename-palette") {
+    const id = $("theme-preset").value, name = $("palette-rename").value.trim();
+    if (!name) return notice("Enter a name before renaming this palette.", true);
+    return change("settings.paletteRename", { id, name });
+  }
+  if (action === "delete-palette") {
+    const id = $("theme-preset").value;
+    const palette = (prefs().themePalettes || []).find(saved => saved.id === id);
+    if (!palette) return notice("Select a saved palette to delete.", true);
+    if (!confirm(`Delete the saved palette “${palette.name}”? Its current colors will remain as Custom.`)) return;
+    return change("settings.paletteDelete", { id });
+  }
   if (action === "shortcut-add") { $("shortcut-list").insertAdjacentHTML("beforeend", shortcutRow({ action: "panel" }, shortcutActions())); dirty = true; return; }
   if (action === "save-copilot") {
     const value = $("copilot-action").value;
@@ -444,6 +458,9 @@ document.addEventListener("change", event => {
     }
     if (["theme-accent", "theme-background", "theme-surface"].includes(id)) $("theme-preset").value = "custom";
     $("palette-save").hidden = $("theme-preset").value !== "custom";
+    const selectedPalette = (prefs().themePalettes || []).find(saved => saved.id === $("theme-preset").value);
+    $("palette-manage").hidden = !selectedPalette;
+    $("palette-rename").value = selectedPalette?.name || "";
     UI.applyPreferences({ ...prefs(), themePreset: $("theme-preset").value,
       themeAccent: $("theme-accent").value, themeBackground: $("theme-background").value,
       themeSurface: $("theme-surface").value });

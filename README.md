@@ -30,6 +30,8 @@ Prefer a ZIP? Extract **PCManager-portable.zip** from the same release and run *
 
 Most changes take effect when you select them. The panel remains open after a control is changed, so you can make several adjustments at once. Click outside it to dismiss it. The Home icon opens the larger manager. Keyboard mappings, including the optional Copilot key on supported keyboards, live in **Keyboard**.
 
+In **Settings → Appearance**, changing a color switches to Custom. You can save the three colors as a named palette, then select that palette to rename or delete it. Deleting the selected palette leaves its colors in place as Custom; Undo can restore the saved palette during the current session.
+
 **Prevent sleep** is separate from **Stay awake**: it asks Windows to keep work running while allowing the display to turn off. Windows Modern Standby can still limit long-running work on battery. **Screen off** sends a one-time display-off request; it is not a guarantee that Windows will stay awake. The hardware monitor offers small, medium and large views, with optional CSV logging.
 
 ## Screenshots
@@ -61,7 +63,7 @@ This release was tested on a **Xiaomi Book Pro 14 (TM2424)** running Windows x64
 
 Uninstall through **Windows Installed apps**. The uninstaller asks whether to restore Xiaomi's original popup service. Export a private settings backup first if you want to keep your preferences. Shared .NET and WebView2 runtimes remain installed because other apps may use them.
 
-For build instructions, component details, validation results and known hardware limits, see the [technical README](docs/TECHNICAL.md). See also the [v0.1.5 release notes](RELEASE_NOTES.md).
+For build instructions, component details, validation results and known hardware limits, see the [technical README](docs/TECHNICAL.md). See also the [v0.1.6 release notes](RELEASE_NOTES.md).
 
 ## Credits and license
 

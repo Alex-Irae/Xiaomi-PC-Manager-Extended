@@ -61,6 +61,7 @@ main,#page{overscroll-behavior-x:none;overscroll-behavior-y:auto;touch-action:pa
 .copilot-editor{display:grid;grid-template-columns:minmax(145px,1fr) minmax(195px,1.5fr);align-items:center;gap:12px;margin:18px 0 4px}
 .copilot-editor .field-select{max-width:none;width:100%}.copilot-editor .copilot-chord{width:100%;color:var(--muted)}
 .palette-picker,.palette-save{display:flex;align-items:center;gap:8px;min-width:0}.palette-picker{flex-wrap:wrap;justify-content:flex-end}.palette-picker>.field-select{width:160px}.palette-save[hidden]{display:none}.palette-save .field-input{width:135px}.palette-save .MiButton{padding:9px 12px}
+.palette-picker #palette-manage .field-input{width:155px}
 @media(max-width:650px){.copilot-editor{grid-template-columns:1fr}.copilot-editor .neutral-link{justify-self:start}}
 .system-pick input{accent-color:var(--blue);flex-shrink:0}
 .system-pick span{display:flex;align-items:center;gap:8px;min-width:0}

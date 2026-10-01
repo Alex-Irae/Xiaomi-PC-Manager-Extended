@@ -697,6 +697,10 @@ public sealed class MainWindow : Form
                     Services.AppearanceOptions.Save(app.Preferences, args); app.ApplyAppearance(); result = new { message = "Appearance saved." }; break;
                 case "settings.paletteSave":
                     result = Services.AppearanceOptions.SavePalette(app.Preferences, args); app.ApplyAppearance(); break;
+                case "settings.paletteRename":
+                    result = Services.AppearanceOptions.RenamePalette(app.Preferences, args); break;
+                case "settings.paletteDelete":
+                    result = Services.AppearanceOptions.DeletePalette(app.Preferences, args); app.ApplyAppearance(); break;
                 case "settings.profile":
                     modalOpen = true;
                     try { Services.AppearanceOptions.PickProfile(app.Preferences, this); } finally { modalOpen = false; }

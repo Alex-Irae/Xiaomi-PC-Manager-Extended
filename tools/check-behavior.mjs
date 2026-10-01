@@ -80,6 +80,15 @@ const host = {
       hardware.preferences.themePreset = palette.id;
       data = { id: palette.id };
     }
+    else if (method === 'settings.paletteRename') {
+      hardware.preferences.themePalettes.find(palette => palette.id === args.id).name = args.name;
+      data = { message: 'Palette renamed.' };
+    }
+    else if (method === 'settings.paletteDelete') {
+      hardware.preferences.themePalettes = hardware.preferences.themePalettes.filter(palette => palette.id !== args.id);
+      if (hardware.preferences.themePreset === args.id) hardware.preferences.themePreset = 'custom';
+      data = { message: 'Palette deleted.' };
+    }
     else if (method === 'settings.apply') { settingRows.find(r=>r.key===args.key).value=args.value; data={}; }
     else if (method === 'settings.keyApp') { settingRows.find(r=>r.key===args.slot+'Action').value='app'; keyApps[args.slot]={label:'Fixture app',path:'C:/fixture/app.exe'}; data={message:'Fixture app selected'}; }
     else if (method === 'quick.read' || method === 'state.read') data = { hardware: structuredClone(hardware), telemetry: { batteryWatts: 30, batteryPowerState: 5 } };
@@ -88,6 +97,7 @@ const host = {
   }
 };
 const context = vm.createContext({ console, document, window: { chrome: { webview: host }, addEventListener() {} }, location: { hash: '' },
+  confirm: () => true,
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   getComputedStyle: () => ({ getPropertyValue: key => ({ '--preset-bg': document.documentElement.dataset.theme === 'dark' ? '#171a1f' : '#ffffff', '--preset-surface': document.documentElement.dataset.theme === 'dark' ? '#1e2228' : '#ffffff' })[key] || styleValues[key] || '' }),
   Option: function(label, value) { return { label, value }; },
@@ -207,9 +217,20 @@ element('theme-preset').value = hardware.preferences.themePalettes[0].id;
 listeners.get('change')({target:{id:'theme-preset',value:hardware.preferences.themePalettes[0].id,dataset:{}}});
 await settle('!busy && !reading');
 assert.equal(hardware.preferences.themeBackground, '#171a1f', 'Selecting a saved palette must restore all its colors.');
+assert(element('page').innerHTML.includes('id="palette-rename"') && element('page').innerHTML.includes('data-action="delete-palette"'));
+element('palette-rename').value = 'Late night';
+evaluate('performAction("rename-palette")');
+await settle('!busy && !reading');
+assert.equal(hardware.preferences.themePalettes[0].name, 'Late night', 'Rename must preserve the saved palette.');
+assert.equal(hardware.preferences.themePreset, 'saved:00000000000000000000000000000001');
+evaluate('performAction("delete-palette")');
+await settle('!busy && !reading');
+assert.equal(hardware.preferences.themePalettes.length, 1, 'Delete must remove only the selected palette.');
+assert.equal(hardware.preferences.themePreset, 'custom', 'Removing the active palette must retain its colors as Custom.');
+assert.equal(hardware.preferences.themeBackground, '#171a1f');
 assert(!element('page').innerHTML.includes('Save appearance') && !element('page').innerHTML.includes('Save panel customization'));
 evaluate('change("settings.apply",{key:"OsdPosition",value:"Top"}); change("settings.apply",{key:"OsdPosition",value:"Bottom"});');
 await settle('!busy && !reading');
 assert.equal(settingRows[0].value, 'Bottom');
-console.log('PASS true preset colors, instant custom edits, named palette save and serialized rapid edits.');
+console.log('PASS true preset colors, instant custom edits, named palette save/rename/delete and serialized rapid edits.');
 console.log('Fixture tests passed. No native device behavior or optical timing is inferred.');
