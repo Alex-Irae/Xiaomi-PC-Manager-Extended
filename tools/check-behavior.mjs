@@ -217,7 +217,15 @@ element('theme-preset').value = hardware.preferences.themePalettes[0].id;
 listeners.get('change')({target:{id:'theme-preset',value:hardware.preferences.themePalettes[0].id,dataset:{}}});
 await settle('!busy && !reading');
 assert.equal(hardware.preferences.themeBackground, '#171a1f', 'Selecting a saved palette must restore all its colors.');
-assert(element('page').innerHTML.includes('id="palette-rename"') && element('page').innerHTML.includes('data-action="delete-palette"'));
+assert(element('page').innerHTML.includes('id="palette-rename-editor" class="palette-save" hidden')
+  && element('page').innerHTML.includes('data-action="begin-rename-palette"')
+  && element('page').innerHTML.includes('data-action="delete-palette"'), 'Rename field must start hidden.');
+evaluate('performAction("begin-rename-palette")');
+assert.equal(element('palette-manage').hidden, true);
+assert.equal(element('palette-rename-editor').hidden, false);
+evaluate('performAction("cancel-rename-palette")');
+assert.equal(element('palette-rename-editor').hidden, true);
+evaluate('performAction("begin-rename-palette")');
 element('palette-rename').value = 'Late night';
 evaluate('performAction("rename-palette")');
 await settle('!busy && !reading');
