@@ -1,6 +1,6 @@
 // Purpose: validated theme and profile preferences shared by both windows.
 // Dependencies: resident preferences and System.Drawing. Output: settings and a decoded PNG copy.
-// Command: app/XiaomiAIManager.exe --manager, Settings > Appearance.
+// Command: app/PCManager.exe --manager, Settings > Appearance.
 using System.Drawing.Imaging;
 using System.Text.Json;
 using System.Text.RegularExpressions;

@@ -1,7 +1,7 @@
 // Purpose: expose XiControl settings in the manager's own categorized English UI.
 // Dependencies: the resident's existing AppController, guards and AppConfig; no new packages.
 // Outputs: validated settings/readbacks through settings.read and settings.apply.
-// Command: app/XiaomiAIManager.exe --manager, then select a settings category.
+// Command: app/PCManager.exe --manager, then select a settings category.
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;

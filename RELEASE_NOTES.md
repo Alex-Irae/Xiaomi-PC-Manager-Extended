@@ -1,9 +1,9 @@
-# PC Manager v0.1.3
+# PC Manager v0.1.5
 
-The EXE installer and extracted portable ZIP now disable the original Xiaomi popup before starting PC Manager. Uninstall offers a checkbox to restore Xiaomi's saved service and startup state; leaving it unchecked keeps the original popup disabled.
+The application is now named `PCManager.exe` in the portable ZIP, Windows Task Manager and the installed folder. The default all-users location is `C:\Program Files\Xiaomi Revamp\PC Manager`. Setup also offers a current-user installation and a custom destination. Settings remain per-user in `%LOCALAPPDATA%\XiaomiAIManager` for compatibility with previous releases.
 
-Settings now exports a portable ZIP containing preferences, profile picture, custom icons and artwork. Save it outside app data before uninstalling; Import backup validates it and restarts PC Manager with the restored settings. Keep the backup private because it may contain personal application paths. Confirmed brightness shortcuts also update the open quick-panel slider without waiting for a full device read.
+The installer writes a location-aware receipt, a shared Start menu shortcut for all-users installs, and a Windows uninstall entry. Its uninstaller removes the verified installation and offers the existing checkbox to restore Xiaomi's original popup service. Installing for all users registers background startup for the account running setup; other accounts can enable startup from their own Settings page.
 
-The development resident passed 47 native UI regression checks with no errors and restored its preferences. The backup round trip and archive-path rejection passed, as did frontend fixtures and settings validation. The source ZIP contains no personal settings. The interactive backup import and the uninstall checkbox's Xiaomi-restore branch were not physically exercised in this final cycle; other laptop models remain unverified.
+On the tested Xiaomi Book Pro 14, the renamed build passed settings and backup checks, an isolated portable install, setup payload extraction, and the installed quick-panel command relay. The installed task targeted `PCManager.exe`, one resident was running, and restored settings matched the private pre-migration snapshot. Another laptop and a real reboot/sign-in are not certified by those checks.
 
-Use `PCManager-Setup.exe` for an installer, or extract `PCManager-portable.zip` and run `Install PC Manager.ps1`. Windows .NET 8 Desktop Runtime and WebView2 Runtime are required. `PCManager-source.zip` contains the corresponding source and README.
+Use `PCManager-Setup.exe` for installation, or extract `PCManager-portable.zip` and run `Install PC Manager.ps1`. The x64 .NET 8 Desktop Runtime and Microsoft Edge WebView2 Runtime are required. `PCManager-source.zip` contains the corresponding source and license. Keep personal settings backups private.

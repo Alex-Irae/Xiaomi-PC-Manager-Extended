@@ -1,6 +1,6 @@
 // Purpose: intercept the Windows Copilot chord while the resident is running and route it to a chosen action.
 // Dependencies: Win32 low-level keyboard hook and the existing action router. Outputs: no persistent OS remap.
-// Command: app/XiaomiAIManager.exe --tray; configure the Copilot key on the Keyboard page.
+// Command: app/PCManager.exe --tray; configure the Copilot key on the Keyboard page.
 using System.Runtime.InteropServices;
 
 namespace XiaomiAIManager.Services;

@@ -1,5 +1,5 @@
 /* Purpose: primary white quick panel. Dependencies: bridge.js and the desktop host.
-   Output: confirmed device controls. Launch with XiaomiAIManager.exe --toggle. */
+   Output: confirmed device controls. Launch with PCManager.exe --toggle. */
 "use strict";
 let snapshot = null;
 let awake = false;

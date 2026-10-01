@@ -9,7 +9,7 @@ if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]:
     exit $child.ExitCode
 }
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $projectRoot 'app\XiaomiAIManager.exe'
+$exe = Join-Path $projectRoot 'app\PCManager.exe'
 function CaptureResidentPreferences {
     # Read through the running resident, because tool-process profile file views can differ.
     $known = @(Get-ChildItem (Join-Path $projectRoot 'results') -Directory | Select-Object -ExpandProperty Name)
@@ -24,19 +24,19 @@ function CaptureResidentPreferences {
     $captureSummary = Get-Content -LiteralPath (Join-Path $capture.FullName 'summary.json') -Raw | ConvertFrom-Json
     if ($captureSummary.errors.Count -gt 0 -or !$captureSummary.preferencesRestored -or !$captureSummary.diskPreferencesMatch) { throw 'Resident preferences capture/restoration failed.' }
     $captureConfig = Get-Content -LiteralPath (Join-Path $capture.FullName 'config.json') -Raw | ConvertFrom-Json
-    if ($captureConfig.assemblySha256 -ne (Get-FileHash (Join-Path $projectRoot 'app\XiaomiAIManager.dll')).Hash) { throw 'Capture does not match the daily build.' }
+    if ($captureConfig.assemblySha256 -ne (Get-FileHash (Join-Path $projectRoot 'app\PCManager.dll')).Hash) { throw 'Capture does not match the daily build.' }
     return [pscustomobject]@{ preferences=(Get-Content -LiteralPath (Join-Path $capture.FullName 'baseline.json') -Raw | ConvertFrom-Json).preferences; run=$capture.FullName }
 }
 $captured = CaptureResidentPreferences
 $saved = $captured.preferences
-$before = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" | Where-Object { $_.ExecutablePath -eq $exe })
+$before = @(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" | Where-Object { $_.ExecutablePath -eq $exe })
 if ($before.Count -ne 1) { throw 'Expected exactly one verified daily resident.' }
 $highest = 0
 Get-ChildItem (Join-Path $projectRoot 'results') -Directory | ForEach-Object { if ($_.Name -match '^(\d+)_') { $highest = [Math]::Max($highest,[int]$Matches[1]) } }
 $runRoot = Join-Path $projectRoot ('results\{0:D3}_{1}_resource_protocol' -f ($highest+1),(Get-Date -Format yyyyMMddTHHmmssfff))
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 Start-Transcript -Path (Join-Path $runRoot 'protocol.log') | Out-Null
-@{seed=$null;residentId=$before[0].ProcessId;secondsPerCondition=$Seconds;assemblySha256=(Get-FileHash (Join-Path $projectRoot 'app\XiaomiAIManager.dll')).Hash;savedMonitorView=$saved.XiControl.MonitorView;appearance=$saved.Appearance;preferencesSource=$captured.run;protocol='Resident UI capture with restored preferences, then Hidden, Small, Medium, Large, 3 seconds settling each. No controlled external workload, hardware writes or app-only watt attribution.'} | ConvertTo-Json | Set-Content (Join-Path $runRoot 'config.json') -Encoding UTF8
+@{seed=$null;residentId=$before[0].ProcessId;secondsPerCondition=$Seconds;assemblySha256=(Get-FileHash (Join-Path $projectRoot 'app\PCManager.dll')).Hash;savedMonitorView=$saved.XiControl.MonitorView;appearance=$saved.Appearance;preferencesSource=$captured.run;protocol='Resident UI capture with restored preferences, then Hidden, Small, Medium, Large, 3 seconds settling each. No controlled external workload, hardware writes or app-only watt attribution.'} | ConvertTo-Json | Set-Content (Join-Path $runRoot 'config.json') -Encoding UTF8
 $runs = [Collections.Generic.List[object]]::new()
 $errors = [Collections.Generic.List[string]]::new()
 function Relay([string]$command) { Start-Process -FilePath $exe -ArgumentList $command -WindowStyle Hidden -Wait }

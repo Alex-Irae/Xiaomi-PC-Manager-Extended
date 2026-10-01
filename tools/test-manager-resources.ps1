@@ -9,8 +9,8 @@ if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]:
     exit $child.ExitCode
 }
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root 'app/XiaomiAIManager.exe'
-$resident = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" | Where-Object { $_.ExecutablePath -eq $exe })
+$exe = Join-Path $root 'app/PCManager.exe'
+$resident = @(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" | Where-Object { $_.ExecutablePath -eq $exe })
 if ($resident.Count -ne 1) { throw 'Expected exactly one installed daily resident.' }
 try {
     Start-Process -FilePath $exe -ArgumentList '--manager' -WindowStyle Hidden -Wait

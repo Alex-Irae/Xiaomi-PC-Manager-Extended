@@ -1,6 +1,6 @@
 /* Purpose: explicitly requested runtime validation through the production WebView bridge.
    Dependencies: bridge.js/app.js in the resident. Outputs: native saved report; no network or installs.
-   Command: app/XiaomiAIManager.exe --validate-controls. Native host independently restores the baseline. */
+   Command: app/PCManager.exe --validate-controls. Native host independently restores the baseline. */
 globalThis.runControlValidation = async function (token, phase) {
   const rows = [], trace = [], original = Native.call;
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));

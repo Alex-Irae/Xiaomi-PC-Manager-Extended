@@ -1,6 +1,6 @@
 // Purpose: editable Windows hotkeys, independent of OEM keyboard software.
 // Dependencies: Win32 RegisterHotKey and the resident's existing action router.
-// Outputs: registrations for this process only. Command: app/XiaomiAIManager.exe --tray.
+// Outputs: registrations for this process only. Command: app/PCManager.exe --tray.
 using System.Runtime.InteropServices;
 using System.Text.Json;
 

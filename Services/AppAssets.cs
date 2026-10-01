@@ -1,6 +1,6 @@
 // Purpose: load bundled artwork with optional per-user asset-pack overrides.
 // Dependencies: System.Drawing/Windows; output: validated copies under local app data/assets.
-// Command: app/XiaomiAIManager.exe --manager, Settings > Import asset pack.
+// Command: app/PCManager.exe --manager, Settings > Import asset pack.
 using System.Drawing.Imaging;
 using System.Text.RegularExpressions;
 

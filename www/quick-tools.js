@@ -1,5 +1,5 @@
 /* Purpose: the editable lower tools row. Dependencies: quick.js and host capabilities.
-   Output: buttons only for implemented tools. Launch: XiaomiAIManager.exe --toggle.
+   Output: buttons only for implemented tools. Launch: PCManager.exe --toggle.
    Add { id, label, icon, method, args } after adding the corresponding fixed host capability.
    No paths, arbitrary commands, downloads, or dynamic code are accepted here. */
 "use strict";

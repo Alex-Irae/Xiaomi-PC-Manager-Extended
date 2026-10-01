@@ -1,4 +1,4 @@
-# Purpose: remove this user's PC Manager installation, optionally restoring Xiaomi's OEM service.
+# Purpose: remove a verified PC Manager installation from its chosen directory.
 # Dependencies: Windows PowerShell, installed tools/oem-service.ps1, administrator approval.
 # Outputs: removes the app, startup, API firewall rule, shortcuts, registry entry and app-owned data.
 # Command: powershell -NoProfile -ExecutionPolicy Bypass -File "Uninstall PC Manager.ps1" [-RestoreXiaomi] [-NoPrompt]
@@ -48,11 +48,28 @@ if (!$isAdmin) {
     exit $child.ExitCode
 }
 
-$installRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\PC Manager'
-$expectedRoot = [IO.Path]::GetFullPath($installRoot).TrimEnd('\')
-$scriptRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
-if (!$scriptRoot.Equals($expectedRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'This uninstaller is not running from the expected per-user PC Manager directory.'
+$installRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
+$receiptPath = Join-Path $installRoot 'install-receipt.json'
+if (!(Test-Path -LiteralPath $receiptPath)) { throw 'The PC Manager installation receipt is missing; no files were removed.' }
+$receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+$exe = Join-Path $installRoot 'PCManager.exe'
+if ($receipt.product -ne 'XiaomiAIManager' -or $receipt.scope -notin @('AllUsers','CurrentUser') -or
+    $receipt.ownerSid -ne $currentSid -or
+    !$receipt.executable.Equals($exe, [StringComparison]::OrdinalIgnoreCase) -or
+    $installRoot -eq [IO.Path]::GetPathRoot($installRoot).TrimEnd('\') -or
+    $installRoot.Equals([IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) -or
+    $installRoot.Equals([IO.Path]::GetFullPath(${env:ProgramFiles(x86)}).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The installation receipt does not match this dedicated PC Manager directory.'
+}
+$ancestor = $installRoot
+while ($ancestor) {
+    if ((Test-Path -LiteralPath $ancestor) -and
+        ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to remove a redirected installation path: $ancestor"
+    }
+    $parent = Split-Path -Parent $ancestor
+    if (!$parent -or $parent -eq $ancestor) { break }
+    $ancestor = $parent
 }
 $dataRoot = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'XiaomiAIManager'))
 $apiRoot = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'XiaomiAIManager'))
@@ -61,7 +78,6 @@ foreach ($root in @($installRoot, $dataRoot, $apiRoot)) {
         throw "Refusing to remove a redirected application directory: $root"
     }
 }
-$exe = Join-Path $installRoot 'XiaomiAIManager.exe'
 $taskName = 'XiaomiAIManager_' + $currentSid
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $taskWasEnabled = $task -and $task.State -ne 'Disabled'
@@ -74,7 +90,7 @@ if ($task) {
     Disable-ScheduledTask -TaskName $taskName | Out-Null
 }
 try {
-    $running = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" |
+    $running = @(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" |
         Where-Object { $_.ExecutablePath -eq $exe })
     if ($running.Count -or $taskWasRunning) {
         Start-Process -FilePath $exe -ArgumentList '--quit' -WindowStyle Hidden -Wait
@@ -108,12 +124,15 @@ try {
     if ($legacy -and @($legacy.Actions | Where-Object { $_.Execute -eq $exe }).Count -eq 1) {
         Unregister-ScheduledTask -TaskName 'XiaomiAIManager' -Confirm:$false
     }
-    $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'PC Manager.lnk'
+    $programs = if ($receipt.scope -eq 'AllUsers') { [Environment]::GetFolderPath('CommonPrograms') }
+        else { [Environment]::GetFolderPath('Programs') }
+    $startMenu = Join-Path $programs 'PC Manager.lnk'
     if (Test-Path -LiteralPath $startMenu) {
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenu)
         if ($shortcut.TargetPath -eq $exe) { Remove-Item -LiteralPath $startMenu }
     }
-    $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
+    $uninstallHive = if ($receipt.scope -eq 'AllUsers') { 'HKLM:' } else { 'HKCU:' }
+    $uninstallKey = $uninstallHive + '\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
     if ((Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction SilentlyContinue).InstallLocation -eq $installRoot) {
         Remove-Item -LiteralPath $uninstallKey
     }
@@ -127,6 +146,13 @@ try {
             if (Test-Path -LiteralPath $root) { Start-Sleep -Milliseconds 500 }
         }
         if (Test-Path -LiteralPath $root) { throw "Could not remove application directory: $root" }
+    }
+    $defaultParent = if ($receipt.scope -eq 'AllUsers') { Join-Path $env:ProgramFiles 'Xiaomi Revamp' }
+        else { Join-Path $env:LOCALAPPDATA 'Programs\Xiaomi Revamp' }
+    $parent = [IO.Path]::GetFullPath((Split-Path -Parent $installRoot)).TrimEnd('\')
+    if ($parent.Equals([IO.Path]::GetFullPath($defaultParent).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $parent) -and !(Get-ChildItem -LiteralPath $parent -Force | Select-Object -First 1)) {
+        Remove-Item -LiteralPath $parent
     }
     $completed = $true
     Write-Host ('PASS PC Manager removed; Xiaomi OEM service ' + $(if ($RestoreXiaomi) { 'restored to its saved state.' } else { 'left in its current state.' }))

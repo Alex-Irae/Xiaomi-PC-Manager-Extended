@@ -1,6 +1,6 @@
 // Purpose: bounded, resident-only undo/redo of committed manager settings.
 // Dependencies: existing settings callbacks and confirmed hardware controls; no packages.
-// Outputs: in-memory history only, cleared at restart. Command: app/XiaomiAIManager.exe --manager.
+// Outputs: in-memory history only, cleared at restart. Command: app/PCManager.exe --manager.
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;

@@ -13,7 +13,7 @@ if (!$admin -and $Action -ne 'Status') {
     exit $child.ExitCode
 }
 $scriptParent = Split-Path -Parent $PSScriptRoot
-$deploymentRoot = if (Test-Path -LiteralPath (Join-Path $scriptParent 'XiaomiAIManager.exe')) { $scriptParent } else { Join-Path $scriptParent 'app' }
+$deploymentRoot = if (Test-Path -LiteralPath (Join-Path $scriptParent 'PCManager.exe')) { $scriptParent } else { Join-Path $scriptParent 'app' }
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $dataRoot = Join-Path $env:LOCALAPPDATA ('XiaomiAIManager\service-state\' + $sid)
 $legacyRoot = Join-Path $deploymentRoot ('service-state\' + $sid)
@@ -176,7 +176,7 @@ public static class XiaomiNativeProcessImage {
 $verifiedSddl = @(& $sc sdshow $serviceName) | Where-Object { $_.Trim().StartsWith('D:') } | Select-Object -First 1
 if ($LASTEXITCODE -ne 0 -or !$verifiedSddl -or $verifiedSddl.Trim() -ne $savedSddl) { throw 'Original service permissions did not pass privileged readback.' }
 if ($Action -eq 'Disable') {
-    $residentExe = Join-Path $deploymentRoot 'XiaomiAIManager.exe'
+    $residentExe = Join-Path $deploymentRoot 'PCManager.exe'
     if (Test-Path -LiteralPath $residentExe) {
         $relay = Start-Process -FilePath $residentExe -ArgumentList '--reapply-policies' -WindowStyle Hidden -PassThru
         if (!$relay.WaitForExit(5000)) { Write-Warning 'Service is isolated; resident policy notification is still pending.' }

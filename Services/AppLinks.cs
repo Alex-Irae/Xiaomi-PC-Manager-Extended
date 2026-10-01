@@ -1,7 +1,7 @@
 // Purpose: configure popup placement/icons and user-selected app links without an elevated launch fallback.
 // Dependencies: WinForms file picker, Windows Explorer automation; no additional packages.
 // Outputs: root preferences and PNG icon copies in the app's data/icons directory. Removed links keep their icon files.
-// Command: app/XiaomiAIManager.exe --manager, Settings > Quick panel customization.
+// Command: app/PCManager.exe --manager, Settings > Quick panel customization.
 using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;

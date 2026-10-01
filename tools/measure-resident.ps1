@@ -22,17 +22,17 @@ $logicalCpus = [Environment]::ProcessorCount
 $rows = [Collections.Generic.List[object]]::new()
 $previous = @{}
 $config = [ordered]@{ label=$Label; resident_id=$ResidentId; resident_start=$started; seconds=$Seconds; interval_seconds=3; logical_cpus=$logicalCpus; seed=$null; protocol='Passive manager and descendant WebView2 process sampling. No workload controlled; no hardware writes.'; cpu_definition='100 * CPU-seconds delta / elapsed wall seconds / logical CPU count'; power_definition='Whole CPU package RAPL counter in W, not per-process power or wall consumption'; input='Running Windows process and CIM counters'; version='0.1.0'; baseline_controlled=$false }
-$dailyExe = Join-Path $projectRoot 'app\XiaomiAIManager.exe'
+$dailyExe = Join-Path $projectRoot 'app\PCManager.exe'
 $config.daily_executable = $dailyExe
-$config.daily_assembly_sha256 = if (Test-Path -LiteralPath (Join-Path $projectRoot 'app\XiaomiAIManager.dll')) { (Get-FileHash -LiteralPath (Join-Path $projectRoot 'app\XiaomiAIManager.dll') -Algorithm SHA256).Hash } else { $null }
+$config.daily_assembly_sha256 = if (Test-Path -LiteralPath (Join-Path $projectRoot 'app\PCManager.dll')) { (Get-FileHash -LiteralPath (Join-Path $projectRoot 'app\PCManager.dll') -Algorithm SHA256).Hash } else { $null }
 $target = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ResidentId)
 $config.resident_executable = $target.ExecutablePath
-$config.resident_assembly_sha256 = if ($target.ExecutablePath -and (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $target.ExecutablePath) 'XiaomiAIManager.dll'))) { (Get-FileHash -LiteralPath (Join-Path (Split-Path -Parent $target.ExecutablePath) 'XiaomiAIManager.dll')).Hash } else { $null }
+$config.resident_assembly_sha256 = if ($target.ExecutablePath -and (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $target.ExecutablePath) 'PCManager.dll'))) { (Get-FileHash -LiteralPath (Join-Path (Split-Path -Parent $target.ExecutablePath) 'PCManager.dll')).Hash } else { $null }
 $taskName = 'XiaomiAIManager_' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 if ($task) { Export-ScheduledTask -TaskName $taskName | Set-Content (Join-Path $runRoot 'startup-task.xml') -Encoding Unicode }
 $oemNames = @('XiaomiPcManager.exe','XiaomiPcHost.exe','OSDUtility.exe','OSDLauncher.exe','XiControl.exe')
-@{ time=(Get-Date).ToString('o'); residents=@(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" | Select-Object ProcessId,ExecutablePath); taskState=[string]$task.State; oem=@(Get-CimInstance Win32_Process | Where-Object {$oemNames -contains $_.Name} | Select-Object Name,ProcessId,ExecutablePath); service=Get-CimInstance Win32_Service -Filter "Name='MiDeviceService'" | Select-Object Name,State,StartMode } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $runRoot 'resident-check.json') -Encoding UTF8
+@{ time=(Get-Date).ToString('o'); residents=@(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" | Select-Object ProcessId,ExecutablePath); taskState=[string]$task.State; oem=@(Get-CimInstance Win32_Process | Where-Object {$oemNames -contains $_.Name} | Select-Object Name,ProcessId,ExecutablePath); service=Get-CimInstance Win32_Service -Filter "Name='MiDeviceService'" | Select-Object Name,State,StartMode } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $runRoot 'resident-check.json') -Encoding UTF8
 $config | ConvertTo-Json | Set-Content (Join-Path $runRoot 'config.json') -Encoding UTF8
 $clock = [Diagnostics.Stopwatch]::StartNew()
 while ($clock.Elapsed.TotalSeconds -le $Seconds) {

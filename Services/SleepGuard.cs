@@ -1,7 +1,7 @@
 // Purpose: prevent idle system sleep while allowing the normal display-off timer.
 // Dependencies: Windows power-request API; no packages or OEM process.
 // Outputs: process-scoped system and execution requests while enabled, no display request.
-// Command: app/XiaomiAIManager.exe --tray (controlled from Quick controls > Prevent sleep).
+// Command: app/PCManager.exe --tray (controlled from Quick controls > Prevent sleep).
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 

@@ -19,7 +19,7 @@ const Native = (() => {
     connected: Boolean(host),
     listen: listener => listeners.add(listener),
     call(method, args = {}) {
-      if (!host) return Promise.reject(new Error("Open XiaomiAIManager.exe to use device controls."));
+      if (!host) return Promise.reject(new Error("Open PCManager.exe to use device controls."));
       return new Promise((resolve, reject) => {
         const id = String(++sequence);
         const timeout = setTimeout(() => {

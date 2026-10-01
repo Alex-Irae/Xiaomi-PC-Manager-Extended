@@ -7,12 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>XiaomiAIManager</AssemblyName>
+    <AssemblyName>PCManager</AssemblyName>
     <AssemblyTitle>PC Manager</AssemblyTitle>
     <Product>PC Manager</Product>
     <Description>PC Manager quick controls and hardware settings</Description>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>0.1.3</Version>
+    <Version>0.1.5</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);.test-environment\**;app\**;results\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>

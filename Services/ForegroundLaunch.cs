@@ -1,7 +1,7 @@
 // Purpose: bring a user-requested shortcut target to the foreground after ShellExecute.
 // Dependencies: Windows user32; uses exact executable-image checks for custom app targets.
 // Outputs: no files; does not activate arbitrary processes with a similar display name.
-// Command: app/XiaomiAIManager.exe --tray, then trigger an assigned app or Settings key.
+// Command: app/PCManager.exe --tray, then trigger an assigned app or Settings key.
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 

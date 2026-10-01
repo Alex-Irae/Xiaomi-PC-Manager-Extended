@@ -1,9 +1,9 @@
-# Purpose: install the packaged PC Manager for the current Windows user.
+# Purpose: install PC Manager in a chosen per-user or shared location.
 # Dependencies: Windows PowerShell 5.1, .NET 8 Desktop Runtime, WebView2 Runtime, payload.zip beside this file.
-# Outputs: application files under LocalAppData/Programs/PC Manager, a per-user scheduled task, and an install receipt.
-# Command: powershell -NoProfile -ExecutionPolicy Bypass -File Install.ps1 [-Destination C:\path] [-NoStartup] [-Quiet]
-param([string]$Destination = (Join-Path $env:LOCALAPPDATA 'Programs\PC Manager'), [switch]$NoStartup,
-    [switch]$Quiet, [string]$ExpectedSid = '')
+# Outputs: application files, per-user startup task, shortcut, and scoped uninstall registration.
+# Command: powershell -NoProfile -ExecutionPolicy Bypass -File Install.ps1 [-Scope AllUsers|CurrentUser] [-Destination C:\path] [-NoStartup]
+param([ValidateSet('AllUsers','CurrentUser')][string]$Scope = 'AllUsers', [string]$Destination = '',
+    [switch]$NoStartup, [switch]$Quiet, [string]$ExpectedSid = '')
 $ErrorActionPreference = 'Stop'
 $previousTaskXml = $null
 $taskName = $null
@@ -12,6 +12,7 @@ $oemWasIsolated = $true
 $oemScript = $null
 
 function Show-Result([string]$message, [bool]$failed = $false) {
+    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'install-result.txt') -Value $message -Encoding UTF8
     Write-Host $message
 }
 
@@ -22,16 +23,21 @@ try {
     }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$Destination) {
+        $Destination = if ($Scope -eq 'AllUsers') { Join-Path $env:ProgramFiles 'Xiaomi Revamp\PC Manager' }
+            else { Join-Path $env:LOCALAPPDATA 'Programs\Xiaomi Revamp\PC Manager' }
+    }
+    if ($Destination.Contains('"')) { throw 'Installation path cannot contain quotation marks.' }
     if (!$NoStartup -and !$admin) {
         $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $PSCommandPath + '"'),
-            '-ExpectedSid',$sid,'-Destination',('"' + $Destination + '"'))
+            '-ExpectedSid',$sid,'-Scope',$Scope,'-Destination',('"' + $Destination + '"'))
         $child = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
             -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
         exit $child.ExitCode
     }
     $archive = Join-Path $PSScriptRoot 'payload.zip'
     $portable = !(Test-Path -LiteralPath $archive) -and
-        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'XiaomiAIManager.exe')) -and
+        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'PCManager.exe')) -and
         (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'www\quick.html'))
     if (!(Test-Path -LiteralPath $archive) -and !$portable) {
         throw 'No setup payload or extracted PC Manager application was found beside this installer.'
@@ -56,17 +62,43 @@ try {
         throw 'Microsoft Edge WebView2 Runtime is missing. Install it from https://developer.microsoft.com/microsoft-edge/webview2/, then run this setup again.'
     }
     $destinationFull = [IO.Path]::GetFullPath($Destination)
-    $expectedParent = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs'))
-    if (!$NoStartup -and !$destinationFull.StartsWith($expectedParent + '\', [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Normal installation is limited to your LocalAppData Programs folder. Use -NoStartup for an isolated test destination.'
+    $windowsRoot = [IO.Path]::GetFullPath($env:SystemRoot).TrimEnd('\')
+    $volumeRoot = [IO.Path]::GetPathRoot($destinationFull).TrimEnd('\')
+    if ($destinationFull.TrimEnd('\') -eq $volumeRoot -or
+        $destinationFull.TrimEnd('\').Equals($windowsRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        $destinationFull.StartsWith($windowsRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $destinationFull.TrimEnd('\') -in @([IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\'),
+            [IO.Path]::GetFullPath(${env:ProgramFiles(x86)}).TrimEnd('\'),
+            [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\'))) {
+        throw 'Choose a dedicated application folder, not a drive root or Windows system directory.'
     }
-    $exe = Join-Path $destinationFull 'XiaomiAIManager.exe'
+    $ancestor = $destinationFull
+    while ($ancestor) {
+        if ((Test-Path -LiteralPath $ancestor) -and
+            ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing a redirected installation path: $ancestor"
+        }
+        $parent = Split-Path -Parent $ancestor
+        if (!$parent -or $parent -eq $ancestor) { break }
+        $ancestor = $parent
+    }
+    if (Test-Path -LiteralPath $destinationFull) {
+        $existing = @(Get-ChildItem -LiteralPath $destinationFull -Force)
+        if ($existing.Count) {
+            $existingReceipt = Join-Path $destinationFull 'install-receipt.json'
+            if (!(Test-Path -LiteralPath $existingReceipt) -or
+                (Get-Content -LiteralPath $existingReceipt -Raw | ConvertFrom-Json).product -ne 'XiaomiAIManager') {
+                throw 'The selected folder is not empty and is not an existing PC Manager installation.'
+            }
+        }
+    }
+    $exe = Join-Path $destinationFull 'PCManager.exe'
     if (!$NoStartup) {
         $taskName = 'XiaomiAIManager_' + $sid
         $oldTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         if ($oldTask) {
             $actions = @($oldTask.Actions | Where-Object { $_.Execute })
-            if ($actions.Count -ne 1 -or [IO.Path]::GetFileName($actions[0].Execute.Trim('"')) -ne 'XiaomiAIManager.exe') {
+            if ($actions.Count -ne 1 -or [IO.Path]::GetFileName($actions[0].Execute.Trim('"')) -ne 'PCManager.exe') {
                 throw 'The existing startup task has an unexpected action. Installation stopped without changing it.'
             }
             $previousTaskXml = Export-ScheduledTask -TaskName $taskName
@@ -77,7 +109,7 @@ try {
             $oldExe = $actions[0].Execute.Trim('"')
             Disable-ScheduledTask -TaskName $taskName | Out-Null
             if (Test-Path -LiteralPath $oldExe) {
-                $oldPids = @(Get-Process -Name XiaomiAIManager -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+                $oldPids = @(Get-Process -Name PCManager -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
                 Start-Process -FilePath $oldExe -ArgumentList '--quit' -WindowStyle Hidden -Wait | Out-Null
                 for ($attempt = 0; $attempt -lt 40; $attempt++) {
                     $active = @($oldPids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
@@ -110,8 +142,8 @@ try {
         throw 'The archive did not extract a complete PC Manager application.'
     }
     $receipt = Join-Path $destinationFull 'install-receipt.json'
-    [pscustomobject]@{installedAt=(Get-Date).ToString('o'); executable=$exe;
-        sourceSha256=$(if ($portable) { (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'XiaomiAIManager.dll')).Hash } else { (Get-FileHash -LiteralPath $archive).Hash });
+    [pscustomobject]@{product='XiaomiAIManager';scope=$Scope;ownerSid=$sid;installedAt=(Get-Date).ToString('o'); executable=$exe;
+        sourceSha256=$(if ($portable) { (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'PCManager.dll')).Hash } else { (Get-FileHash -LiteralPath $archive).Hash });
         startupRequested=(!$NoStartup); dataDirectory=(Join-Path $env:LOCALAPPDATA 'XiaomiAIManager')} |
         ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
     if (!$NoStartup) {
@@ -139,7 +171,9 @@ try {
         }
         if ((Get-ScheduledTask -TaskName $taskName).State -ne 'Running') { throw 'PC Manager installed, but its startup task did not start the resident.' }
         $startupConfirmed = $true
-        $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'PC Manager.lnk'
+        $programs = if ($Scope -eq 'AllUsers') { [Environment]::GetFolderPath('CommonPrograms') }
+            else { [Environment]::GetFolderPath('Programs') }
+        $startMenu = Join-Path $programs 'PC Manager.lnk'
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenu)
         $shortcut.TargetPath = $exe
         $shortcut.Arguments = '--manager'
@@ -148,10 +182,11 @@ try {
         $shortcut.Save()
         $uninstaller = Join-Path $destinationFull 'Uninstall PC Manager.ps1'
         if (!(Test-Path -LiteralPath $uninstaller)) { throw 'The packaged uninstaller is missing.' }
-        $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
+        $uninstallHive = if ($Scope -eq 'AllUsers') { 'HKLM:' } else { 'HKCU:' }
+        $uninstallKey = $uninstallHive + '\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
         New-Item -Path $uninstallKey -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'PC Manager' -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.3' -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.5' -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $destinationFull -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name UninstallString `
             -Value ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '"') `

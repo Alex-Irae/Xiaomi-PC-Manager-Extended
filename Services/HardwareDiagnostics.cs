@@ -1,7 +1,7 @@
 // Purpose: verify the resident's actual brightness and charging handlers, restoring saved charging intent.
 // Dependencies: initialized HardwareService, connected charger, configured care limit, administrator access.
 // Outputs: fresh results/NNN_timestamp_hardware/{config.json,summary.json}; never replaces earlier evidence.
-// Command: app/XiaomiAIManager.exe --verify-hardware (full/travel charging tested briefly; no mode changes).
+// Command: app/PCManager.exe --verify-hardware (full/travel charging tested briefly; no mode changes).
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Win32;

@@ -1,6 +1,6 @@
 /* Purpose: categorized English manager using the resident's XiControl backend.
    Dependencies: bridge.js, trusted local WebView. Outputs: confirmed controls and saved preferences.
-   Command: app/XiaomiAIManager.exe --manager. */
+   Command: app/PCManager.exe --manager. */
 "use strict";
 const $ = id => document.getElementById(id);
 const pages = { home: ["This PC", "home"], performance: ["Performance", "speed"], battery: ["Battery", "battery"], display: ["Display", "screen"], touchpad: ["Touch and input", "touchpad"], keyboard: ["Keyboard", "keyboard"], notifications: ["Notifications", "message"], monitor: ["Monitor", "cpu"], tools: ["Toolbox", "tools"], settings: ["Settings", "settings"] };

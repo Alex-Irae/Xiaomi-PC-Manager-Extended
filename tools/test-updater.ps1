@@ -5,7 +5,7 @@
 #requires -Version 7
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$assemblyPath = Join-Path $projectRoot 'app\XiaomiAIManager.dll'
+$assemblyPath = Join-Path $projectRoot 'app\PCManager.dll'
 $resultsRoot = Join-Path $projectRoot 'results'
 $highest = 0
 Get-ChildItem -LiteralPath $resultsRoot -Directory | ForEach-Object { if ($_.Name -match '^(\d+)_') { $highest = [Math]::Max($highest,[int]$Matches[1]) } }

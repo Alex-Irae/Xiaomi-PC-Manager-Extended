@@ -1,7 +1,7 @@
 // Purpose: exercise real WebView requests and restore both device state and live resident preferences.
 // Dependencies: running elevated resident, internal panel and supplied Xiaomi interfaces; no new packages.
 // Outputs: fresh results/NNN_timestamp_controls/{config,baseline,summary}.json, including restoration errors.
-// Command: app/XiaomiAIManager.exe --validate-controls. Briefly changes modes/display/charge/haptics/input.
+// Command: app/PCManager.exe --validate-controls. Briefly changes modes/display/charge/haptics/input.
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
@@ -67,7 +67,7 @@ internal static class RuntimeValidation
         finally { app.Queue.Release(); }
         using var service = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\MiDeviceService");
         Save("config.json", new { seed = (int?)null, phase, time = DateTimeOffset.Now, executable = Environment.ProcessPath,
-            assemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "XiaomiAIManager.dll")))),
+            assemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "PCManager.dll")))),
             windows = Environment.OSVersion.VersionString, window.DeviceDpi, window.ClientSize,
             displays = Screen.AllScreens.Select(s => new { s.DeviceName, s.Bounds, s.WorkingArea, s.Primary }),
             oemServiceStartup = service?.GetValue("Start"), isolationRequested = OemServiceControl.IsolationRequested,

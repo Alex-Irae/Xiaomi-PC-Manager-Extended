@@ -1,6 +1,6 @@
 // Purpose: regression checks for source-transition refresh and editable shortcuts.
 // Dependencies: existing XiControl interfaces, no devices or external packages.
-// Output: assertions through --check-settings. Command: dotnet XiaomiAIManager.dll --check-settings.
+// Output: assertions through --check-settings. Command: dotnet PCManager.dll --check-settings.
 using Microsoft.Win32;
 using XiControl.Config;
 using XiControl.SystemIntegration;

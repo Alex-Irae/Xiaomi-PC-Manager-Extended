@@ -1,7 +1,7 @@
 // Purpose: request normal display idle promptly and restore its original timeout after wake.
 // Dependencies: Windows power policy and display notifications; no OEM process or packages.
 // Outputs: a temporary display-timeout recovery journal in app data.
-// Command: app/XiaomiAIManager.exe --screen-off (recovery runs at resident startup).
+// Command: app/PCManager.exe --screen-off (recovery runs at resident startup).
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;

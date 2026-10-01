@@ -10,15 +10,15 @@ if (!$taskAdmin) {
     exit $taskChild.ExitCode
 }
 $taskProject = Split-Path -Parent $PSScriptRoot
-$taskExe = Join-Path $taskProject 'app/XiaomiAIManager.exe'
-$taskResident = @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" | Where-Object { $_.ExecutablePath -eq $taskExe })
+$taskExe = Join-Path $taskProject 'app/PCManager.exe'
+$taskResident = @(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" | Where-Object { $_.ExecutablePath -eq $taskExe })
 if ($taskResident.Count -ne 1) { throw 'Expected exactly one verified daily resident.' }
 $taskRoot = Join-Path $taskProject 'results'
 $taskHighest = 0
 Get-ChildItem -LiteralPath $taskRoot -Directory | ForEach-Object { if ($_.Name -match '^(\d+)_') { $taskHighest = [Math]::Max($taskHighest,[int]$Matches[1]) } }
 $taskRun = Join-Path $taskRoot ('{0:D3}_{1}_popup_resources' -f ($taskHighest+1),(Get-Date -Format yyyyMMddTHHmmssfff))
 New-Item -ItemType Directory -Path $taskRun | Out-Null
-@{seed=$null;secondsPerCondition=$Seconds;residentId=$taskResident[0].ProcessId;assemblySha256=(Get-FileHash (Join-Path $taskProject 'app/XiaomiAIManager.dll')).Hash;protocol='Hidden then visible quick panel, idle in each state. No repeated animations or hardware writes. All other workloads uncontrolled.';limitations='Whole-machine watts cannot isolate app or animation power. Summed working sets include shared pages. Caller should avoid interacting during each observation.'} | ConvertTo-Json | Set-Content (Join-Path $taskRun 'config.json') -Encoding UTF8
+@{seed=$null;secondsPerCondition=$Seconds;residentId=$taskResident[0].ProcessId;assemblySha256=(Get-FileHash (Join-Path $taskProject 'app/PCManager.dll')).Hash;protocol='Hidden then visible quick panel, idle in each state. No repeated animations or hardware writes. All other workloads uncontrolled.';limitations='Whole-machine watts cannot isolate app or animation power. Summed working sets include shared pages. Caller should avoid interacting during each observation.'} | ConvertTo-Json | Set-Content (Join-Path $taskRun 'config.json') -Encoding UTF8
 $taskRuns = [Collections.Generic.List[object]]::new()
 $taskErrors = [Collections.Generic.List[string]]::new()
 try {

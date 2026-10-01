@@ -2,7 +2,7 @@
 // Dependencies: Windows x64, .NET 8 Desktop, WebView2 Runtime; packages in the csproj.
 // Outputs: %LOCALAPPDATA%\XiaomiAIManager\settings.json and timestamped native logs.
 // Build: dotnet build XiaomiAIManager.csproj -c Release
-// Run/popup key binding: .\bin\Release\net8.0-windows\XiaomiAIManager.exe --toggle
+// Run/popup key binding: .\bin\Release\net8.0-windows\PCManager.exe --toggle
 // Other launch modes: --manager opens the secondary app; --tray starts hidden.
 using System.Diagnostics;
 using System.Runtime.InteropServices;

@@ -1,6 +1,6 @@
 // Purpose: identify a process by its kernel-reported executable without reading its module memory.
 // Dependencies: Windows kernel32; no packages. Output: verified Win32 image path or null.
-// Command: used by XiaomiBridge inside app/XiaomiAIManager.exe --validate-oem.
+// Command: used by XiaomiBridge inside app/PCManager.exe --validate-oem.
 using System.Runtime.InteropServices;
 using System.Text;
 

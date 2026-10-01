@@ -12,12 +12,12 @@ An English, Xiaomi-style quick panel for everyday laptop controls, with a larger
 ## Get started
 
 1. Download **PCManager-Setup.exe** from the [latest release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/latest).
-2. Run it while signed in to a Windows administrator account and approve the Windows permission prompt. Setup checks for the **.NET 8 Desktop Runtime** and **Microsoft Edge WebView2 Runtime** and tells you if either is missing. The installer is not code-signed, so Windows may show an unknown-publisher warning.
+2. Choose **Install for all users** to use the default `C:\Program Files\Xiaomi Revamp\PC Manager` folder, or choose **Install for this user only**. You can browse to a custom folder in either mode. Run setup while signed in to a Windows administrator account and approve the Windows permission prompt. Setup checks for the **.NET 8 Desktop Runtime** and **Microsoft Edge WebView2 Runtime** and tells you if either is missing. The installer is not code-signed, so Windows may show an unknown-publisher warning.
 3. Open **PC Manager** from Start or its tray icon. On supported keyboards, the Xiaomi/Mi key opens Quick controls.
 
-Setup starts PC Manager with Windows and turns off Xiaomi's original popup service so the two panels do not overlap. It leaves Xiaomi's drivers and firmware interfaces installed. You can still open Xiaomi's own manager for its driver scan, and the uninstall dialog can restore the original popup.
+Setup installs `PCManager.exe`, starts it with Windows for the installing account, and turns off Xiaomi's original popup service so the two panels do not overlap. The all-users choice shares the application and Start menu shortcut; each Windows account keeps its own settings and can enable its own startup task. It leaves Xiaomi's drivers and firmware interfaces installed. You can still open Xiaomi's own manager for its driver scan, and the uninstall dialog can restore the original popup.
 
-Prefer a ZIP? Extract **PCManager-portable.zip** from the same release and run **Install PC Manager.ps1** inside it. Simply extracting the ZIP does not register startup or change Xiaomi's popup service.
+Prefer a ZIP? Extract **PCManager-portable.zip** from the same release and run **Install PC Manager.ps1** inside it. Its default destination is also `C:\Program Files\Xiaomi Revamp\PC Manager`; use `-Scope CurrentUser` or `-Destination` to change that. Simply extracting the ZIP does not register startup or change Xiaomi's popup service.
 
 ## What you can do
 
@@ -61,7 +61,7 @@ This release was tested on a **Xiaomi Book Pro 14 (TM2424)** running Windows x64
 
 Uninstall through **Windows Installed apps**. The uninstaller asks whether to restore Xiaomi's original popup service. Export a private settings backup first if you want to keep your preferences. Shared .NET and WebView2 runtimes remain installed because other apps may use them.
 
-For build instructions, component details, validation results and known hardware limits, see the [technical README](docs/TECHNICAL.md). See also the [v0.1.3 release notes](RELEASE_NOTES.md).
+For build instructions, component details, validation results and known hardware limits, see the [technical README](docs/TECHNICAL.md). See also the [v0.1.5 release notes](RELEASE_NOTES.md).
 
 ## Credits and license
 

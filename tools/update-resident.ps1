@@ -29,7 +29,7 @@ public static class ResidentImagePath {
 }
 '@
 function Get-ManagerProcesses {
-    @(Get-CimInstance Win32_Process -Filter "Name='XiaomiAIManager.exe'" | ForEach-Object {
+    @(Get-CimInstance Win32_Process -Filter "Name='PCManager.exe'" | ForEach-Object {
         [pscustomobject]@{ ProcessId = $_.ProcessId;
             ExecutablePath = if ($_.ExecutablePath) { $_.ExecutablePath } else { [ResidentImagePath]::Read([int]$_.ProcessId) } }
     })
@@ -39,9 +39,9 @@ New-Item -ItemType Directory -Path $runRoot | Out-Null
 Start-Transcript -Path (Join-Path $runRoot 'deployment.txt') | Out-Null
 try {
     $dailyRoot = Join-Path $projectRoot 'app'
-    $dailyExe = Join-Path $dailyRoot 'XiaomiAIManager.exe'
+    $dailyExe = Join-Path $dailyRoot 'PCManager.exe'
     $stageRoot = Join-Path $projectRoot '.test-environment\daily-next'
-    if (!(Test-Path -LiteralPath (Join-Path $stageRoot 'XiaomiAIManager.exe'))) { throw 'Checked staging build is missing.' }
+    if (!(Test-Path -LiteralPath (Join-Path $stageRoot 'PCManager.exe'))) { throw 'Checked staging build is missing.' }
     $processes = @(Get-ManagerProcesses)
     if (@($processes | Where-Object { !$_.ExecutablePath }).Count -gt 0) { throw 'Cannot verify the running resident image. Update stopped.' }
     $residents = @($processes | Where-Object { $_.ExecutablePath -eq $dailyExe })
@@ -64,7 +64,7 @@ try {
     Start-Sleep -Seconds 8
     $active = @(Get-ManagerProcesses | Where-Object { $_.ExecutablePath -eq $dailyExe })
     if ($active.Count -ne 1) { throw 'Expected exactly one updated daily resident.' }
-    [pscustomobject]@{time=(Get-Date).ToString('o');pid=$active[0].ProcessId;path=$dailyExe;assemblySha256=(Get-FileHash -LiteralPath (Join-Path $dailyRoot 'XiaomiAIManager.dll')).Hash;task=$taskName} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runRoot 'result.json') -Encoding UTF8
+    [pscustomobject]@{time=(Get-Date).ToString('o');pid=$active[0].ProcessId;path=$dailyExe;assemblySha256=(Get-FileHash -LiteralPath (Join-Path $dailyRoot 'PCManager.dll')).Hash;task=$taskName} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runRoot 'result.json') -Encoding UTF8
     Write-Host 'PASS clean deployment and single resident startup.'
 } catch { $_ | Out-String | Set-Content -LiteralPath (Join-Path $runRoot 'error.txt'); throw }
 finally {

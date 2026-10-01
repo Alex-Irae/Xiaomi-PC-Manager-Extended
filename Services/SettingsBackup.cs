@@ -1,6 +1,6 @@
 // Purpose: export and restore portable user settings, profile pictures, and custom artwork.
 // Dependencies: .NET ZIP/JSON and System.Drawing. Output: a user-selected PCManager-backup-*.zip.
-// Command: app/XiaomiAIManager.exe --manager, Settings > Export backup / Import backup.
+// Command: app/PCManager.exe --manager, Settings > Export backup / Import backup.
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO.Compression;

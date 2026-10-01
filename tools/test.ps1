@@ -31,10 +31,10 @@ if ($Prepare -and !(Test-Path -LiteralPath $sdkPath)) {
     Expand-Archive -LiteralPath $zipPath -DestinationPath (Join-Path $testRoot 'dotnet') -Force
 }
 $appDirectory = Join-Path $testRoot 'artifacts\bin\XiaomiAIManager\release'
-$appPath = Join-Path $appDirectory 'XiaomiAIManager.exe'
-if (!$Build -and (Test-Path -LiteralPath (Join-Path $projectRoot 'app\XiaomiAIManager.exe'))) {
+$appPath = Join-Path $appDirectory 'PCManager.exe'
+if (!$Build -and (Test-Path -LiteralPath (Join-Path $projectRoot 'app\PCManager.exe'))) {
     $appDirectory = Join-Path $projectRoot 'app'
-    $appPath = Join-Path $appDirectory 'XiaomiAIManager.exe'
+    $appPath = Join-Path $appDirectory 'PCManager.exe'
 }
 if ($Build) {
     if (!(Test-Path -LiteralPath $sdkPath)) { throw 'Prepare the local SDK first: tools/test.ps1 -Prepare -Build' }

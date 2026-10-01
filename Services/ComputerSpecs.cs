@@ -1,7 +1,7 @@
 // Purpose: read available Windows hardware inventory once, outside the fast control path.
 // Dependencies: Windows WMI/System.Management already used by the resident. No network.
 // Outputs: cached English specs sections; unavailable fields and failed providers remain explicit.
-// Command: app/XiaomiAIManager.exe --manager, This PC.
+// Command: app/PCManager.exe --manager, This PC.
 using System.Management;
 using System.Globalization;
 

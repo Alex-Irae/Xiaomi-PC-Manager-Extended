@@ -1,12 +1,12 @@
 # Purpose: deploy the built resident, preserve and disable competing UI startup entries, register logon startup.
-# Dependencies: Windows PowerShell, administrator approval, existing app/XiaomiAIManager.exe build.
+# Dependencies: Windows PowerShell, administrator approval, existing app/PCManager.exe build.
 # Outputs: preserved startup records and deployment logs under .test-environment; per-user resident settings/task.
 # Command: powershell -NoProfile -ExecutionPolicy Bypass -File tools/daily.ps1 -Install
 param([switch]$Install)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $dailyRoot = Join-Path $projectRoot 'app'
-$exe = Join-Path $dailyRoot 'XiaomiAIManager.exe'
+$exe = Join-Path $dailyRoot 'PCManager.exe'
 if (!(Test-Path -LiteralPath $exe)) { throw 'Build the app directory first.' }
 if (!$Install) { Start-Process -FilePath $exe -ArgumentList '--toggle' -WorkingDirectory $dailyRoot -WindowStyle Hidden; return }
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -44,9 +44,9 @@ try {
         $root = $_
         @($root) + @(Get-ChildItem -LiteralPath $root -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | ForEach-Object { $_.FullName })
     } | ForEach-Object { $directory = $_; @('XiaomiPcManager.exe','XiaomiPcHost.exe') | ForEach-Object { Join-Path $directory $_ } })
-    foreach ($process in Get-Process XiaomiAIManager,XiaomiPcManager,XiaomiPcHost -ErrorAction SilentlyContinue) {
+    foreach ($process in Get-Process PCManager,XiaomiPcManager,XiaomiPcHost -ErrorAction SilentlyContinue) {
         $image = $process.MainModule.FileName
-        $owned = $process.ProcessName -eq 'XiaomiAIManager' -and $image.StartsWith($projectRoot + '\',[StringComparison]::OrdinalIgnoreCase)
+        $owned = $process.ProcessName -eq 'PCManager' -and $image.StartsWith($projectRoot + '\',[StringComparison]::OrdinalIgnoreCase)
         if (!$owned -and $allowedOem -notcontains $image) { continue }
         if ($owned) {
             $args = @('--quit'); if ($image -ne $exe) { $args = @('--test','--quit') }
@@ -58,7 +58,7 @@ try {
     }
     $dataRoot = Join-Path $env:LOCALAPPDATA 'XiaomiAIManager'
     $staging = Join-Path $projectRoot '.test-environment\daily-next'
-    if (Test-Path -LiteralPath (Join-Path $staging 'XiaomiAIManager.exe')) {
+    if (Test-Path -LiteralPath (Join-Path $staging 'PCManager.exe')) {
         Get-ChildItem -LiteralPath $staging | Copy-Item -Destination $dailyRoot -Recurse -Force
         Write-Host 'Updated the daily app from the staged build.'
     }

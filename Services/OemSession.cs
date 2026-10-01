@@ -1,7 +1,7 @@
 // Purpose: return to daily OEM isolation after an explicitly opened Xiaomi manager closes.
 // Dependencies: existing Windows process, WMI and reversible service controller APIs.
 // Outputs: scoped cleanup logs; no idle process polling outside an explicit OEM session.
-// Command: app/XiaomiAIManager.exe --manager, Toolbox, then open and close Xiaomi Manager.
+// Command: app/PCManager.exe --manager, Toolbox, then open and close Xiaomi Manager.
 using System.Diagnostics;
 using System.Management;
 using System.Runtime.InteropServices;
