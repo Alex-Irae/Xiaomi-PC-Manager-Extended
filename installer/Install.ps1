@@ -186,7 +186,9 @@ try {
         $uninstallKey = $uninstallHive + '\Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiAIManager'
         New-Item -Path $uninstallKey -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'PC Manager' -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value '0.1.5' -PropertyType String -Force | Out-Null
+        $installedVersion = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+        if (!$installedVersion) { throw 'The installed executable does not report a product version.' }
+        New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $installedVersion -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $destinationFull -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $uninstallKey -Name UninstallString `
             -Value ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '"') `
