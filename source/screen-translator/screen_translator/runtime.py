@@ -76,6 +76,10 @@ def compile_model(core, path, device, shape=None, ctc_top1=False, precision=None
         source.add_results([op.result(scores)])
         source.validate_nodes_and_infer_types()
     options = compile_options(device)
+    # FP16 recognition can emit confident spurious Han text on the tested GPU.
+    # Keep both CTC graph shapes in FP32 so English labels are recognized correctly.
+    if ctc_top1 and precision is None:
+        precision = "f32"
     if precision is not None and device.split(".",1)[0]=="GPU":
         options["INFERENCE_PRECISION_HINT"]=precision
     if os.environ.get("SCREEN_TRANSLATOR_DATA"):

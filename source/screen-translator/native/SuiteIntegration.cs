@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
     string SuiteClientHubOwner()=>SuiteClient.HubRunning()?"PC Manager":"Standalone";
     void StartSuite()
     {
-        if (!SuiteEnvironment.Enabled || Program.CheckUi || suite is not null) return;
+        if (!SuiteEnvironment.Enabled || Program.CheckUi&&!Program.CheckShortcuts || suite is not null) return;
         var defaults = SuiteStore.Defaults.Where(item => item.Key.StartsWith("screen-translator.")).ToDictionary(item => item.Key, item => item.Value);
         defaults["screen-translator.toggle"] = config["shortcut"]!.GetValue<string>();
         suite = new("screen-translator", defaults, action => Post(() => _ = SuiteAction(action)), document =>
