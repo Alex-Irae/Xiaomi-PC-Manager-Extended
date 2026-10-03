@@ -28,7 +28,8 @@ internal static class Program
             Root=Path.GetFullPath(Option("--root",Packaged?AppContext.BaseDirectory:Environment.CurrentDirectory));
             if(!File.Exists(Path.Combine(Root,"screen_translator","backend.py")))throw new DirectoryNotFoundException("Pass --root with the screen-translator source folder.");
             Data=Path.GetFullPath(Option("--data-dir",XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteEnvironment.Data("screen-translator"):Packaged?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ScreenTranslator"):Path.Combine(Root,"data")));Directory.CreateDirectory(Data);
-            Python=Option("--python",Packaged?Path.Combine(Root,"runtime","python","python.exe"):"python");NoLoad=args.Contains("--no-load");CheckSuiteUi=args.Contains("--check-suite-ui");CheckUi=args.Contains("--check-ui")||CheckSuiteUi;TrayStart=args.Contains("--tray")||args.Contains("--toggle")||args.Contains("--region");NoStartup=args.Contains("--no-startup")||CheckSuiteUi;
+            string? requestedAction=new[]{"toggle","screen","region","original","filter"}.FirstOrDefault(action=>args.Contains("--"+action));
+            Python=Option("--python",Packaged?Path.Combine(Root,"runtime","python","python.exe"):"python");NoLoad=args.Contains("--no-load");CheckSuiteUi=args.Contains("--check-suite-ui");CheckUi=args.Contains("--check-ui")||CheckSuiteUi;TrayStart=args.Contains("--tray")||requestedAction is not null;NoStartup=args.Contains("--no-startup")||CheckSuiteUi;
             CheckLifecycle=args.Contains("--check-model-lifecycle");CheckUi|=CheckLifecycle;NoStartup|=CheckLifecycle;TrayStart|=CheckLifecycle;
             CheckShortcuts=args.Contains("--check-shortcut-actions");CheckUi|=CheckShortcuts;NoStartup|=CheckShortcuts;TrayStart|=CheckShortcuts;
             CacheData=Path.GetFullPath(Option("--cache-data-dir",Data));
@@ -37,8 +38,8 @@ internal static class Program
             Application.ThreadException+=(_,e)=>{Log(e.Exception.ToString());MessageBox.Show(e.Exception.Message,"Screen Translator error");};
             if(args.Contains("--quit")){DesktopOptions.QuitExisting();return;}
             using var mutex=new Mutex(true,CheckUi?"Local\\ScreenTranslator.CheckUi."+Environment.ProcessId:"Local\\ScreenTranslator" + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? ".Suite." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : ""),out bool first);
-            if(!first){if(args.Contains("--toggle") || args.Contains("--region")) { XiaomiRevamp.Suite.SuiteStore.Send(args.Contains("--region") ? "screen-translator.region" : "screen-translator.toggle"); } else if(!TrayStart) DesktopOptions.WakeExisting();return;}
-            if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled && (args.Contains("--toggle") || args.Contains("--region"))) XiaomiRevamp.Suite.SuiteStore.Send(args.Contains("--region") ? "screen-translator.region" : "screen-translator.toggle");
+            if(!first){if(requestedAction is not null)XiaomiRevamp.Suite.SuiteStore.Send("screen-translator."+requestedAction);else if(!TrayStart)DesktopOptions.WakeExisting();return;}
+            if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled && requestedAction is not null)XiaomiRevamp.Suite.SuiteStore.Send("screen-translator."+requestedAction);
             using var window=new MainWindow();
             if(TrayStart){window.StartHidden();Application.Run();}else Application.Run(window);
             mutex.ReleaseMutex();

@@ -136,7 +136,7 @@ def copy_translator_python(target):
 
 
 def compile_launcher(csc, destination, define, icon):
-    run([csc, '/nologo', '/target:winexe', '/platform:x64', '/reference:System.Windows.Forms.dll',
+    run([csc, '/nologo', '/target:winexe', '/platform:x64', '/reference:System.Windows.Forms.dll', '/reference:Microsoft.CSharp.dll',
          f'/define:{define}', f'/win32icon:{icon}', f'/out:{destination}', SOURCE / 'shared' / 'Launcher.cs'])
 
 

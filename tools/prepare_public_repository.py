@@ -22,8 +22,10 @@ def main():
     parser.add_argument('--repository', type=Path, required=True, help='Existing clean copied PC Manager checkout')
     args = parser.parse_args()
     repository = args.repository.resolve()
-    if not repository.is_relative_to(ROOT) or not (repository / '.git').is_dir():
-        raise ValueError('Use the copied public checkout inside this workspace')
+    if not (repository / '.git').is_dir():
+        raise ValueError('Use the existing public Git checkout')
+    if subprocess.check_output(['git','-C',str(repository),'status','--porcelain']).strip():
+        raise ValueError('Preserve existing repository changes before public staging')
     tracked = subprocess.check_output(['git', '-C', str(repository), 'ls-files', '-z']).decode().split('\0')
     for name in filter(None, tracked):
         path = repository / name
@@ -58,23 +60,7 @@ Git branch refs are flat, so names, shared ancestry and these links express pare
 Original PC Manager 0.1.6 source remains under `archive/pc-manager-0.1.6` and in Git history.
 Personal data, local preservation archives, packaged binaries and models are excluded from repository commits.
 ''', encoding='utf-8')
-    (repository / 'RELEASE_NOTES.md').write_text('''# PC Manager 0.2.0
-
-PC Manager now connects independent Screen Translator and AI Center applications with synchronized shortcuts,
-automatic shortcut swaps, a physical key recorder, direct translation from the quick panel and optional shared appearance.
-Translator inference workers unload after ten seconds idle. File-search exclusions cover each folder and all descendants.
-
-The offline installer supports optional components, chosen application/data paths, a separate AI Center data path,
-current-user/all-users registration and editable Development copies. Each app has an independent uninstaller with
-settings/data and development-removal choices. Development ZIPs and the copied offline toolchain are release assets.
-
-Validation passed native builds, real Windows shortcut ownership/swaps/recorder events/fallback, recursive scan and SQL
-exclusions, isolated install/upgrade/uninstall, Program Files data permissions, development preservation and payload hashes.
-Installed model and UI checks are recorded locally; no personal reports, indexes or history are published.
-
-Known limits: cached translator reload measured about 16 seconds; full-drive search remains Paused near the approximately
-2 GiB protected-snapshot capacity. Reboot/sign-in, general translation quality and physical Copilot delivery are not fully qualified.
-''', encoding='utf-8')
+    shutil.copy2(ROOT / 'RELEASE_NOTES.md', repository / 'RELEASE_NOTES.md')
     forbidden = [str(path.relative_to(repository)) for path in repository.rglob('*') if path.is_file() and '.git' not in path.parts
                  and (path.name in {'history.dpapi', 'config.json', 'index.sqlite3.dpapi'} or path.stat().st_size >= 100_000_000)]
     if forbidden:
