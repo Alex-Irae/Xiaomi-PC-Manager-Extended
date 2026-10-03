@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <title>Xiaomi Search · Library</title>
+  <link rel="stylesheet" href="library.css">
+  <script src="bridge.js" defer></script>
+  <script src="library.js" defer></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="#"><span class="brand-icon">mi</span><div>Xiaomi Search<small>YOUR LOCAL LIBRARY</small></div></a>
+    <nav aria-label="Main navigation">
+      <button class="nav-item active" data-panel="search"><span>⌕</span>Search library</button>
+      <button class="nav-item" data-panel="index"><span>▦</span>Index & folders</button>
+      <button class="nav-item" data-panel="settings"><span>⚙</span>Settings</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="privacy"><span class="status-dot"></span>Everything stays here<small>Local files. Local model. Local index.</small></div><button id="floating" class="shortcut"><span>Open search bar</span><kbd id="shortcut-label">Ctrl + Ctrl</kbd></button></div>
+  </aside>
+  <main>
+    <header><div class="breadcrumb">YOUR COMPUTER <span>/</span> <b id="page-label">Search library</b></div><div class="connection"><span class="status-dot"></span>Offline ready</div></header>
+    <section id="search-panel" class="panel">
+      <div class="page-intro"><div><p class="eyebrow">LESS REMEMBERING. MORE FINDING.</p><h1>Find the thought.<br><span>Get the file.</span></h1><p class="intro-copy">Search for a name, a phrase, or the idea you remember.<br>Your library stays on your computer.</p></div><div class="orbit" aria-hidden="true"><div class="orbit-ring"></div><div class="orbit-core">⌕</div><span class="orbit-file one">PDF</span><span class="orbit-file two">{ }</span><span class="orbit-file three">DOC</span></div></div>
+      <form id="search-form" class="search-input"><span aria-hidden="true">⌕</span><input id="query" type="search" autocomplete="off" maxlength="2048" placeholder="A paper about shared weights across particles..." aria-label="Search files"><button type="submit">Search <span>↵</span></button></form>
+      <div class="search-options"><div class="filters" role="group" aria-label="File types"><button type="button" class="filter active" data-type="">All files</button><button type="button" class="filter" data-type="124">Documents</button><button type="button" class="filter" data-type="64">Text & code</button><button type="button" class="filter" data-type="256">Images</button></div><label class="semantic-switch"><input type="checkbox" id="semantic" checked>Search meaning</label></div>
+      <div class="results-heading"><h2 id="results-title">Your library</h2><span id="search-timing">Choose folders to get started</span></div>
+      <div id="results" role="listbox" aria-label="Search results"><div class="empty"><span class="empty-icon">▱</span><h3>A place for everything you remember</h3><p>Add your documents and project folders in Index & folders.<br>Search will return real files and their matching passages.</p><button class="secondary" id="setup-link">Choose folders</button></div></div>
+      <div class="keyboard-help"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>Ctrl</kbd><kbd>Enter</kbd> Reveal</span><span><kbd>Ctrl</kbd><kbd>C</kbd> Copy path</span></div>
+    </section>
+    <section id="index-panel" class="panel" hidden>
+      <p class="eyebrow">YOUR FILES, ON YOUR TERMS</p><h1>Index & folders</h1><p class="intro-copy">Choose what is searchable. Files are read without being changed.</p>
+      <div class="stats"><div><span id="count-files">0</span><small>FILES DISCOVERED</small></div><div><span id="count-chunks">0</span><small>TEXT PASSAGES</small></div><div><span id="count-vectors">0</span><small>SEMANTIC VECTORS</small></div></div>
+      <div class="card"><div class="card-title"><h2>Index activity</h2><span id="index-state" class="pill">Idle</span></div><p id="index-detail">No indexing requested.</p><div class="actions"><button id="scan">Scan & backfill</button><button class="secondary" id="pause">Pause</button><button class="secondary" id="resume">Resume on AC power</button></div><p class="note">Filename and content search remain available while embedding is paused.</p></div>
+      <div class="card"><div class="card-title"><h2>Selected folders</h2><button class="text-button" id="edit-folders">Edit folders</button></div><div id="roots-list" class="folder-list">No folders selected</div><p class="note">System folders, packages, binaries, model weights, and reparse points are excluded.</p></div>
+      <div class="card"><div class="card-title"><h2>Files needing attention</h2><button class="text-button" id="refresh-errors">Refresh</button></div><div id="errors-list" class="folder-list">No recorded extraction errors.</div></div>
+    </section>
+    <section id="settings-panel" class="panel" hidden>
+      <p class="eyebrow">A QUIET SEARCH ENGINE</p><h1>Make it yours.</h1><p class="intro-copy">Model inference happens when there is work. Resources are released after idle.</p>
+      <form id="settings-form" class="card">
+        <label class="field">Folders to index <span>One absolute path per line. Add only folders you want searched.</span><textarea id="roots" rows="4" placeholder="C:\Users\you\Documents"></textarea></label><button type="button" class="secondary" id="browse">Browse for folder</button>
+        <label class="field">Local embedding model <span>Existing unencrypted OpenVINO Qwen3 embedding directory</span><input id="model-path" type="text"></label>
+        <div class="settings-row"><label class="field">Device preference<select id="devices"><option value="NPU,CPU">NPU → CPU</option><option value="CPU">CPU only</option><option value="GPU,CPU">GPU → CPU</option><option value="NPU,GPU,CPU">NPU → GPU → CPU</option></select></label><label class="field">Search shortcut<select id="shortcut"><option value="double_ctrl">Ctrl + Ctrl</option><option value="alt_space">Alt + Space</option></select></label></div>
+        <label class="field">Background indexing<select id="mode"><option value="battery_saver">Embed on AC power</option><option value="normal">Process changes immediately</option><option value="paused">Paused</option></select></label>
+        <p class="note">Disable Xiaomi's original shortcut in its own settings if both search bars respond. This app does not change installed services.</p>
+        <div class="actions"><button type="submit">Save for next launch</button><button type="button" class="secondary" id="release-model">Release model now</button></div><p class="note" id="config-location"></p>
+      </form>
+      <div class="card model-card"><span class="model-icon">✧</span><div><h2>Local model</h2><p id="model-state">Waiting for desktop connection</p></div></div>
+      <button class="text-button danger" id="quit">Quit resident search</button>
+    </section>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+Qwen3-Embedding-0.6B, OpenVINO INT8 symmetric export from the existing local
+Xiaomi model distribution. Upstream model: Qwen/Qwen3-Embedding-0.6B.
+https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
+Upstream license: Apache License 2.0. See Apache-2.0.txt.
+The installer includes an existing export, not a new training or conversion.
+
+BGE-small-en-v1.5, existing checksum-verified LAION OpenVINO INT8 export.
+https://huggingface.co/laion/bge-small-en-v1.5_openvino_int8
+https://huggingface.co/BAAI/bge-small-en-v1.5
+Export license: Apache 2.0; upstream BGE model license: MIT.
+The pinned revision and file digests accompany the model.
+
+Python's LICENSE.txt, .NET runtime notices, and dependency distribution
+metadata/license files are retained alongside their corresponding runtimes.

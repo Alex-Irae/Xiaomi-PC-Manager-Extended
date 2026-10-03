@@ -1,0 +1,15 @@
+# Windows 11, Python 3.12. Install explicitly; the app never installs packages.
+# Preserved comparison UI and fixture PNG renderer only; native frontend/backend do not load Qt.
+PyQt5~=5.15.11
+Pillow
+numpy
+opencv-python
+# Recent NPU compiler support for Intel Core Ultra Series 3.
+openvino>=2026.1,<2027
+optimum-intel[openvino]
+transformers
+torch
+sentencepiece
+# Decoding/postprocessing helpers only. ONNX Runtime is not an inference backend.
+rapidocr-onnxruntime==1.4.4
+onnx

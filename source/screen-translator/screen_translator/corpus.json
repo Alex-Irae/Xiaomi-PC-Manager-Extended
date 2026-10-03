@@ -1,0 +1,14 @@
+[
+  {"category": "system_ui", "source": "设置", "reference": "Settings"},
+  {"category": "system_ui", "source": "取消", "reference": "Cancel"},
+  {"category": "system_ui", "source": "确认", "reference": "Confirm"},
+  {"category": "windows_ui", "source": "网络和互联网", "reference": "Network and Internet"},
+  {"category": "windows_ui", "source": "检查更新", "reference": "Check for updates"},
+  {"category": "academic_ui", "source": "本科生教学", "reference": "Undergraduate education"},
+  {"category": "academic_ui", "source": "研究生院", "reference": "Graduate school"},
+  {"category": "academic_ui", "source": "清华大学国际合作与交流", "reference": "International cooperation and exchange at Tsinghua University"},
+  {"category": "technical", "source": "请连接 USB 设备，并打开 Wi-Fi。", "reference": "Connect a USB device and turn on Wi-Fi."},
+  {"category": "technical", "source": "在 VS Code 中打开 GitHub 项目。", "reference": "Open the GitHub project in VS Code."},
+  {"category": "mixed", "source": "2026 年 9 月 26 日，内存 32 GB。", "reference": "September 26, 2026, 32 GB of memory."},
+  {"category": "prose", "source": "本研究比较不同硬件上的推理延迟，同时检查识别结果是否保留原始文本的位置。", "reference": "This study compares inference latency across hardware and checks whether recognition preserves the original text positions."}
+]

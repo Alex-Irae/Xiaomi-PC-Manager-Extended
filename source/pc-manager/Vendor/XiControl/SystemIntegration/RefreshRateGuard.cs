@@ -1,0 +1,132 @@
+using Microsoft.Win32;
+using XiControl.Config;
+
+namespace XiControl.SystemIntegration;
+
+/// <summary>
+/// Applies the configured display rate once per AC/battery transition.
+/// Manual display selections survive same-source status events, resume and startup.
+/// After resume, one delayed power check detects missed source transitions. A power
+/// watchdog becomes persistent only after detecting a missed event; it never polls
+/// or enforces the display rate. HoldRefreshRate is retained only for config compatibility.
+/// </summary>
+public sealed class RefreshRateGuard : IDisposable
+{
+    private readonly AppConfig _cfg;
+    private readonly IPowerEvents _power;
+    private readonly IDisplayEvents _display;
+    private readonly IAppTimer _debounce;
+    private readonly IAppTimer _watchdog;
+    private readonly Action _apply;
+    private bool _lastOnline;
+    private bool _persistentWatchdog;
+
+    public RefreshRateGuard(AppConfig cfg, IPowerEvents power, IDisplayEvents display,
+        IAppTimer? debounce = null)
+        : this(cfg, power, display, debounce, null, null) { }
+
+    internal RefreshRateGuard(AppConfig cfg, IPowerEvents power, IDisplayEvents display,
+        IAppTimer? debounce, IAppTimer? watchdog, Action? apply)
+    {
+        _cfg = cfg;
+        _power = power;
+        _display = display;
+        _apply = apply ?? (() => RefreshRate.ApplyForPower(_cfg));
+        _lastOnline = _power.IsOnline;
+
+        _debounce = debounce ?? new UiTimer();
+        _debounce.Interval = 1500;
+        _debounce.Tick += OnDebounce;
+
+        _watchdog = watchdog ?? new UiTimer();
+        _watchdog.Interval = 15_000;
+        _watchdog.Tick += VerifyPower;
+
+        _power.PowerModeChanged += OnPowerModeChanged;
+        _display.DisplaySettingsChanged += OnDisplaySettingsChanged;
+    }
+
+    private void OnPowerModeChanged(PowerModes mode)
+    {
+        if (mode == PowerModes.StatusChange)
+        {
+            if (_lastOnline != _power.IsOnline) { _lastOnline = _power.IsOnline; Arm(); }
+            // Событие пришло штатно — одноразовая post-resume проверка уже не нужна.
+            if (!_persistentWatchdog) _watchdog.Stop();
+        }
+        else if (mode == PowerModes.Resume)
+        {
+            if (_lastOnline != _power.IsOnline) { _lastOnline = _power.IsOnline; Arm(); }
+            // Проверять питание после сна имеет смысл только ради авто-герцовки: с выключенной
+            // опцией Reapply всё равно выйдет сразу, а таймер (и тем более постоянный режим)
+            // остался бы крутиться фоном ради того, чего мы не делаем.
+            if (!_persistentWatchdog && AutoSwitchOn)
+            {
+                // Не обновляем _lastOnline: watchdog должен заметить смену питания во сне,
+                // если Windows не прислала StatusChange после пробуждения.
+                _watchdog.Stop();
+                _watchdog.Start();
+            }
+        }
+    }
+
+    /// <summary>Те же условия, что и у RefreshRate.ApplyForPower: без них применять нечего.</summary>
+    private bool AutoSwitchOn => _cfg.RefreshRateFeature && _cfg.AutoRefreshRate;
+
+    private void VerifyPower()
+    {
+        // Опцию могли выключить уже после того, как watchdog стал постоянным — гасим.
+        if (!AutoSwitchOn) { _persistentWatchdog = false; _watchdog.Stop(); return; }
+
+        bool online = _power.IsOnline;
+        if (online != _lastOnline)
+        {
+            _lastOnline = online;
+            Arm();
+            // Обнаружили реальный пропуск StatusChange: оставляем 15-секундный timer
+            // работать постоянно для этой сессии.
+            _persistentWatchdog = true;
+        }
+        else if (!_persistentWatchdog)
+        {
+            // Обычный случай: одноразовая проверка после resume ничего не нашла.
+            _watchdog.Stop();
+        }
+    }
+
+    // Режим экрана изменился. Зацикливания нет: наше собственное применение тоже поднимет это
+    // событие, но RefreshRate.Apply при совпадении частоты не зовёт ChangeDisplaySettings —
+    // цикл гаснет на первом витке. Не убирать ту проверку в Apply.
+    private void OnDisplaySettingsChanged()
+    {
+        // Display changes are manual overrides. They must survive until the next power transition.
+    }
+
+    // Переподключение монитора шлёт события пачкой — гасим дребезг, как и с питанием
+    private void Arm()
+    {
+        _debounce.Stop();
+        _debounce.Start();
+    }
+
+    private void OnDebounce()
+    {
+        _debounce.Stop();
+        Reapply();
+    }
+
+    /// <summary>Применить частоту по текущему питанию прямо сейчас (старт/включение опции).</summary>
+    public void Reapply() => _apply();
+
+    public void Dispose()
+    {
+        _power.PowerModeChanged -= OnPowerModeChanged;
+        _display.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        _debounce.Tick -= OnDebounce;
+        _watchdog.Tick -= VerifyPower;
+        _debounce.Stop();
+        _watchdog.Stop();
+        _debounce.Dispose();
+        _watchdog.Dispose();
+    }
+}

@@ -1,0 +1,85 @@
+{
+  "revisions": {
+    "ocr": "1cfba2e90fc938db55889873735088de210cc173",
+    "translation": "39d480d52a9ea3065a1f117adfe4dbc55de10e6f"
+  },
+  "languages": [
+    "zh",
+    "en"
+  ],
+  "schema": 1,
+  "assets": [
+    {
+      "url": "https://huggingface.co/SWHL/RapidOCR/resolve/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx",
+      "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+      "size": 4745517,
+      "path": "ocr/det.onnx"
+    },
+    {
+      "url": "https://huggingface.co/SWHL/RapidOCR/resolve/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx",
+      "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+      "size": 10857958,
+      "path": "ocr/rec.onnx"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/config.json",
+      "size": 1389,
+      "git_blob_sha1": "dcd3adfa622976cc4a51c68d115dc9d443d3cbd0",
+      "path": "translation/config.json"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/generation_config.json",
+      "size": 293,
+      "git_blob_sha1": "11cf47bfd6c2e512bf7ab5d58d49ab109732647a",
+      "path": "translation/generation_config.json"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/onnx/decoder_model.onnx",
+      "sha256": "fd368f87cc14f1c12c0ea1fc550f8125cd65b8a4649b628ecc76d05140a83405",
+      "size": 235603669,
+      "path": "translation/decoder_model.onnx"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/onnx/decoder_with_past_model.onnx",
+      "sha256": "4f88148695d27ae34d261134d916d5a4a255141221f2df391927a901a02c2661",
+      "size": 222953160,
+      "path": "translation/decoder_with_past_model.onnx"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/onnx/encoder_model.onnx",
+      "sha256": "555761f7077f36ee3e8349a8892002ae9995fa572381ebc6dbca322f99f6cd72",
+      "size": 209938220,
+      "path": "translation/encoder_model.onnx"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/source.spm",
+      "size": 804677,
+      "git_blob_sha1": "0ab361451ecc57b6223303c7b52e216ff40dc7e6",
+      "path": "translation/source.spm"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/special_tokens_map.json",
+      "size": 74,
+      "git_blob_sha1": "79ae7ea5bf033de69d0055820c57885e3d377bbb",
+      "path": "translation/special_tokens_map.json"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/target.spm",
+      "size": 806530,
+      "git_blob_sha1": "878ae3c6ca6afea7971e3be0b18debdd0d41e3ea",
+      "path": "translation/target.spm"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/tokenizer_config.json",
+      "size": 282,
+      "git_blob_sha1": "9bae5b64c3a664f32d2aac60cbde97fc9e78a5ef",
+      "path": "translation/tokenizer_config.json"
+    },
+    {
+      "url": "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/39d480d52a9ea3065a1f117adfe4dbc55de10e6f/vocab.json",
+      "size": 1747906,
+      "git_blob_sha1": "6deaada491d50c10819b654c1de4ab1d21cfdf88",
+      "path": "translation/vocab.json"
+    }
+  ]
+}

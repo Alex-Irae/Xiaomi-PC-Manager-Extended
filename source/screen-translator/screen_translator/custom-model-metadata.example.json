@@ -1,0 +1,8 @@
+{
+  "models": {
+    "detector": {"name": "PP-OCRv4 mobile detector", "version": "REPLACE_WITH_EXACT_EXPORT_REVISION", "source": "https://github.com/RapidAI/RapidOCR", "license": "Apache-2.0", "precision": "REPLACE_WITH_ACTUAL_PRECISION", "input_format": "BGR float32 NCHW, normalized [-1,1]", "supported_devices": []},
+    "recognizer": {"name": "PP-OCRv4 Chinese recognizer", "version": "REPLACE_WITH_EXACT_EXPORT_REVISION", "source": "https://github.com/RapidAI/RapidOCR", "license": "Apache-2.0", "precision": "REPLACE_WITH_ACTUAL_PRECISION", "input_format": "BGR float32 NCHW, height 48, normalized [-1,1], CTC", "supported_devices": []},
+    "translator": {"name": "Helsinki-NLP/opus-mt-zh-en", "version": "REPLACE_WITH_EXACT_EXPORT_REVISION", "source": "https://huggingface.co/Helsinki-NLP/opus-mt-zh-en", "license": "CC-BY-4.0", "precision": "REPLACE_WITH_ACTUAL_PRECISION", "input_format": "Marian tokenizer IDs and attention mask; OpenVINO seq2seq IR", "supported_devices": []}
+  },
+  "ocr": {"detector_side": 960, "recognition_batch": 8, "recognition_hw": [48, 1024], "detection_threshold": 0.3, "box_threshold": 0.5, "unclip_ratio": 1.6, "recognition_threshold": 0.5}
+}

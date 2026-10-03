@@ -1,20 +1,17 @@
-# Local build, runtime, and test state
-app/
-bin/
-obj/
-.test-environment/
+build/
+install/
+packages/
 results/
-releases/
-snapshots/
-test-data/
-settings.json
-*.log
-*.pending
-
-# Editor and platform files
-.vs/
-.vscode/
-*.user
-*.suo
-Thumbs.db
-Desktop.ini
+toolchain/
+public-repository/
+**/bin/
+**/obj/
+**/__pycache__/
+**/.venv/
+**/data/
+**/model_cache/
+**/*.pyc
+**/config.json
+**/included-folders.txt
+**/excluded-folders.txt
+**/Archives/

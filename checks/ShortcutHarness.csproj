@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><UseAppHost>false</UseAppHost></PropertyGroup>
+  <ItemGroup><Compile Include="..\source\shared\SuiteLink.cs" Link="SuiteLink.cs" /><Compile Include="..\source\shared\ShortcutRecorder.cs" Link="ShortcutRecorder.cs" /></ItemGroup>
+</Project>

@@ -1,70 +1,102 @@
-# PC Manager for Xiaomi laptops
+# Xiaomi Revamp / PC Manager 0.2.0
 
-An English, Xiaomi-style quick panel for everyday laptop controls, with a larger manager when you need more detail. It runs in the Windows tray and uses Xiaomi firmware controls adapted from [XiControl](https://github.com/Oksion/XiControl). This is an independent community project, not an official Xiaomi app.
+Three independent Windows applications connected through PC Manager: **PC Manager**, **Screen Translator** and **AI Center** (semantic file search). PC Manager is required by the combined installer; either optional app can also be installed and run alone. All OCR, translation and search inference runs locally.
 
-<p align="center">
-  <a href="docs/screenshots/quick-controls-illustrative.png"><img src="docs/screenshots/quick-controls-illustrative.png" alt="Quick controls with brightness, performance, battery and display actions" width="300"></a>
-  <a href="docs/screenshots/home-illustrative.png"><img src="docs/screenshots/home-illustrative.png" alt="PC Manager home showing device information and power draw" width="700"></a>
-</p>
+## Installation
 
-*Screenshots use illustrative device names and settings. Available controls depend on the Xiaomi laptop model.*
+Extract the offline installer ZIP. Keep `Xiaomi-Revamp-Setup.exe`, `packages.json`, `Uninstall.exe` and the selected component ZIPs together. Run `Xiaomi-Revamp-Setup.exe`, choose the applications, installation folder, data folder, optional separate AI Center data folder, current-user/all-users scope and startup options. The default application folder is `C:\Program Files\Xiaomi Revamp`.
 
-## Get started
+`AI-Center-Setup.exe` and `Screen-Translator-Setup.exe` install the corresponding app independently. Installation into Program Files, all-users registration and PC Manager hardware/startup controls require administrator approval under the same Windows account. WebView2 Runtime must already be available. Setup installs no system Python/.NET packages and downloads no models.
 
-1. Download **PCManager-Setup.exe** from the [latest release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/latest).
-2. Choose **Install for all users** to use the default `C:\Program Files\Xiaomi Revamp\PC Manager` folder, or choose **Install for this user only**. You can browse to a custom folder in either mode. Run setup while signed in to a Windows administrator account and approve the Windows permission prompt. Setup checks for the **.NET 8 Desktop Runtime** and **Microsoft Edge WebView2 Runtime** and tells you if either is missing. The installer is not code-signed, so Windows may show an unknown-publisher warning.
-3. Open **PC Manager** from Start or its tray icon. On supported keyboards, the Xiaomi/Mi key opens Quick controls.
+The **Keep editable Development folders** option additionally requires `development-toolchain.zip` beside setup. Download that asset separately when the combined installer archive excludes it to meet GitHub's asset-size limit. It contains an existing .NET 8 SDK, offline NuGet cache and WebView2 references. No environment creation or package installation is necessary.
 
-Setup installs `PCManager.exe`, starts it with Windows for the installing account, and turns off Xiaomi's original popup service so the two panels do not overlap. The all-users choice shares the application and Start menu shortcut; each Windows account keeps its own settings and can enable its own startup task. It leaves Xiaomi's drivers and firmware interfaces installed. You can still open Xiaomi's own manager for its driver scan, and the uninstall dialog can restore the original popup.
+```text
+Xiaomi Revamp/
+  PC Manager/
+    PCManager.exe
+    Uninstall.exe
+    runtime/
+    Development/                editable source, Launch.cmd, copied toolchain
+  Screen Translator/
+    ScreenTranslator.exe
+    Uninstall.exe
+    models/, runtime/
+    Development/
+  AI Center/
+    AI Center.exe
+    Uninstall.exe
+    models/, runtime/
+    Development/
+  suite-install.json            internal installation/data-path marker
+  suite-owned.json              verified ownership metadata
+  Uninstall.exe                 optional combined removal
+```
 
-Prefer a ZIP? Extract **PCManager-portable.zip** from the same release and run **Install PC Manager.ps1** inside it. Its default destination is also `C:\Program Files\Xiaomi Revamp\PC Manager`; use `-Scope CurrentUser` or `-Destination` to change that. Simply extracting the ZIP does not register startup or change Xiaomi's popup service.
+An update preserves the previous app folder under `.previous-*` for recovery and preserves existing Development edits. Data paths and user scope are retained during upgrades; choose a fresh installation to change them. Unselected apps remain installed. Recovery folders can consume substantial storage.
 
-## What you can do
+## Data and uninstall
 
-| Quick controls | Larger manager |
-| --- | --- |
-| Change brightness and the performance mode. AC and battery each remember their own mode. | See device specifications, battery information, processor and memory usage, and available power readings. |
-| Use battery care or a one-time travel charge to 100%. | Set the persistent battery target, display behavior, touchpad and touchscreen options, and keyboard actions. |
-| Switch refresh rates, use automatic AC/battery rates, open the hardware monitor, or turn off the display. | Choose light or dark themes, colors, button order, app shortcuts, and notification position. |
-| Open Xiaomi's driver scan or tools when those optional apps are installed. | Search settings, reset a category to defaults, and export or import a settings backup. |
+Default profiles live under `%LOCALAPPDATA%\XiaomiRevamp\install-<root-hash>`. A custom data folder uses `Users/<Windows SID>` to separate accounts. AI Center can use its own chosen folder, including a dedicated subfolder of Program Files. Setup grants write access to data and Development folders, while installed app binaries remain protected by the destination's normal permissions.
 
-Most changes take effect when you select them. The panel remains open after a control is changed, so you can make several adjustments at once. Click outside it to dismiss it. The Home icon opens the larger manager. Keyboard mappings, including the optional Copilot key on supported keyboards, live in **Keyboard**.
+`pc-manager` stores preferences/artwork/logs; `file-search` stores configuration and `data/` with protected indexes, encrypted history and WebView state; `screen-translator` stores settings/artwork/logs/device choices/compiled caches; `shared` stores shortcut bindings, leases and fixed action queues. Models remain in each app's `models` folder. The installer refuses unmarked existing data folders rather than taking ownership of unrelated files. DPAPI-protected search state belongs to its Windows account and is not portable to another account.
 
-In **Settings → Appearance**, changing a color switches to Custom. You can save the three colors as a named palette, then select that palette to rename or delete it. Deleting the selected palette leaves its colors in place as Custom; Undo can restore the saved palette during the current session.
+Use Windows Settings or the selected app's `Uninstall.exe`. Each uninstaller stops its app and removes Windows registration and shortcuts. Independently choose whether to remove **your settings/index/history/cache**, **Development and its local archives**, and **changed/added app files**. Unselected apps remain intact and regain standalone shortcut handling if PC Manager is removed. Other Windows accounts' data is retained. Selecting changed/added app removal also removes verified previous-version recovery folders for those apps. The uninstaller verifies dedicated data ownership and refuses junctions before recursive removal. Existing user folders outside the chosen data paths are not removed.
 
-**Prevent sleep** is separate from **Stay awake**: it asks Windows to keep work running while allowing the display to turn off. Windows Modern Standby can still limit long-running work on battery. **Screen off** sends a one-time display-off request; it is not a guarantee that Windows will stay awake. The hardware monitor offers small, medium and large views, with optional CSV logging.
+## Connected behavior
 
-## Screenshots
+`app settings -> shared local bindings -> one shortcut owner -> fixed action -> independent EXE`
 
-| Appearance and colors | Remap keyboard actions |
-| --- | --- |
-| [![Appearance settings](docs/screenshots/settings-appearance.png)](docs/screenshots/settings-appearance.png) | [![Keyboard action settings](docs/screenshots/keyboard-remapping.png)](docs/screenshots/keyboard-remapping.png) |
+PC Manager owns optional-app shortcuts while running. Each optional app takes over when the hub exits or crashes. Locks, process identity and a heartbeat prevent duplicate registrations; handover takes a few polling intervals rather than occurring atomically across Windows. Edits in an optional app appear in PC Manager and edits in PC Manager update the app's saved setting.
 
-| Custom shortcuts | Optional Xiaomi applications |
-| --- | --- |
-| [![Custom keyboard shortcuts](docs/screenshots/keyboard-shortcuts.png)](docs/screenshots/keyboard-shortcuts.png) | [![Paths to optional Xiaomi applications](docs/screenshots/optional-xiaomi-apps.png)](docs/screenshots/optional-xiaomi-apps.png) |
+Keyboard settings provide a list of valid presets and a final **Press a shortcut** recorder. The recorder handles physical combinations, Copilot and Double Ctrl. Assigning an occupied app shortcut swaps the two keys while preserving their actions, including custom PC Manager actions. Invalid, reserved and externally occupied ordinary Windows chords leave the prior binding intact. Other software's keyboard hooks can still intercept physical keys.
 
-When charging and an automatic refresh-rate change happen together, their on-screen notices appear side by side:
+The translator quick-panel link invokes translation immediately with settings hidden. Cold actions queue until models are ready. A second toggle cancels loading. After dismissal, original view, opening settings or stopping filtering, 10 seconds idle releases all owned inference workers; Stop releases them immediately. Compiled OCR/translation caches stay on disk. Cached reload measured approximately **16 seconds** on the tested laptop, so a 5–10 second reload is not guaranteed.
 
-![Charging and 120 Hz on-screen notices](docs/screenshots/charging-refresh-osd.png)
+Toolbox provides app launch/settings/status and opt-in shared theme/accent. Companion apps started by the elevated PC Manager inherit its Windows privileges; standalone launches use their own launch context. Models, indexes, documents, screenshots and firmware access stay in their app; search queries and captured content are not exchanged through the shared shortcut layer.
 
-The light settings screenshots and dark quick-panel screenshot show different available themes. The screenshots are examples; they do not promise that every control is supported by every Xiaomi laptop.
+## Editable development
 
-## Privacy and permissions
+Edit an app's `Development/source/<component>` and double-click `Development/Launch.cmd`. It rebuilds from source, copies offline runtimes/models on the first launch, stops the installed copy and starts `Development/App`. The normal installed profile is used when the installation remains present. If that profile/installation was removed, development uses its own `_data` folder. The installed binaries are not replaced.
 
-- Everyday hardware controls run locally. There is no account requirement or cloud sync. Preferences, custom images and optional diagnostic logs stay on your PC under `%LOCALAPPDATA%\XiaomiAIManager`.
-- Core controls work without internet. The optional XiControl release notification can contact GitHub when enabled. Opening Xiaomi Store, driver links, or a user-configured webhook/API may use the network. The API and webhooks are off by default.
-- Administrator approval is needed for the background startup task and reversible Xiaomi popup-service isolation. The app does not need XiControl installed as a separate program.
-- **Settings → Export backup** creates a ZIP of your preferences, profile image and custom artwork. Keep it private: it may contain personal file paths. Use **Import backup** to restore it after a reinstall.
+```powershell
+powershell -NoProfile -File '.\Development\Launch.ps1' -BuildOnly
+```
 
-## Compatibility and removal
+Return to the installed version by quitting development and launching the EXE in the parent app folder. Local `Development/Archives` retains original sources and selected personal data during this laptop's migration; these archives are excluded from public GitHub files.
 
-This release was tested on a **Xiaomi Book Pro 14 (TM2424)** running Windows x64. Firmware controls need a compatible Xiaomi interface; some functions, key events and sensor readings vary by model. Xiaomi PC Manager, Xiaomi Store and XiaoAI are optional, but their related shortcuts need those apps to be installed or selected manually. Driver scanning uses Xiaomi's own manager.
+GitHub branches share one history: `manager/main` is the parent integration branch, `manager/screen-translator` and `manager/ai-center` identify the child components. Git branches are flat refs; branch names and documentation express this relationship. The repository's default `main` contains the complete integration.
 
-Uninstall through **Windows Installed apps**. The uninstaller asks whether to restore Xiaomi's original popup service. Export a private settings backup first if you want to keep your preferences. Shared .NET and WebView2 runtimes remain installed because other apps may use them.
+## Source, environment and build
 
-For build instructions, component details, validation results and known hardware limits, see the [technical README](docs/TECHNICAL.md). See also the [v0.1.6 release notes](RELEASE_NOTES.md).
+`source/pc-manager`, `source/screen-translator` and `source/file-search` contain copied app sources. `source/shared` contains the shortcut layer, recorder, launcher and installer. `tools/build_suite.py` compiles/stages/seals releases; `tools/launch_development.ps1` supports editable launches. `checks` holds focused validation. Generated outputs go to `build`, `install`, numbered `packages` and numbered `results`.
 
-## Credits and license
+Supported and tested: Windows 11 x64, .NET Desktop 8, Python 3.12, WebView2 and .NET Framework 4.8 for setup/wrappers. The copied runtime payloads supply .NET/Python. Build requires an existing .NET 8 SDK, offline NuGet cache, WebView2 reference folder, existing AI Center payload and translator `zh-en` models. Search/translator requirements remain separate because their OpenVINO integrations differ. SDK/environment installation and driver changes are user-managed.
 
-Project direction and physical laptop testing: **Irae**. Substantial implementation, integration and validation assistance: **GPT-6 Sol (OpenAI Codex)**. Firmware/backend and monitor code reuse **XiControl 0.16.0**, with its authorship and GPLv3 terms retained. Xiaomi names and supplied artwork remain associated with Xiaomi. Source and redistribution terms are in [LICENSE](LICENSE).
+PC Manager requires supported Xiaomi MIFS/HID interfaces for firmware controls. The tested laptop is a Xiaomi Book Pro 14 TM2424. Search uses OpenVINO embeddings; translator uses OpenVINO OCR/translation. Intel GPU/NPU acceleration is optional and needs compatible drivers. The measured translator backend selected NPU detection, GPU recognition and CPU translation. A complete CPU-only desktop workflow, ARM64 and other operating systems have not been qualified. Model loading can briefly commit considerably more memory than its final working set.
+
+```powershell
+python tools/build_suite.py `
+  --sdk 'C:\path\dotnet-sdk\dotnet.exe' `
+  --package-cache 'C:\path\offline-nuget-cache' `
+  --webview 'C:\path\webview-references' `
+  --search-install 'C:\path\AI Center' `
+  --translator-models 'C:\path\zh-en-models'
+```
+
+Run with an existing Python 3.12 interpreter containing translator dependencies. `--native-only` reuses staged private dependencies; add `--seal` to create a new numbered release. WebView references must include Core/WinForms DLLs and `runtimes/win-x64/native/WebView2Loader.dll`. Public source/development ZIPs exclude private settings, indexes, history, caches and generated builds. GPLv3/XiControl attribution applies to reused PC Manager code; optional-app licenses/notices remain included.
+
+## Validation and known limits
+
+The bundled translator is Chinese-to-English. Confident Chinese-only OCR units are eligible; English, other scripts, mixed-language boxes and uncertain OCR stay unchanged. This also rejects stale cached translations for ineligible text. Generated desktop labels at 18/26 pixels on light/dark backgrounds produced zero replacements, while a Chinese control remained recognized. Mixed-language labels may be missed deliberately; script checks cannot guarantee rejection of every confident OCR mistake or distinguish Han-only Japanese from Chinese. Reverse translation requires another compatible model and is not included.
+
+With explicit authorization:
+
+```powershell
+python checks/check_suite.py --sdk 'C:\path\sdk\dotnet.exe' --dotnet 'install\PC Manager\runtime\dotnet\dotnet.exe'
+python checks/check_deployment.py --release 'packages\NNN_UTC'
+powershell -NoProfile -File checks\check_setup.ps1 -RunDirectory 'results\NNN_UTC_seed0'
+```
+
+The first check exercises real Windows hotkey ownership, automatic swaps, recorder events, crash/exit/restart fallback and recursive exclusions in scanning and SQL retrieval. Deployment checks verify every archived/staged file and private imports. Installer checks exercise real isolated install/upgrade/uninstall, all-users registration, Program Files data permissions and preservation of development edits. Native app checks exercise WebView controls, queued translation actions and real worker unload without capturing desktop pixels.
+
+The retained full-drive search index is near the approximately **2 GiB protected-snapshot limit** and is saved as Paused. Existing results remain available. A full C-drive rebuild did not pass; supporting larger snapshots needs a storage-format change outside this release. Excluded folders are rejected themselves and recursively, including stale indexed results, while sibling-prefix folders remain searchable. Reboot/sign-in and physical Copilot/Double-Ctrl delivery have not been fully qualified. Synthetic OCR fixtures establish pipeline behavior, not general translation quality.

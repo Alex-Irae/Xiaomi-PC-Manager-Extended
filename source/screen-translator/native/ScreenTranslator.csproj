@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseAppHost>false</UseAppHost>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <Version>0.2.0</Version>
+    <WebViewReferenceDir Condition="'$(WebViewReferenceDir)' == ''">$(WEBVIEW2_REFERENCE_DIR)</WebViewReferenceDir>
+  </PropertyGroup>
+  <!-- User-supplied local SDK assemblies only. No package installation or NuGet feed. -->
+  <ItemGroup>
+    <Reference Include="Microsoft.Web.WebView2.Core"><HintPath>$(WebViewReferenceDir)\Microsoft.Web.WebView2.Core.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Microsoft.Web.WebView2.WinForms"><HintPath>$(WebViewReferenceDir)\Microsoft.Web.WebView2.WinForms.dll</HintPath><Private>true</Private></Reference>
+    <Content Include="$(WebViewReferenceDir)\runtimes\win-x64\native\WebView2Loader.dll" Link="WebView2Loader.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WebViewReferenceDir)\runtimes\win-x64\native\WebView2Loader.dll')" />
+    <Content Include="$(WebViewReferenceDir)\WebView2Loader.dll" Link="WebView2Loader.dll" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('$(WebViewReferenceDir)\runtimes\win-x64\native\WebView2Loader.dll')" />
+  </ItemGroup>
+  <ItemGroup><Compile Include="..\..\shared\SuiteLink.cs" Link="SuiteLink.cs" /><Compile Include="..\..\shared\ShortcutRecorder.cs" Link="ShortcutRecorder.cs" /></ItemGroup>
+</Project>
