@@ -60,6 +60,30 @@ def automatic_pipeline(root, batch_size=8, incremental=True, progress=print):
             pass
     rows = []
 
+    if cached:
+        # The saved choice is valid only for these exact model hashes, drivers,
+        # runtime, graph policy and batch size. Reuse it without benchmarking again.
+        progress("Restoring validated hardware choice and SSD model cache")
+        try:
+            detector_device, recognizer_device, translator_device = cached
+            ocr = OCR(root, detector_device, recognizer_device, config, progress)
+            ocr.warmup()
+            translator = Translator(root, translator_device, manifest, progress)
+            warm = translator.batch(["请选择要打开的文件。"])
+            if len(warm) != 1 or not warm[0].strip():
+                raise RuntimeError("Translation warm-up returned an incomplete result")
+            pipeline = Pipeline(ocr, translator, batch_size=batch_size, incremental=incremental,
+                                identity=signature["manifest"]+AUTO_POLICY)
+            progress("Cached models ready: " + " / ".join(cached))
+            return pipeline, {"ocr": ocr.info, "translator": translator.info, "models": manifest["models"],
+                              "automatic": {"devices": cached, "cached": True, "stages": saved["stages"]},
+                              "preprocessing": config}
+        except Exception as exc:
+            progress(f"Cached hardware unavailable; validating devices again: {type(exc).__name__}: {exc}")
+            ocr = translator = None
+            gc.collect()
+            cached = None
+
     def choose(stage, build, infer, preferred=None):
         devices = [preferred] if preferred else candidates
         winner, best, record = None, float("inf"), None

@@ -2,7 +2,7 @@
 # Dependencies: administrator PowerShell 5.1 and Windows .NET Framework compiler, no installed app launch.
 # Outputs: configuration, operation logs and summary.json in a new RunDirectory.
 # Command: powershell -NoProfile -File checks\check_setup.ps1 -RunDirectory results\NNN_UTC_seed0
-param([Parameter(Mandatory=$true)][string]$RunDirectory)
+param([Parameter(Mandatory=$true)][string]$RunDirectory,[switch]$ContentStore)
 $ErrorActionPreference='Stop'
 $run=[IO.Path]::GetFullPath($RunDirectory)
 if(Test-Path -LiteralPath $run){throw 'Use a new result directory.'}
@@ -43,7 +43,20 @@ foreach($component in @('file-search','screen-translator')){
 }
 $longEntry='sdk/'+(('long-directory/'*12))+'a-long-compiler-task-resource-file.txt'
 Zip (Join-Path $run 'development-toolchain.zip') @{'sdk/README.txt'='fixture toolchain';$longEntry='long-path fixture'}
-@{schema=1;version='0.2.0';components=$components;developmentToolchain=@{sha256=(Hash (Join-Path $run 'development-toolchain.zip'))}}|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $run 'packages.json')
+$package=@{schema=1;version='0.2.0';components=$components;developmentToolchain=@{sha256=(Hash (Join-Path $run 'development-toolchain.zip'))}}
+if($ContentStore){
+    $blobs=@{}; $toolFiles=@{}
+    foreach($component in $components.Values){
+        $archive=[IO.Compression.ZipFile]::OpenRead((Join-Path $run $component.payload))
+        try{foreach($entry in $archive.Entries){$reader=New-Object IO.StreamReader($entry.Open());try{$blobs[$component.files[$entry.FullName]]=$reader.ReadToEnd()}finally{$reader.Dispose()}}}finally{$archive.Dispose()}
+    }
+    $archive=[IO.Compression.ZipFile]::OpenRead((Join-Path $run 'development-toolchain.zip'))
+    try{foreach($entry in $archive.Entries){$reader=New-Object IO.StreamReader($entry.Open());try{$text=$reader.ReadToEnd()}finally{$reader.Dispose()};$digest=([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))).Replace('-','').ToLowerInvariant();$blobs[$digest]=$text;$toolFiles[$entry.FullName]=$digest}}finally{$archive.Dispose()}
+    Zip (Join-Path $run 'payload.zip') $blobs
+    $package.contentStore=@{payload='payload.zip';sha256=(Hash (Join-Path $run 'payload.zip'))}
+    $package.developmentToolchain.files=$toolFiles
+}
+$package|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $run 'packages.json')
 try{
     Apply @('--apply','--target',$root,'--components','file-search,screen-translator','--data-root',$data,'--search-data',$protectedData,'--all-users','--development')
     $marker=Get-Content -LiteralPath (Join-Path $root 'suite-install.json') -Raw|ConvertFrom-Json

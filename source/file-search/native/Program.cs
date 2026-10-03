@@ -23,6 +23,7 @@ internal static class Program
     internal static bool Exiting;
     internal static bool InspectUi;
     internal static bool Development;
+    internal static bool CheckLaunchRouting;
     internal static string InstanceTitle => "Local Search · AI Center" + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
     internal static void Log(string value) => File.AppendAllText(Path.Combine(Data,"native.log"), $"{DateTimeOffset.Now:O} {value}\n");
 
@@ -103,13 +104,15 @@ internal static class Program
                 }
                 Application.Idle+=RunCheck;Application.Run(check);return;
             }
-            bool center = !args.Contains("--search") || args.Contains("--center");
+            // Background activation must never request the settings window.
+            CheckLaunchRouting=args.Contains("--check-launch-routing");
+            bool center = args.Contains("--center") || (!args.Contains("--search") && !args.Contains("--tray"));
             using var mutex = new Mutex(true,"Local\\XiaomiSemanticSearchNative" + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? ".Suite." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : ""),out bool first);
             if (!first)
             {
                 var handle = FindWindow(null,InstanceTitle);
                 Log($"Existing instance command: search={!center}, quit={args.Contains("--quit")}, target={handle}");
-                if (handle!=IntPtr.Zero)
+                if (handle!=IntPtr.Zero && (center || args.Contains("--search") || args.Contains("--quit")))
                 {
                     // A foreground launcher grants its resident instance activation rights.
                     NativeInput.GetWindowThreadProcessId(handle,out uint process);NativeInput.AllowSetForegroundWindow(process);
@@ -118,6 +121,18 @@ internal static class Program
                 return;
             }
             if(args.Contains("--quit"))return;
+            if(CheckLaunchRouting)
+            {
+                using var check=new CenterContext(false,true,true,headless:true,startHidden:true);
+                async void RunRouting(object? sender,EventArgs e)
+                {
+                    Application.Idle-=RunRouting;
+                    try{var report=await check.CheckLaunchCommands();File.WriteAllText(Path.Combine(Data,"launch-routing-check.json"),JsonSerializer.Serialize(report,new JsonSerializerOptions{WriteIndented=true}));}
+                    catch(Exception error){Log(error.ToString());Environment.ExitCode=1;}
+                    finally{check.Quit();}
+                }
+                Application.Idle+=RunRouting;Application.Run(check);mutex.ReleaseMutex();return;
+            }
             using var app = new CenterContext(center,args.Contains("--paused"),args.Contains("--no-shortcut"),startHidden:args.Contains("--tray"));
             Application.Run(app);
             mutex.ReleaseMutex();
@@ -636,7 +651,7 @@ internal class WebWindow : Form
     }
     async Task Initialize()
     {
-        if(loading || Ready||!Visible||WindowState==FormWindowState.Minimized)return;loading=true;var web=Web;
+        if(Program.CheckLaunchRouting||loading || Ready||!Visible||WindowState==FormWindowState.Minimized)return;loading=true;var web=Web;
         try
         {
             var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"native-webview"));

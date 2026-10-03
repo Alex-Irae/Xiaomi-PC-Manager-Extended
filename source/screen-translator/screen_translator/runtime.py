@@ -123,6 +123,34 @@ class Translator:
         strict_offline()
         progress("Importing offline translation engine")
         import openvino as ov
+        from .models import validate, digest
+        manifest = manifest if manifest is not None else validate(root)
+        path = Path(root) / "translation"
+        import json
+        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
+        self.native = None
+        if manifest["models"]["translator"].get("format") == "onnx" and config.get("model_type") == "marian":
+            from .marian import Marian
+            core = ov.Core()
+            requested = device
+            device = resolve_device(core, device)
+            options = compile_options(device)
+            if precision is not None and device.split(".", 1)[0] == "GPU":
+                options["INFERENCE_PRECISION_HINT"] = precision
+            if os.environ.get("SCREEN_TRANSLATOR_DATA"):
+                cache = Path(os.environ["SCREEN_TRANSLATOR_DATA"]) / "model_cache" / digest(Path(root) / "manifest.json") / device
+                cache.mkdir(parents=True, exist_ok=True)
+                options["CACHE_DIR"] = str(cache)
+            self.native = Marian(path, core, device, options, progress)
+            self.tokenizer = self.native.tokenizer
+            components = self.native.components
+            self.info = {"requested": requested, "compiled_device": device,
+                         "execution_devices": {name: info["execution_devices"] for name, info in components.items()},
+                         "components": components, "compile_options": options,
+                         "device_name": core.get_property(device, "FULL_DEVICE_NAME"),
+                         "load_compile_ms": self.native.load_compile_ms, "generation_backend": "OpenVINO / NumPy"}
+            self.last_tokens = 0
+            return
         from transformers import AutoTokenizer
         from optimum.intel.openvino import OVModelForSeq2SeqLM
         requested = device
@@ -175,6 +203,10 @@ class Translator:
         return [UI_LABELS[text] if text in UI_LABELS else next(generated) for text in texts]
 
     def _generate(self, texts):
+        if self.native is not None:
+            outputs = self.native.generate(texts)
+            self.last_tokens = self.native.last_tokens
+            return outputs
         import torch
         if not texts:
             return []

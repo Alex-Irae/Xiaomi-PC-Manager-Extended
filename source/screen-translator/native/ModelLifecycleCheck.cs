@@ -22,7 +22,9 @@ internal sealed partial class MainWindow
         }
         try
         {
-            Hide();Require(backend is null&&!ready,"Startup loaded models without an action.");Step("startup");
+            Hide();Require(backend is null&&!ready,"Startup loaded models without an action.");
+            Require(web.CoreWebView2 is null,"Hidden startup created the controls browser.");
+            evidence["hiddenStartupWithoutBrowser"]=true;Step("startup");
             await Hotkey(6);Require(pendingAction==6&&busy&&!ControlsOpen,"Cold toggle did not queue or opened settings.");
             await Hotkey(6);Require(backend is null&&!busy&&pendingAction==0,"Second toggle did not cancel loading.");
             evidence["coldToggleQueuedWithoutGui"]=true;evidence["loadingToggleCancels"]=true;
@@ -30,6 +32,13 @@ internal sealed partial class MainWindow
             {
                 var clock=Stopwatch.StartNew();await Hotkey(2);
                 Require(pendingAction==2&&busy&&!ControlsOpen,"Cold region action did not queue without controls.");Step("loading-"+pass);
+                if(pass==0)
+                {
+                    var owned=backend;long generation=epoch;
+                    FrontendFailed(new System.Runtime.InteropServices.COMException("Synthetic controls navigation abort",unchecked((int)0x80004004)));
+                    Require(backend==owned&&busy&&!ready&&pendingAction==2&&epoch==generation,"Controls failure interrupted loading.");
+                    evidence["controlsAbortDoesNotStopInference"]=true;
+                }
                 await Wait(()=>selecting&&Application.OpenForms.OfType<RegionSelector>().Any(),180,"queued region action resumes after models become ready");
                 loads.Add(clock.Elapsed.TotalSeconds);Step("loaded-"+pass);
                 // Cancel the real selector before it can return a rectangle or capture any pixels.

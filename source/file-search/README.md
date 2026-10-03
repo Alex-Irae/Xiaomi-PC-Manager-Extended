@@ -1,5 +1,7 @@
 # Xiaomi Semantic Search and AI Center
 
+Current connected build: Double Ctrl and `file-search.open` show compact search only. Starting an existing instance with `--tray` leaves both window states unchanged. Launch the EXE without arguments or use PC Manager's settings invocation (`--center`) to open the main AI Center window. `--search` explicitly opens compact search. The native launch-routing check exercises real resident-instance messages without loading the browser or inference models.
+
 This component is part of Xiaomi Revamp 0.2.0. Its released source, shared shortcuts, data paths and installer are documented in the [parent PC Manager README](../../README.md). Use the app's `Development/Launch.cmd` to rebuild and run edits with copied offline dependencies. The remaining notes document the standalone baseline and its original developer workflow.
 
 This copy is the suite edition. The [suite README](../../README.md) provides the current installation/build commands and isolated data paths. Launch `install/AI Center/AI Center.exe --search` or `--center`. The shortcut is synchronized with PC Manager, which owns it while running; without the hub, the app handles it itself. Excluded folders include the folder itself and every descendant recursively, during scanning and retrieval. Optional theme/accent following and Open PC Manager are available in settings. Documentation below retains the component's historical standalone paths and release notes; use the suite installer and build tool for this edition.
