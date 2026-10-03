@@ -84,6 +84,14 @@ internal static class ShortcutHarness
             }
             Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(snapshot)!, "*.pending").Any(), "Atomic writes leaked a temporary file.");
             Console.WriteLine("PASS: atomic replacement preserves reader snapshots and retries brief Windows file contention");
+            Assert(RegisterHotKey(IntPtr.Zero,29993,0x4007,(uint)Keys.F17),"Could not reserve the conflict fixture.");
+            using(var partial=new SuiteKeyboard(new(){["good"]="Ctrl+Alt+Shift+F16",["blocked"]="Ctrl+Alt+Shift+F17"},_=>{}))
+            {
+                Assert(partial.Error is not null && partial.Registered("good")&&!partial.Registered("blocked")&&!Available("Ctrl+Alt+Shift+F16"),"One external conflict disabled unrelated shortcuts.");
+                UnregisterHotKey(IntPtr.Zero,29993);
+                Wait(()=>{partial.RetryBlocked();return partial.Error is null&&!Available("Ctrl+Alt+Shift+F17");},"a released external shortcut conflict recovers without losing the working keys");
+            }
+            Console.WriteLine("PASS: partial registration reports conflicts and preserves other shortcut actions");
             SuiteStore.Edit(value => { foreach (string action in value.Bindings.Keys.ToArray()) value.Bindings[action] = "none"; value.Bindings["file-search.open"] = "Ctrl+Alt+Shift+F21"; value.Bindings["screen-translator.toggle"] = "Ctrl+Alt+Shift+F22"; });
             Assert(SuiteChord.Parse("Win+Shift+F23").Text == "Copilot", "Copilot aliases disagree.");
             Assert(Available("Ctrl+Alt+Shift+F21") && Available("Ctrl+Alt+Shift+F22"), "Check shortcuts are already in use.");

@@ -18,7 +18,7 @@ args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=False)
 app = args.app_root or Path(__file__).resolve().parents[1] / 'source/file-search'
 sys.path.insert(0, str(app))
-from xiaomi_search.protection import ProtectedDatabase, ENVELOPE_MAGIC, unseal
+from xiaomi_search.protection import ProtectedDatabase, CHUNKED_MAGIC, unseal
 
 # Restrict only this test process's deserialize pager; no connections exist yet.
 api = ctypes.CDLL(str(Path(sys.base_prefix) / 'DLLs/sqlite3.dll'))
@@ -55,7 +55,7 @@ try:
 finally:
     reopened.close()
 cipher = Path(str(path) + '.dpapi').read_bytes()
-assert cipher.startswith(ENVELOPE_MAGIC) and not path.exists()
+assert cipher.startswith(CHUNKED_MAGIC) and not path.exists()
 assert len(unseal(cipher)) > 4 * 1024 * 1024
 summary = {'passed': True, 'seed': 0, 'memdbLimitBytes': 2 * 1024 * 1024, 'growthBytes': 4 * 1024 * 1024,
            'baselineFailureReproduced': True, 'encryptedCheckpoint': True, 'plaintextWorkingFile': False, 'app': str(app)}

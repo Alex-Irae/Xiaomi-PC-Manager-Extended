@@ -95,6 +95,8 @@ def main():
         if not trace_seconds:
             faulthandler.cancel_dump_traceback_later()
         logging.info('Local search backend ready')
+        if settings['semantic_enabled'] and settings['model_standby'] == 'keep_loaded':
+            threading.Thread(target=service.embedder.warm, daemon=True, name='embedding-warmup').start()
         # ponytail: four RPC workers keep lexical requests responsive while one
         # query waits for native inference; GPU/NPU calls remain serialized.
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix="desktop-rpc") as executor, ThreadPoolExecutor(max_workers=1, thread_name_prefix='settings-rpc') as settings_executor:

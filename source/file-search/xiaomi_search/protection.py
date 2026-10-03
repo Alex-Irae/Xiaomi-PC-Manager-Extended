@@ -7,6 +7,10 @@ RAM is plaintext while unlocked; this cannot protect against code running as you
 import ctypes
 import os
 import sqlite3
+import io
+import zlib
+import struct
+import math
 import threading
 import time
 from ctypes import wintypes
@@ -14,22 +18,18 @@ from pathlib import Path
 
 MAGIC = b"XIAISEARCH-DPAPI-1\n"
 ENVELOPE_MAGIC = b"XIAISEARCH-AESGCM-2\n"
-
-# SQLite serialize allocates one signed-32-bit-sized buffer. Leave headroom so
-# a write cannot grow the RAM database beyond a saveable encrypted checkpoint.
-# ponytail: whole-snapshot ceiling; segmented encrypted checkpoints are needed above 2 GiB.
-SNAPSHOT_MAX_BYTES = 2**31 - 256 * 1024
+CHUNKED_MAGIC = b"XIAISEARCH-AESGCM-3\n"
+CHUNK_BYTES = 16 * 1024 * 1024
 
 
 class IndexCapacityError(RuntimeError):
-    """A protected index reached the current snapshot format's size limit."""
+    """SQLite could not allocate another page for the protected index."""
 
 
 def capacity_error():
     return IndexCapacityError(
-        "Indexing paused: the encrypted index reached its approximately 2 GiB "
-        "snapshot capacity. Existing search results remain available. Reduce the "
-        "indexed scope before rebuilding into a separate data directory."
+        "Indexing paused: SQLite could not allocate another index page. "
+        "Existing search results remain available. Check available memory and storage."
     )
 
 
@@ -92,6 +92,15 @@ def seal(data):
 
 def unseal(payload):
     """Read authenticated snapshots, including the original bulk-DPAPI format."""
+    if payload.startswith(CHUNKED_MAGIC):
+        restored = sqlite3.connect(':memory:')
+        target = sqlite3.connect(':memory:')
+        try:
+            restore_database(io.BytesIO(payload), restored)
+            restored.backup(target)
+            return target.serialize()
+        finally:
+            restored.close(); target.close()
     if payload.startswith(MAGIC):return protect(payload[len(MAGIC):],decrypt=True)
     if not payload.startswith(ENVELOPE_MAGIC):raise ValueError('Unknown protected index format')
     begin=len(ENVELOPE_MAGIC);length=int.from_bytes(payload[begin:begin+4],'little');begin+=4
@@ -99,6 +108,112 @@ def unseal(payload):
     key=protect(payload[begin:begin+length],decrypt=True);begin+=length
     plain,_=aes_gcm(payload[begin+28:],key,payload[begin:begin+12],payload[begin+12:begin+28],ENVELOPE_MAGIC)
     return plain
+
+
+MAX_CHUNK_BYTES = 64 * 1024 * 1024
+
+
+def write_database(stream, database):
+    """Stream compressed SQL batches, authenticating order, sizes and completion.
+
+    SQLite's single-allocation limit also applies to serialize(), even on x64.
+    iterdump uses bounded rows; virtual-table shadow rows contain the FTS index.
+    No plaintext working file or database-sized Python buffer is allocated.
+    """
+    key = os.urandom(32)
+    wrapped = protect(key)
+    header = CHUNKED_MAGIC + struct.pack('<I', len(wrapped)) + wrapped
+    stream.write(header)
+    number = 0
+    def quote(value):
+        # SQLite's quote(TEXT) truncates at NUL. Preserve exact text/blob values
+        # and infinities rather than trusting the SQL-dump convenience default.
+        if value is None:return 'NULL'
+        if isinstance(value,str):
+            return "CAST(X'"+value.encode('utf-8').hex()+"' AS TEXT)" if '\x00' in value else "'"+value.replace("'","''")+"'"
+        if isinstance(value,bytes):return "X'"+value.hex()+"'"
+        if isinstance(value,float) and math.isinf(value):return '-9.0e999' if value<0 else '9.0e999'
+        return repr(value)
+    database.create_function('quote',1,quote)
+
+    def record(plain):
+        nonlocal number
+        compressed = zlib.compress(plain, level=1)
+        fields = struct.pack('<QII', number, len(plain), len(compressed))
+        nonce = os.urandom(12)
+        cipher, tag = aes_gcm(compressed, key, nonce, aad=header + fields)
+        stream.write(fields + nonce + tag)
+        stream.write(cipher)
+        number += 1
+
+    virtual = tuple('INSERT INTO "' + name.replace('"', '""') + '" VALUES' for (name,) in
+                    database.execute("SELECT name FROM sqlite_master WHERE sql LIKE 'CREATE VIRTUAL TABLE%'") )
+    batch = bytearray()
+    for statement in database.iterdump():
+        if statement.startswith(virtual):
+            continue  # Shadow tables already preserve virtual-table contents and indexes.
+        encoded = statement.encode('utf-8')
+        # ponytail: 64 MiB per SQL row; a paged encrypted VFS is needed for larger individual rows.
+        if len(encoded) + 4 > MAX_CHUNK_BYTES:
+            raise ValueError('A single encrypted-index row exceeds 64 MiB')
+        if batch and len(batch) + len(encoded) + 4 > CHUNK_BYTES:
+            record(batch)
+            batch.clear()
+        batch.extend(struct.pack('<I', len(encoded)))
+        batch.extend(encoded)
+    if batch:
+        record(batch)
+    record(b'')  # Authenticated terminal record rejects truncation at a chunk boundary.
+
+
+def restore_database(stream, database):
+    """Restore v3 batches into a private RAM database before exposing any results."""
+    def exact(length):
+        value = stream.read(length)
+        if len(value) != length:
+            raise ValueError('Truncated protected index')
+        return value
+
+    if exact(len(CHUNKED_MAGIC)) != CHUNKED_MAGIC:
+        raise ValueError('Unknown protected index format')
+    length_bytes = exact(4)
+    wrapped_size = int.from_bytes(length_bytes, 'little')
+    if not 32 <= wrapped_size <= 65536:
+        raise ValueError('Invalid protected index key length')
+    wrapped = exact(wrapped_size)
+    header = CHUNKED_MAGIC + length_bytes + wrapped
+    key = protect(wrapped, decrypt=True)
+    if len(key) != 32:
+        raise ValueError('Invalid protected index key')
+    number = 0
+    while True:
+        fields = exact(16)
+        sequence, plain_size, cipher_size = struct.unpack('<QII', fields)
+        if sequence != number or plain_size > MAX_CHUNK_BYTES or not 1 <= cipher_size <= MAX_CHUNK_BYTES + 65536:
+            raise ValueError('Invalid protected index chunk')
+        nonce, tag = exact(12), exact(16)
+        compressed, _ = aes_gcm(exact(cipher_size), key, nonce, tag, aad=header + fields)
+        inflater = zlib.decompressobj()
+        plain = inflater.decompress(compressed, plain_size + 1)
+        if len(plain) != plain_size or not inflater.eof or inflater.unused_data or inflater.unconsumed_tail:
+            raise ValueError('Invalid protected index compressed data')
+        if not plain:
+            if stream.read(1):
+                raise ValueError('Unexpected protected index trailing data')
+            if database.in_transaction:
+                raise ValueError('Incomplete protected index transaction')
+            return
+        offset = 0
+        while offset < len(plain):
+            if len(plain) - offset < 4:
+                raise ValueError('Truncated protected SQL row')
+            size = int.from_bytes(plain[offset:offset + 4], 'little')
+            offset += 4
+            if not 1 <= size <= len(plain) - offset:
+                raise ValueError('Invalid protected SQL row')
+            database.execute(plain[offset:offset + size].decode('utf-8'))
+            offset += size
+        number += 1
 
 
 def protect(data, decrypt=False):
@@ -127,7 +242,7 @@ def protect(data, decrypt=False):
 
 
 class ProtectedDatabase:
-    """Serialized SQLite in RAM; periodic authenticated, atomic checkpoints on disk.
+    """SQLite in RAM; periodic streamed, authenticated, atomic checkpoints on disk.
 
     A process killed during inference can lose at most the uncheckpointed changes.
     The next metadata reconciliation recovers them. Source documents are untouched.
@@ -154,20 +269,24 @@ class ProtectedDatabase:
         self.legacy = Path(path) if Path(path).exists() else None
         try:
             if self.path.exists():
-                payload = self.path.read_bytes()
-                plain = bytearray(unseal(payload))
-                # A WAL file header cannot be reopened without its sidecar in RAM.
-                plain[18:20] = b"\x01\x01"
-                restored = sqlite3.connect(":memory:")
+                restored = sqlite3.connect(':memory:')
                 try:
-                    restored.deserialize(plain)
-                    # Deserialize uses SQLite's capped memdb pager. Backup into an ordinary
-                    # RAM database so the encrypted index can grow after a reload.
+                    with self.path.open('rb') as stream:
+                        current = stream.read(len(CHUNKED_MAGIC)) == CHUNKED_MAGIC
+                        stream.seek(0)
+                        if current:
+                            restore_database(stream, restored)
+                        else:
+                            plain = bytearray(unseal(stream.read()))
+                            plain[18:20] = b"\x01\x01"
+                            restored.deserialize(plain)
+                            del plain
+                    # Backup also removes the deserialize pager's growth ceiling and
+                    # reloads FTS virtual-table schemas after their shadow data restores.
                     restored.backup(self.db)
                 finally:
                     restored.close()
-                self.generation = self.db.total_changes if payload.startswith(ENVELOPE_MAGIC) else -1
-                del plain, payload
+                self.generation = self.db.total_changes if current else -1
             elif self.legacy:
                 source = sqlite3.connect(f"file:{self.legacy.resolve().as_posix()}?mode=ro", uri=True)
                 try:
@@ -178,8 +297,9 @@ class ProtectedDatabase:
             self.db.execute("PRAGMA journal_mode=MEMORY")
             self.db.execute("PRAGMA temp_store=MEMORY")
             self.db.execute("PRAGMA foreign_keys=ON")
-            page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
-            self.db.execute(f"PRAGMA max_page_count={SNAPSHOT_MAX_BYTES // page_size}")
+            # Snapshot saves stream bounded rows instead of allocating the entire
+            # index through SQLite's approximately 2 GiB single-allocation API.
+            self.db.execute("PRAGMA max_page_count=4294967294")
             self.thread = threading.Thread(target=self._checkpoint, daemon=True, name="protected-index-checkpoint")
             self.thread.start()
         except Exception:
@@ -187,25 +307,46 @@ class ProtectedDatabase:
 
     def flush(self, force=False):
         with self.flush_lock:
-            with self.lock:
-                generation = self.db.total_changes
-                if not force and generation == self.generation:
-                    return
-                plain = self.db.serialize()
-            encrypted = seal(plain)
-            temporary = self.path.with_suffix(".pending")
-            with temporary.open("wb") as stream:
-                stream.write(encrypted); stream.flush(); os.fsync(stream.fileno())
-            temporary.replace(self.path)
-            self.generation = generation
+            snapshot = sqlite3.connect(':memory:')
+            try:
+                with self.lock:
+                    generation = self.db.total_changes
+                    if not force and generation == self.generation:
+                        return
+                    # Copy stable pages in RAM. Compression/encryption then runs
+                    # outside the live lock, so queries and indexing can continue.
+                    self.db.backup(snapshot)
+                temporary = self.path.with_suffix(".pending")
+                with temporary.open("wb") as stream:
+                    write_database(stream, snapshot)
+                    stream.flush(); os.fsync(stream.fileno())
+                temporary.replace(self.path)
+                self.generation = generation
+            finally:
+                snapshot.close()
 
     def finish_migration(self):
         if not self.legacy:
             return
         self.flush(force=True)
         # Verify authenticated round-trip before moving any old index files.
-        if unseal(self.path.read_bytes()) != self.db.serialize():
-            raise ValueError("Protected index verification failed")
+        import hashlib
+        def fingerprint(database):
+            digest = hashlib.sha256()
+            for statement in database.iterdump():
+                digest.update(statement.encode('utf-8'))
+                digest.update(b'\n')
+            return digest.digest()
+        restored = sqlite3.connect(':memory:')
+        verified = sqlite3.connect(':memory:')
+        try:
+            with self.path.open('rb') as stream:
+                restore_database(stream, restored)
+            restored.backup(verified)
+            if fingerprint(verified) != fingerprint(self.db):
+                raise ValueError("Protected index verification failed")
+        finally:
+            restored.close(); verified.close()
         archive = self.legacy.parent.parent / "legacy-index-backups" / time.strftime("%Y%m%dT%H%M%S")
         archive.mkdir(parents=True, exist_ok=False)
         for suffix in ("", "-wal", "-shm"):

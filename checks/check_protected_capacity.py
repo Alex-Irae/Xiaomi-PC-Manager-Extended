@@ -22,10 +22,12 @@ from xiaomi_search.indexer import Indexer
 from xiaomi_search.store import Store
 
 # Simulate the same pager boundary with a small fixture rather than 2 GiB RAM.
-protection.SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024
+capacity_bytes = 2 * 1024 * 1024
 path = args.output / 'index.sqlite3'
 store = Store(path, protection='windows')
 with store.connect() as db:
+    page_size=db.execute('PRAGMA page_size').fetchone()[0]
+    db.execute(f'PRAGMA max_page_count={capacity_bytes // page_size}')
     db.execute('CREATE TABLE fixture(value BLOB)')
     db.execute('INSERT INTO fixture VALUES(zeroblob(?))', (256 * 1024,))
 store.protected.flush()
@@ -45,7 +47,7 @@ restored = Store(path, protection='windows')
 with restored.connect() as db:
     assert db.execute('SELECT length(value) FROM fixture').fetchone()[0] == 256 * 1024
 restored.protected.close()
-assert not path.exists() and before.startswith(protection.ENVELOPE_MAGIC)
+assert not path.exists() and before.startswith(protection.CHUNKED_MAGIC)
 print('PASS: capacity failure rolls back and preserves a readable encrypted checkpoint', flush=True)
 
 settings = json.loads((app / 'config.example.json').read_text(encoding='utf-8-sig'))
@@ -72,8 +74,8 @@ thread.start()
 assert paused.wait(5), 'Worker did not pause after the capacity error'
 thread.join(5)
 assert not thread.is_alive() and not worker.busy
-assert worker.status()['mode'] == 'paused' and 'snapshot capacity' in worker.scan_error
-summary = {'passed': True, 'seed': 0, 'app': str(app), 'capacityBytes': protection.SNAPSHOT_MAX_BYTES,
+assert worker.status()['mode'] == 'paused' and 'SQLite could not allocate' in worker.scan_error
+summary = {'passed': True, 'seed': 0, 'app': str(app), 'capacityBytes': capacity_bytes,
            'writeRollback': True, 'encryptedCheckpointReadable': True, 'workerPaused': True,
            'explicitCapacityError': worker.scan_error, 'plaintextWorkingFile': False}
 (args.output / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')

@@ -24,6 +24,7 @@ internal static class Program
     internal static bool InspectUi;
     internal static bool Development;
     internal static bool CheckLaunchRouting;
+    internal static bool CheckReadySearch;
     internal static string InstanceTitle => "Local Search · AI Center" + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
     internal static void Log(string value) => File.AppendAllText(Path.Combine(Data,"native.log"), $"{DateTimeOffset.Now:O} {value}\n");
 
@@ -35,6 +36,7 @@ internal static class Program
             Root = FindRoot();
             if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled && XiaomiRevamp.Suite.SuiteEnvironment.LegacyRunning("file-search")){MessageBox.Show("The original AI Center is running. Quit that copy before opening the connected edition, so both cannot handle the same shortcut.","AI Center");return;}
             InspectUi=args.Contains("--inspect-ui");
+            CheckReadySearch=args.Contains("--check-ready-search");
             string Option(string name,string fallback){int index=Array.IndexOf(args,name);return index>=0&&index+1<args.Length?Path.GetFullPath(args[index+1]):fallback;}
             bool packaged=File.Exists(Path.Combine(Root,"package-manifest.json"));
             Development=!packaged;
@@ -56,6 +58,18 @@ internal static class Program
                 File.WriteAllText(Path.Combine(Data,"worker-activity-check.json"),JsonSerializer.Serialize(new {passed=checks.Values.All(value=>value),checks},new JsonSerializerOptions {WriteIndented=true}));
                 if(checks.Values.Any(value=>!value))Environment.ExitCode=1;
                 return;
+            }
+            if(CheckReadySearch)
+            {
+                using var check=new CenterContext(false,false,true,true,true);
+                async void RunReady(object? sender,EventArgs eventArgs)
+                {
+                    Application.Idle-=RunReady;
+                    try{File.WriteAllText(Path.Combine(Data,"ready-search-check.json"),JsonSerializer.Serialize(await check.CheckReady(),new JsonSerializerOptions {WriteIndented=true}));}
+                    catch(Exception error){Log(error.ToString());Environment.ExitCode=1;}
+                    finally{check.Quit();}
+                }
+                Application.Idle+=RunReady;Application.Run(check);return;
             }
             if(args.Contains("--check-history")){File.WriteAllText(Path.Combine(Data,"history-check.json"),JsonSerializer.Serialize(SearchHistory.Check(Data),new JsonSerializerOptions {WriteIndented=true}));return;}
             if(args.Contains("--check-personalization"))
@@ -172,6 +186,9 @@ internal sealed partial class CenterContext : ApplicationContext
     bool IndexingActive=>backgroundIndex||workerIndexing||indexingRequests.Count>0;
     readonly HashSet<string> outstanding=new();
     readonly bool paused,noShortcut;
+    readonly bool residentEnabled;
+    JsonElement? readinessStatus;
+    internal bool KeepSearchReady => residentEnabled && settings.GetProperty("model_standby").GetString()=="keep_loaded";
     CenterWindow? center;
     JsonElement settings;
     JsonElement? settingsHistory;
@@ -184,6 +201,7 @@ internal sealed partial class CenterContext : ApplicationContext
     internal CenterContext(bool showCenter,bool paused,bool noShortcut,bool headless=false,bool startHidden=false)
     {
         this.paused=paused;this.noShortcut=noShortcut;
+        residentEnabled=!headless||Program.CheckReadySearch;
         var defaults=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(File.ReadAllText(Path.Combine(Program.Root,"config.example.json")))!;
         if(File.Exists(Program.Config))foreach(var entry in JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(File.ReadAllText(Program.Config))!)defaults[entry.Key]=entry.Value;
         settings=JsonSerializer.SerializeToElement(defaults);
@@ -193,7 +211,7 @@ internal sealed partial class CenterContext : ApplicationContext
         tray.ContextMenuStrip.Items.Add("AI Center",null,(_,_)=>ShowCenter());
         tray.ContextMenuStrip.Items.Add("Search",null,(_,_)=>Search.ShowSearch());
         tray.ContextMenuStrip.Items.Add("Quit",null,(_,_)=>Quit());tray.DoubleClick+=(_,_)=>ShowCenter();
-        idle.Tick+=(_,_)=>{if(outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");};
+        idle.Tick+=(_,_)=>{if(!KeepSearchReady&&outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");};
         string schedule=Path.Combine(Program.Data,"schedule.txt");
         if(File.Exists(schedule)&&DateTime.TryParse(File.ReadAllText(schedule),out var time))lastScheduled=time.ToUniversalTime();
         else if(!headless)File.WriteAllText(schedule,lastScheduled.ToString("O"));
@@ -201,6 +219,7 @@ internal sealed partial class CenterContext : ApplicationContext
         // Hidden startup must own shortcuts before the first command arrives.
         // Application.Idle can be delayed, leaving a tray-only app unresponsive.
         InstallShortcut();
+        if(KeepSearchReady)Post(()=>{EnsureBackend();Search.Prepare();});
         if(!headless&&!startHidden){if(showCenter)ShowCenter();else Search.ShowSearch();}
     }
     void InstallShortcut()
@@ -245,8 +264,9 @@ internal sealed partial class CenterContext : ApplicationContext
     }
     void ScheduleIndex()
     {
+        if(KeepSearchReady && (backend is null||backend.HasExited))EnsureBackend();
         if(backgroundIndex&&settings.GetProperty("indexing_mode").GetString()=="battery_saver"&&SystemInformation.PowerStatus.PowerLineStatus==PowerLineStatus.Offline){StopBackend("scheduled indexing paused on battery");return;}
-        if(backend is not null||!settings.TryGetProperty("indexing_frequency",out var frequency))return;
+        if(IndexingActive||(backend is not null&&!KeepSearchReady)||!settings.TryGetProperty("indexing_frequency",out var frequency))return;
         int minutes=frequency.GetString() switch {"realtime"=>5,"5_minutes"=>5,"15_minutes"=>15,"hourly"=>60,"daily"=>1440,_=>0};
         string mode=settings.GetProperty("indexing_mode").GetString()!;
         if(minutes==0||mode=="paused"||DateTime.UtcNow-lastScheduled<TimeSpan.FromMinutes(minutes)||(mode=="battery_saver"&&SystemInformation.PowerStatus.PowerLineStatus==PowerLineStatus.Offline))return;
@@ -287,8 +307,33 @@ internal sealed partial class CenterContext : ApplicationContext
         catch(InvalidOperationException){}catch(System.ComponentModel.Win32Exception error){Program.Log(error.Message);}
         finally{process.Dispose();NotifyStopped();}
     }
-    internal void CheckUnused(){if(!ActiveWindow&&!IndexingActive&&settingsRequests.Count==0)StopBackend("all application windows dismissed");}
+    internal void CheckUnused(){if(!KeepSearchReady&&!ActiveWindow&&!IndexingActive&&settingsRequests.Count==0)StopBackend("all application windows dismissed");}
     internal void DismissSearch()=>CheckUnused();
+    internal async Task<object> CheckReady()
+    {
+        async Task Wait(Func<bool> condition,int timeout=120000){var watch=Stopwatch.StartNew();while(!condition()&&watch.ElapsedMilliseconds<timeout)await Task.Delay(25);if(!condition())throw new TimeoutException("Ready-search check timed out");}
+        async Task<JsonElement> Status()
+        {
+            readinessStatus=null;Write(new {owner="readiness",mode=0,data=new {id=901,request=new {method="local_status",@params=new {}}}});
+            await Wait(()=>readinessStatus is not null);return readinessStatus!.Value;
+        }
+        await Wait(()=>backendReady&&Search.PageReady);
+        JsonElement state=await Status();
+        var warm=Stopwatch.StartNew();while(!state.GetProperty("model").GetProperty("loaded").GetBoolean()&&warm.ElapsedMilliseconds<90000){await Task.Delay(100);state=await Status();}
+        if(!state.GetProperty("model").GetProperty("loaded").GetBoolean())throw new InvalidOperationException("Resident embedding model did not load");
+        int pid=backend!.Id;var firstBrowser=Search.BrowserIdentity;
+        var open=Stopwatch.StartNew();Search.ShowSearch();
+        if(await Search.Evaluate("document.activeElement===document.getElementById('query')")!="true")throw new InvalidOperationException("Search input was not focused");
+        double firstMs=open.Elapsed.TotalMilliseconds;
+        Search.Hide();DismissSearch();idle.Interval=100;Touch();await Task.Delay(6200);
+        if(backend?.Id!=pid||!Search.PageReady||!ReferenceEquals(firstBrowser,Search.BrowserIdentity))throw new InvalidOperationException("Dismissal released resident search resources");
+        state=await Status();
+        if(!state.GetProperty("model").GetProperty("loaded").GetBoolean()||state.GetProperty("indexer").GetProperty("mode").GetString()=="paused")throw new InvalidOperationException("Index/model paused or unloaded");
+        open.Restart();Search.ShowSearch();
+        if(await Search.Evaluate("document.activeElement===document.getElementById('query')")!="true")throw new InvalidOperationException("Repeated search did not focus immediately");
+        double secondMs=open.Elapsed.TotalMilliseconds;
+        return new {passed=true,backendPid=pid,backendRetained=true,searchBrowserRetained=true,embeddingModelRetained=true,mainCenterOpened=center?.Visible==true,firstOpenMilliseconds=firstMs,repeatedOpenMilliseconds=secondMs,status=state};
+    }
     internal object CheckIndexLifetime()
     {
         void Pump(Func<bool> condition,int timeout=30000){var watch=Stopwatch.StartNew();while(!condition()&&watch.ElapsedMilliseconds<timeout){Application.DoEvents();Thread.Sleep(10);}if(!condition())throw new TimeoutException("Index lifetime check timed out");}
@@ -496,7 +541,8 @@ internal sealed partial class CenterContext : ApplicationContext
         // Accept its already-issued edits/index actions while that page exists;
         // hidden search requests and subscriptions must still stay canceled.
         bool pendingEdit=owner=="manager"&&center?.BrowserLoaded==true&&method is "local_save_config" or "local_index_now" or "local_reset_index" or "local_mode";
-        if(!ActiveWindow&&!pendingEdit){Reply(null,1,"Search is dismissed");return;}
+        bool warmRead=KeepSearchReady&&owner=="search"&&(method.StartsWith("register_",StringComparison.Ordinal)||method=="local_status");
+        if(!ActiveWindow&&!pendingEdit&&!warmRead){Reply(null,1,"Search is dismissed");return;}
         EnsureBackend();Touch();
         if(method is "local_index_now" or "local_reset_index")indexingRequests.Add(owner+":"+data.GetProperty("id").GetRawText());
         if(method=="local_save_config")settingsRequests.Add(owner+":"+data.GetProperty("id").GetRawText());
@@ -547,8 +593,9 @@ internal sealed partial class CenterContext : ApplicationContext
         if(owner=="maintenance")
         {
             backgroundIndex=false;lastScheduled=DateTime.UtcNow;File.WriteAllText(Path.Combine(Program.Data,"schedule.txt"),lastScheduled.ToString("O"));
-            if(!ActiveWindow&&settingsRequests.Count==0)StopBackend("scheduled reconciliation finished");return;
+            if(!KeepSearchReady&&!ActiveWindow&&settingsRequests.Count==0)StopBackend("scheduled reconciliation finished");return;
         }
+        if(owner=="readiness"){readinessStatus=message.GetProperty("response").GetProperty("data").Clone();return;}
         if(owner=="manager")center?.Receive(message);else Search.Receive(message);
         if(!ActiveWindow&&!IndexingActive&&outstanding.Count==0)CheckUnused();
     }
@@ -583,7 +630,7 @@ internal sealed partial class CenterContext : ApplicationContext
             case "copy":Clipboard.SetText(args.GetProperty("path").GetString()!);break;
             case "choose_folder":using(var dialog=new FolderBrowserDialog())return dialog.ShowDialog(center)==DialogResult.OK?dialog.SelectedPath:null;
             case "resize":Search.ResizeLogical(args.GetProperty("width").GetInt32(),args.GetProperty("height").GetInt32());break;
-            case "appearance":settings=args.Clone();InstallShortcut();ApplyStartup();Search.Script("window.dispatchEvent(new CustomEvent('settings-changed',{detail:"+args.GetRawText()+"}))");BroadcastTheme();break;
+            case "appearance":settings=args.Clone();InstallShortcut();ApplyStartup();if(KeepSearchReady){EnsureBackend();Search.Prepare();}Search.Script("window.dispatchEvent(new CustomEvent('settings-changed',{detail:"+args.GetRawText()+"}))");BroadcastTheme();break;
             case "hide":Search.Hide();break;case "show_search":Search.ShowSearch();break;case "manage":ShowCenter();break;case "quit":Post(Quit);break;
             default:throw new ArgumentException("Unknown native action "+action);
         }
@@ -594,6 +641,7 @@ internal sealed partial class CenterContext : ApplicationContext
         Search.Hide();if(center is null||center.IsDisposed)center=new CenterWindow(this);
         center.Show();center.WindowState=FormWindowState.Normal;center.Activate();center.Script("window.dispatchEvent(new Event('local-center-focus'))");
     }
+    internal void HideCenterForSearch()=>center?.Hide();
     internal void LaunchPlayground()
     {
         const string path=@"C:\Program Files\AI Playground\AI Playground.exe";
@@ -626,10 +674,11 @@ internal class WebWindow : Form
         AutoScaleMode=AutoScaleMode.Dpi;AutoScaleDimensions=new SizeF(96,96);Icon=Personalization.AppIcon;
         BackColor=app?.WindowColor??Color.White;Web.DefaultBackgroundColor=BackColor;Controls.Add(Web);
         AttachWeb(Web);
-        browserIdle.Tick+=(_,_)=>{browserIdle.Stop();if(!Visible||WindowState==FormWindowState.Minimized)ReleaseBrowser();};
+        browserIdle.Tick+=(_,_)=>{browserIdle.Stop();if((!Visible||WindowState==FormWindowState.Minimized)&&!(owner=="search"&&App?.KeepSearchReady==true))ReleaseBrowser();};
     }
     protected virtual void AttachWeb(WebView2 web){}
     internal bool BrowserLoaded=>loading||Web.CoreWebView2 is not null;
+    internal object? BrowserIdentity=>Web.CoreWebView2;
     internal bool PageReady=>navigated;
     internal Task<string> Evaluate(string script)=>Web.ExecuteScriptAsync(script);
     internal async Task SavePreview(string filename){await Task.Delay(100);using var stream=new FileStream(Path.Combine(Program.Data,filename),FileMode.CreateNew);await Web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,stream);}
@@ -649,9 +698,10 @@ internal class WebWindow : Form
     {
         base.OnVisibleChanged(e);if(Visible&&WindowState!=FormWindowState.Minimized){browserIdle.Stop();_=Initialize();}else browserIdle.Start();
     }
-    async Task Initialize()
+    internal void Prepare(){_=Initialize(true);}
+    async Task Initialize(bool prepare=false)
     {
-        if(Program.CheckLaunchRouting||loading || Ready||!Visible||WindowState==FormWindowState.Minimized)return;loading=true;var web=Web;
+        if(Program.CheckLaunchRouting||loading || Ready||(!prepare&&!Visible)||WindowState==FormWindowState.Minimized)return;loading=true;var web=Web;
         try
         {
             var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"native-webview"));
@@ -873,6 +923,7 @@ internal sealed class SearchWindow : WebWindow
     }
     internal void ShowSearch()
     {
+        App.HideCenterForSearch();
         Program.Log($"Show search: handle={Handle}, dpi={DeviceDpi}");
         if(!placed)
         {

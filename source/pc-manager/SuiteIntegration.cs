@@ -31,10 +31,11 @@ public sealed partial class ManagerApplication
                 }
                 Post(RefreshWindows);
             }, () => "Shortcut hub running");
+            XiControl.Log.Write($"Shortcuts.Start root={SuiteEnvironment.Root} data={SuiteEnvironment.DataRoot} error={suite.Error}");
             foreach (var (component, label, arguments, icon) in new[]
             {
                 ("file-search", "File Search", "--search", "search"),
-                ("screen-translator", "Screen Translator", "--toggle", "translate")
+                ("screen-translator", "Screen Translator", "--screen", "translate")
             })
             {
                 string path = SuiteEnvironment.Executable(component);
@@ -42,8 +43,21 @@ public sealed partial class ManagerApplication
                 Preferences.QuickLinks.Add(new() { Id = Guid.NewGuid().ToString("N"), Label = label, Path = path, Arguments = arguments, Icon = icon, ShowInPanel = Preferences.QuickLinks.Count(link => link.ShowInPanel) < 4 });
             }
             Preferences.Save();
+            if(SuiteEnvironment.Installed("file-search"))
+            {
+                string config=Path.Combine(SuiteEnvironment.Data("file-search"),"config.json");
+                using var saved=File.Exists(config)?JsonDocument.Parse(File.ReadAllText(config)):null;
+                if(saved is null || saved.RootElement.TryGetProperty("model_standby",out var mode)&&mode.GetString()=="keep_loaded")
+                    ProcessSearchResident();
+            }
         }
         catch (Exception error) { XiControl.Log.Ex("Suite.Start", error); Notify("Suite integration: " + error.Message); }
+    }
+    static void ProcessSearchResident()
+    {
+        string path=SuiteEnvironment.Executable("file-search");
+        using var process=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path,"--tray")
+        {WorkingDirectory=Path.GetDirectoryName(path)!,UseShellExecute=false,CreateNoWindow=true});
     }
     internal static Dictionary<string, string> SuiteReservations(IEnumerable<KeyboardShortcut> shortcuts, KeyboardShortcut copilot)
     {
@@ -84,23 +98,26 @@ public sealed partial class ManagerApplication
         var document = SuiteStore.Read();
         return new
         {
-            enabled = true, hubRunning = suite is not null, error = suite?.Error,
+            enabled = true, hubRunning = suite is not null && SuiteClient.HubRunning(), error = suite?.Error,
             sharedAppearance = document.SharedAppearance, theme = document.Theme, accent = document.Accent,
             bindings = document.Bindings.Where(item => SuiteEnvironment.Installed(item.Key.Split('.')[0])).Select(item => new { action = item.Key, chord = item.Value }),
             components = new[] { "file-search", "screen-translator" }.Select(component =>
             {
                 var status = SuiteStore.Status(component);
                 bool running = status is not null && SuiteStore.Alive(status.Pid) && DateTime.UtcNow.Ticks - status.Updated < TimeSpan.FromSeconds(5).Ticks;
-                return new { component, installed = SuiteEnvironment.Installed(component), running, state = running ? status!.State : "Stopped", error = running ? status!.Error : null, owner = suite is not null ? "PC Manager" : "Standalone" };
+                return new { component, installed = SuiteEnvironment.Installed(component), running, state = running ? status!.State : "Stopped", error = running ? status!.Error : null, owner = SuiteClient.HubRunning() ? "PC Manager" : "Standalone" };
             })
         };
     }
     internal object SuiteSave(JsonElement args)
     {
         if (!SuiteEnvironment.Enabled) throw new InvalidOperationException("This installation is not a suite.");
-        SuiteStore.SetBinding(args.GetProperty("action").GetString() ?? "", args.GetProperty("chord").GetString() ?? "");
+        string action=args.GetProperty("action").GetString()??"",chord=SuiteChord.Parse(args.GetProperty("chord").GetString()??"").Text;
+        SuiteStore.SetBinding(action,chord);
         suite?.Poll(); RefreshWindows();
-        return new { message = suite?.Error ?? "Shared shortcut saved.", complete = suite?.Error is null };
+        bool saved=SuiteStore.Read().Bindings.GetValueOrDefault(action)==chord;
+        bool active=saved && (chord=="none" || suite?.Registered(action)==true);
+        return new { saved,active,action,chord,message=active?"Shortcut saved.":suite?.Error??"Shortcut saved, but the shortcut hub is unavailable.",complete=active };
     }
     internal object SuiteAppearance(JsonElement args)
     {
@@ -122,22 +139,30 @@ public sealed partial class ManagerApplication
         string path = SuiteEnvironment.Executable(component);
         if (!File.Exists(path)) throw new InvalidOperationException("That optional application is not installed.");
         bool settings = action == component + ".settings";
-        if (!settings) SuiteStore.Send(action);
+        var status=SuiteStore.Status(component);
+        if(!settings&&status is not null&&SuiteStore.Alive(status.Pid)&&DateTime.UtcNow.Ticks-status.Updated<TimeSpan.FromSeconds(3).Ticks)
+        {
+            AllowSetForegroundWindow((uint)status.Pid);
+            SuiteStore.Send(action);return;
+        }
+        string arguments=settings?(component=="file-search"?"--center":""):component=="file-search"?"--search":action[(component.Length+1)..] switch
+        {"toggle"=>"--toggle","screen"=>"--screen","region"=>"--region","original"=>"--original","filter"=>"--filter",_=>throw new ArgumentException("Unknown translation action.")};
         // These are our fixed companion EXEs. Explorer ShellExecute can silently fail to launch them.
         using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
         {
-            Arguments = settings ? component == "file-search" ? "--center" : "" : "--tray",
+            Arguments = arguments,
             WorkingDirectory = Path.GetDirectoryName(path)!, UseShellExecute = false, CreateNoWindow = true
         });
         if (process is null) throw new InvalidOperationException("Windows could not start " + component + ".");
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool AllowSetForegroundWindow(uint process);
     internal void OpenAppLink(string id)
     {
         var link=Preferences.QuickLinks.SingleOrDefault(item=>item.Id==id)??throw new ArgumentException("Unknown app link.");
         if(SuiteEnvironment.Enabled)
             foreach(string component in new[] {"file-search","screen-translator"})
                 if(string.Equals(link.Path,SuiteEnvironment.Executable(component),StringComparison.OrdinalIgnoreCase))
-                { HideWindows(); SuiteOpen(component+(component=="file-search"?".open":".toggle")); return; }
+                { HideWindows(); SuiteOpen(component+(component=="file-search"?".open":".screen")); return; }
         AppLinks.Open(Preferences,id);
     }
 }
