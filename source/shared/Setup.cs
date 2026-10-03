@@ -1,5 +1,5 @@
 // Purpose: selectable offline suite installation, standalone optional app setup and owned-file uninstall.
-// Dependencies: Windows .NET Framework 4.8, adjacent packages.json and selected component ZIPs.
+// Dependencies: Windows .NET Framework 4.8, packages.json and a verified content store or component ZIPs.
 // Outputs: dedicated application folders, per-user shortcuts/startup entries and ownership metadata.
 // Build: python tools/build_suite.py. Run: Xiaomi-Revamp-Setup.exe, File-Search-Setup.exe or Screen-Translator-Setup.exe.
 using System;
@@ -217,14 +217,17 @@ internal static class Setup
         if (!string.IsNullOrWhiteSpace(searchChoice)) paths["file-search"] = Path.Combine(DataTemplate(searchChoice, ""), "file-search");
         if (priorMarker != null && priorMarker.ContainsKey("allUsers") && (bool)priorMarker["allUsers"] != allUsers) throw new InvalidOperationException("Keep the installation's existing user scope when upgrading.");
         string toolchain = Path.Combine(Base, "development-toolchain.zip");
-        if (development && (!package.ContainsKey("developmentToolchain") || !File.Exists(toolchain) || Hash(toolchain) != (string)Object(package["developmentToolchain"])["sha256"]))
+        string store = package.ContainsKey("contentStore") ? Child(Base, (string)Object(package["contentStore"])["payload"]) : "";
+        if (store.Length > 0 && (!File.Exists(store) || Hash(store) != (string)Object(package["contentStore"])["sha256"]))
+            throw new InvalidDataException("Installer content checksum failed.");
+        if (development && (!package.ContainsKey("developmentToolchain") || (store.Length == 0 && (!File.Exists(toolchain) || Hash(toolchain) != (string)Object(package["developmentToolchain"])["sha256"]))))
             throw new InvalidDataException("Keep the verified development-toolchain.zip beside setup when installing development copies.");
         // Verify every selected archive before changing any installed component.
         foreach (string component in selected)
         {
             if (!Folders.ContainsKey(component)) throw new InvalidOperationException("Unknown component.");
             var item = Object(components[component]); string payload = Child(Base, (string)item["payload"]);
-            if ((string)item["folder"] != Folders[component] || Hash(payload) != (string)item["sha256"]) throw new InvalidDataException("Package checksum failed: " + component);
+            if ((string)item["folder"] != Folders[component] || (store.Length == 0 && Hash(payload) != (string)item["sha256"])) throw new InvalidDataException("Package checksum failed: " + component);
         }
         Directory.CreateDirectory(root);
         string stage = Child(root, ".staging-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff")); Directory.CreateDirectory(stage);
@@ -241,7 +244,8 @@ internal static class Setup
             {
                 progress("Preparing " + Folders[component]); var item = Object(components[component]); var files = Object(item["files"]);
                 string prepared = Child(stage, Folders[component]); Directory.CreateDirectory(prepared);
-                using (var archive = ZipFile.OpenRead(Child(Base, (string)item["payload"])))
+                if (store.Length > 0) ExtractStore(store, files, prepared);
+                else using (var archive = ZipFile.OpenRead(Child(Base, (string)item["payload"])))
                 {
                     foreach (var entry in archive.Entries)
                     {
@@ -257,7 +261,8 @@ internal static class Setup
                 {
                     string dev = Path.Combine(prepared, "Development"); Directory.CreateDirectory(dev);
                     string tools = Path.Combine(dev, "toolchain"); Directory.CreateDirectory(tools);
-                    using (var archive = ZipFile.OpenRead(toolchain)) foreach (var entry in archive.Entries)
+                    if (store.Length > 0) ExtractStore(store, Object(Object(package["developmentToolchain"])["files"]), tools);
+                    else using (var archive = ZipFile.OpenRead(toolchain)) foreach (var entry in archive.Entries)
                     {
                         string path = Child(tools, entry.FullName); Directory.CreateDirectory(Path.GetDirectoryName(path)); entry.ExtractToFile(path);
                     }
@@ -316,6 +321,20 @@ internal static class Setup
         catch (Exception error) { throw new InvalidOperationException("Application files were installed. Windows shortcut or startup registration failed; rerun setup to complete it. " + error.Message, error); }
         SafeDelete(stage);
         progress("Installed. Settings and optional app data remain independent. Previous component folders are preserved for recovery.");
+    }
+    static void ExtractStore(string store, Dictionary<string, object> files, string target)
+    {
+        // Identical files are compressed once but installed into independent folders.
+        using (var archive = ZipFile.OpenRead(store)) foreach (var file in files)
+        {
+            string digest = (string)file.Value;
+            if (digest.Length != 64 || digest.Any(value => "0123456789abcdef".IndexOf(value) < 0)) throw new InvalidDataException("Invalid content digest.");
+            var entry = archive.GetEntry(digest);
+            if (entry == null) throw new InvalidDataException("Missing installer content: " + file.Key);
+            string path = Child(target, file.Key); Directory.CreateDirectory(Path.GetDirectoryName(path));
+            entry.ExtractToFile(path);
+            if (Hash(path) != digest) throw new InvalidDataException("File checksum failed: " + file.Key);
+        }
     }
     static void StopApps(string root, string[] selected)
     {
@@ -489,7 +508,8 @@ internal static class Setup
             }
             var all = new CheckBox { Text = "Install for all users", Checked = remove && AllUsers(target), Enabled = !remove, Location = new Point(20, 388), Width = 265 }; form.Controls.Add(all);
             var desktop = new CheckBox { Text = "Desktop shortcuts", Checked = true, Enabled = !remove, Location = new Point(340, 388), Width = 265 }; form.Controls.Add(desktop);
-            var dev = new CheckBox { Text = remove ? "Remove development folders and their archives" : "Keep editable Development folders (requires development-toolchain.zip)", Checked = !remove, Location = new Point(20, 420), Width = 605 }; form.Controls.Add(dev);
+            bool embeddedTools = !remove && File.Exists(Path.Combine(Base, "payload.zip"));
+            var dev = new CheckBox { Text = remove ? "Remove development folders and their archives" : embeddedTools ? "Keep editable Development folders and included offline build tools" : "Keep editable Development folders (requires development-toolchain.zip)", Checked = !remove && (embeddedTools || File.Exists(Path.Combine(Base, "development-toolchain.zip"))), Location = new Point(20, 420), Width = 605 }; form.Controls.Add(dev);
             var removeData = new CheckBox { Text = "Remove my settings, search index, history and model caches", Visible = remove, Location = new Point(20, 452), Width = 605 }; form.Controls.Add(removeData);
             var changed = new CheckBox { Text = "Also remove changed and added files inside the selected app folders", Checked = true, Visible = remove, Location = new Point(20, 484), Width = 605 }; form.Controls.Add(changed);
             var status = new Label { Text = remove ? "Data removal affects this Windows account. Other users' data is retained." : "Choose dedicated data folders, including a subfolder of Program Files. Models stay with each app. User data is separated by Windows account.", Location = new Point(20, 526), Size = new Size(600, 60) }; form.Controls.Add(status);
