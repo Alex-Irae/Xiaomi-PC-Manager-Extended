@@ -169,8 +169,10 @@ class Backend:
                         address = rf"\\.\pipe\ScreenTranslator-{uuid4().hex}"
                         authkey = os.urandom(32)
                         environment = {**os.environ, "SCREEN_TRANSLATOR_PIPE_KEY": authkey.hex()}
-                        self.process = subprocess.Popen([sys.executable, "-u", "-m", "screen_translator.backend",
-                            "--engine-pipe", address], stdin=subprocess.DEVNULL, stdout=sys.stderr,
+                        bootstrap = "import sys,runpy;sys.path.insert(0,sys.argv.pop(1));runpy.run_module('screen_translator.backend',run_name='__main__')"
+                        python_options = ["-X", "pycache_prefix=" + sys.pycache_prefix] if sys.pycache_prefix else []
+                        self.process = subprocess.Popen([sys.executable, "-u", *python_options, "-c", bootstrap,
+                            str(Path(__file__).resolve().parents[1]), "--engine-pipe", address], stdin=subprocess.DEVNULL, stdout=sys.stderr,
                             stderr=sys.stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
                         deadline = monotonic() + 15
                         while job_epoch == self.epoch and not self.closed.is_set():

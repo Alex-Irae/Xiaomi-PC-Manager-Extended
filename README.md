@@ -4,11 +4,13 @@ Three independent Windows applications connected through PC Manager: **PC Manage
 
 ## Installation
 
-Extract the offline installer ZIP. Keep `Xiaomi-Revamp-Setup.exe`, `packages.json`, `Uninstall.exe` and the selected component ZIPs together. Run `Xiaomi-Revamp-Setup.exe`, choose the applications, installation folder, data folder, optional separate AI Center data folder, current-user/all-users scope and startup options. The default application folder is `C:\Program Files\Xiaomi Revamp`.
+Download and run **`Xiaomi-Revamp-Installer.exe`**. This single offline file includes all three applications, their models/private runtimes, editable source and the complete offline development toolchain. Choose the applications, installation folder, data folder, optional separate AI Center data folder, current-user/all-users scope and startup options. PC Manager is mandatory in this combined installer. The default application folder is `C:\Program Files\Xiaomi Revamp`.
+
+The alternative installer ZIP contains the same complete payload. Extract it and keep `Xiaomi-Revamp-Setup.exe`, `packages.json`, `payload.zip` and `Uninstall.exe` together. Identical payload files are compressed once and copied into each selected application's independent folder. Installed applications do not depend on another application's folder.
 
 `AI-Center-Setup.exe` and `Screen-Translator-Setup.exe` install the corresponding app independently. Installation into Program Files, all-users registration and PC Manager hardware/startup controls require administrator approval under the same Windows account. WebView2 Runtime must already be available. Setup installs no system Python/.NET packages and downloads no models.
 
-The **Keep editable Development folders** option additionally requires `development-toolchain.zip` beside setup. Download that asset separately when the combined installer archive excludes it to meet GitHub's asset-size limit. It contains an existing .NET 8 SDK, offline NuGet cache and WebView2 references. No environment creation or package installation is necessary.
+The **Keep editable Development folders** option includes an existing .NET 8 SDK, offline NuGet cache and WebView2 references. The complete EXE and its alternative ZIP already contain these tools. The separate `development-toolchain.zip` asset is provided for source-only downloads and older split-payload installers. No environment creation or package installation is necessary.
 
 ```text
 Xiaomi Revamp/
@@ -50,7 +52,11 @@ PC Manager owns optional-app shortcuts while running. Each optional app takes ov
 
 Keyboard settings provide a list of valid presets and a final **Press a shortcut** recorder. The recorder handles physical combinations, Copilot and Double Ctrl. Assigning an occupied app shortcut swaps the two keys while preserving their actions, including custom PC Manager actions. Invalid, reserved and externally occupied ordinary Windows chords leave the prior binding intact. Other software's keyboard hooks can still intercept physical keys.
 
-The translator quick-panel link invokes translation immediately with settings hidden. Cold actions queue until models are ready. A second toggle cancels loading. After dismissal, original view, opening settings or stopping filtering, 10 seconds idle releases all owned inference workers; Stop releases them immediately. Compiled OCR/translation caches stay on disk. Cached reload measured approximately **16 seconds** on the tested laptop, so a 5–10 second reload is not guaranteed.
+AI Center's `--tray` launch is silent even when the app already runs. Both standalone Double Ctrl and the shared `file-search.open` action open compact search only. A direct EXE launch without arguments or PC Manager's `--center` invocation opens the main AI Center window.
+
+The translator quick-panel link invokes translation immediately with settings hidden. Its controls browser initializes only when opened and cannot stop an inference load if navigation fails. Cold actions queue until models are ready. A second toggle cancels loading. After dismissal, original view, opening settings or stopping filtering, 10 seconds idle releases all owned inference workers; Stop releases them immediately. Compiled OCR/translation graphs, validated hardware choices and Python bytecode remain on SSD in the selected data profile. Model hashes and the runtime/driver fingerprint are checked before reuse.
+
+The bundled Marian ONNX encoder, decoder and KV-cache graphs now run directly through OpenVINO with NumPy greedy decoding, using the existing tokenizer and model weights. The general training framework is not imported by this path. On the tested laptop, full cached loads measured **7.30 and 7.39 seconds**. The measured load-time process-group peak fell from about **26.5 GB committed** to **1.83 GB committed**; working set and committed memory are different measures. Inference workers reach zero memory after idle release. An unopened hidden host measured about 16 MB private memory. These measurements are specific to this machine; first-time compilation or a driver/model change can take longer. Exact output equality passed against the preserved decoder on 22 public/generated cases.
 
 Toolbox provides app launch/settings/status and opt-in shared theme/accent. Companion apps started by the elevated PC Manager inherit its Windows privileges; standalone launches use their own launch context. Models, indexes, documents, screenshots and firmware access stay in their app; search queries and captured content are not exchanged through the shared shortcut layer.
 
@@ -84,6 +90,14 @@ python tools/build_suite.py `
 ```
 
 Run with an existing Python 3.12 interpreter containing translator dependencies. `--native-only` reuses staged private dependencies; add `--seal` to create a new numbered release. WebView references must include Core/WinForms DLLs and `runtimes/win-x64/native/WebView2Loader.dll`. Public source/development ZIPs exclude private settings, indexes, history, caches and generated builds. GPLv3/XiControl attribution applies to reused PC Manager code; optional-app licenses/notices remain included.
+
+Wrap a sealed component release into a complete EXE and its alternative ZIP:
+
+```powershell
+python tools/build_inclusive_installer.py --previous 'packages\SEALED_COMPONENT_RELEASE' --output 'packages\NEW_INCLUSIVE_RELEASE'
+```
+
+This packager verifies the prior component archives, keeps PC Manager unchanged, deduplicates files by SHA256, includes the complete development toolchain and embeds a verified ZIP behind a Framework bootstrap executable. Setup restores separate per-app folders and checks every restored file. `--changes` optionally accepts a JSON map of already-built optional-app replacements. Installer tests support `-ContentStore` to exercise this format in isolated directories.
 
 ## Validation and known limits
 

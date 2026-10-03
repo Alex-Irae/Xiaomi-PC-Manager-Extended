@@ -29,7 +29,7 @@ internal static class Program
             if(!File.Exists(Path.Combine(Root,"screen_translator","backend.py")))throw new DirectoryNotFoundException("Pass --root with the screen-translator source folder.");
             Data=Path.GetFullPath(Option("--data-dir",XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteEnvironment.Data("screen-translator"):Packaged?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ScreenTranslator"):Path.Combine(Root,"data")));Directory.CreateDirectory(Data);
             Python=Option("--python",Packaged?Path.Combine(Root,"runtime","python","python.exe"):"python");NoLoad=args.Contains("--no-load");CheckSuiteUi=args.Contains("--check-suite-ui");CheckUi=args.Contains("--check-ui")||CheckSuiteUi;TrayStart=args.Contains("--tray")||args.Contains("--toggle")||args.Contains("--region");NoStartup=args.Contains("--no-startup")||CheckSuiteUi;
-            CheckLifecycle=args.Contains("--check-model-lifecycle");CheckUi|=CheckLifecycle;NoStartup|=CheckLifecycle;
+            CheckLifecycle=args.Contains("--check-model-lifecycle");CheckUi|=CheckLifecycle;NoStartup|=CheckLifecycle;TrayStart|=CheckLifecycle;
             CacheData=Path.GetFullPath(Option("--cache-data-dir",Data));
             Fixture=Option("--fixture-directory","");
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
@@ -61,6 +61,8 @@ internal sealed partial class MainWindow : Form
 {
     const string Origin="https://screen-translator.local";
     readonly WebView2 web=new() {Dock=DockStyle.Fill,DefaultBackgroundColor=Color.White};
+    CoreWebView2Environment? controlsEnvironment;
+    bool frontendConfigured;
     readonly ReplacementOverlay overlay=new();
     readonly TranslationToolbar toolbar;
     readonly System.Windows.Forms.Timer filterTimer=new();
@@ -122,6 +124,11 @@ internal sealed partial class MainWindow : Form
         Shown+=async (_,_)=>await Initialize();
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged+=DisplayChanged;
         InitializeDesktop();
+        // Inference and shortcut ownership do not depend on the controls browser.
+        if(!Program.CheckUi)
+        {
+            if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled)StartSuite();else {RegisterShortcut();RegisterLegacyKeys();}
+        }
     }
     static JsonObject Defaults()=>new()
     {
@@ -149,9 +156,10 @@ internal sealed partial class MainWindow : Form
         if(initializing)return;initializing=true;
         try
         {
-            var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"webview"));
-            await web.EnsureCoreWebView2Async(environment);
+            controlsEnvironment??=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"webview"));
+            await web.EnsureCoreWebView2Async(controlsEnvironment);
             var core=web.CoreWebView2;
+            if(frontendConfigured){core.Navigate(Origin+"/index.html");return;}
             core.SetVirtualHostNameToFolderMapping("screen-translator.local",Path.Combine(Program.Root,"frontend"),CoreWebView2HostResourceAccessKind.Deny);
             core.SetVirtualHostNameToFolderMapping("screen-translator-images.local",Path.Combine(Program.Data,"appearance"),CoreWebView2HostResourceAccessKind.Deny);
             core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.IsStatusBarEnabled=false;
@@ -172,21 +180,24 @@ internal sealed partial class MainWindow : Form
             };
             core.NavigationCompleted+=async (_,e)=>
             {
-                if(!e.IsSuccess){Fail("Local frontend navigation failed",true);return;}
+                if(!e.IsSuccess){FrontendFailed(new InvalidOperationException("Local frontend navigation failed: "+e.WebErrorStatus));return;}
                 navigated=true;Publish();
                 if(Program.TrayStart)Hide();
-                if(Program.CheckLifecycle){await CheckModelLifecycle();return;}
+                if(Program.CheckLifecycle)return;
                 if(Program.CheckSuiteUi){await CheckSuiteUi();return;}
                 if(Program.CheckUi){await CheckUi();return;}
                 // Inference starts on an explicit action, so a tray/settings launch stays lightweight.
             };
-            if(!Program.CheckUi)
-            {
-                if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled)StartSuite();else {RegisterShortcut();RegisterLegacyKeys();}
-            }
-            Round();core.Navigate(Origin+"/index.html");
+            frontendConfigured=true;Round();core.Navigate(Origin+"/index.html");
         }
-        catch(Exception error){Fail(error.Message,true);}
+        catch(Exception error){FrontendFailed(error);}
+    }
+    void FrontendFailed(Exception error)
+    {
+        // A browser failure is independent of the inference worker and queued action.
+        Program.Log("Controls initialization failed: "+error);
+        initializing=false;navigated=false;
+        if(!busy&&!ready)status="Controls could not open. Open controls again to retry.";
     }
     protected override CreateParams CreateParams
     {
@@ -228,7 +239,7 @@ internal sealed partial class MainWindow : Form
         catch(Exception error){Fail(error.Message,false);}
     }
     bool ControlsOpen=>Visible&&WindowState!=FormWindowState.Minimized;
-    void ShowControls(){overlay.Hide();toolbar.Hide();WindowState=FormWindowState.Normal;Show();Activate();ArmModelIdle();Publish();}
+    void ShowControls(){overlay.Hide();toolbar.Hide();WindowState=FormWindowState.Normal;Show();Activate();if(!initializing&&!navigated)_=Initialize();ArmModelIdle();Publish();}
     void HideControls()
     {
         Hide();if(filter&&!original&&!ready){_=Hotkey(4);return;}if(target is Rectangle bounds){toolbar.Present(bounds,original,filter,overlay.Blocks,overlay.Clipped);ObservePage(force:true);SyncOverlayVisibility();}ArmModelIdle();
@@ -270,13 +281,20 @@ internal sealed partial class MainWindow : Form
         var process=new Process {StartInfo=new ProcessStartInfo(Program.Python)
         {WorkingDirectory=Program.Root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,
          StandardInputEncoding=new UTF8Encoding(false),StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8},EnableRaisingEvents=true};
-        process.StartInfo.ArgumentList.Add("-u");process.StartInfo.ArgumentList.Add("-m");process.StartInfo.ArgumentList.Add("screen_translator.backend");
+        process.StartInfo.ArgumentList.Add("-u");process.StartInfo.ArgumentList.Add("-X");
+        process.StartInfo.ArgumentList.Add("pycache_prefix="+Path.Combine(Program.CacheData,"cache","python"));
+        process.StartInfo.ArgumentList.Add("-c");
+        process.StartInfo.ArgumentList.Add("import sys,runpy;sys.path.insert(0,sys.argv.pop(1));runpy.run_module('screen_translator.backend',run_name='__main__')");
+        process.StartInfo.ArgumentList.Add(Program.Root);
         process.StartInfo.Environment["PYTHONIOENCODING"]="utf-8";
         process.StartInfo.Environment["HF_HUB_OFFLINE"]="1";process.StartInfo.Environment["TRANSFORMERS_OFFLINE"]="1";
         process.StartInfo.Environment["SCREEN_TRANSLATOR_DATA"]=Program.CacheData;
         process.StartInfo.Environment["HF_HOME"]=Path.Combine(Program.Data,"cache","huggingface");
         process.StartInfo.Environment["TORCH_HOME"]=Path.Combine(Program.Data,"cache","torch");
-        if(Program.Packaged){process.StartInfo.Environment["PYTHONNOUSERSITE"]="1";process.StartInfo.Environment["PYTHONDONTWRITEBYTECODE"]="1";process.StartInfo.Environment.Remove("PYTHONPATH");process.StartInfo.Environment.Remove("PYTHONHOME");}
+        // Compiled Python modules live on SSD in writable app data, never Program Files.
+        process.StartInfo.Environment["PYTHONPYCACHEPREFIX"]=Path.Combine(Program.CacheData,"cache","python");
+        process.StartInfo.Environment.Remove("PYTHONDONTWRITEBYTECODE");
+        if(Program.Packaged){process.StartInfo.Environment["PYTHONNOUSERSITE"]="1";process.StartInfo.Environment.Remove("PYTHONPATH");process.StartInfo.Environment.Remove("PYTHONHOME");}
         process.OutputDataReceived+=(_,e)=>
         {
             if(e.Data is null)return;
@@ -312,7 +330,7 @@ internal sealed partial class MainWindow : Form
     {
         StopVisual();UnloadModels("Inference stopped · memory released");
     }
-    internal void StartHidden(){_=Handle;_=Initialize();}
+    internal void StartHidden(){_=Handle;if(Program.CheckLifecycle)_=CheckModelLifecycle();}
     bool ModelIdle=>ready&&!busy&&!selecting&&pendingAction==0&&(!filter||original||ControlsOpen);
     void ArmModelIdle(){modelIdle.Stop();if(ModelIdle&&backend is not null)modelIdle.Start();}
     void UnloadModels(string message)
