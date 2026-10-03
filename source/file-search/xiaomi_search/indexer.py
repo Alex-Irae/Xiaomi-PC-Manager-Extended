@@ -369,6 +369,7 @@ class Indexer:
                 with self.condition:
                     self.busy = False
                     self.condition.notify_all()
+                if self.embedder is not None:self.embedder.schedule_release()
                 self.notify()
 
     def wait_complete(self):

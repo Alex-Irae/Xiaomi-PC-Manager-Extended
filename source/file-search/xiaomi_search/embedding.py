@@ -21,6 +21,19 @@ class Embedder:
         self._file_state = None
         self.failed_devices = set()
         self.on_change = lambda: None
+        self.active = lambda: False
+
+    def warm(self):
+        """Prepare the existing local model without indexing or dummy inference."""
+        with self.lock:
+            try:
+                self.identity()
+                self._load()
+            except Exception as exc:
+                self.error = str(exc)
+                LOG.exception('Embedding warmup failed; lexical search remains available')
+            finally:
+                self.schedule_release()
 
     def identity(self):
         """Fingerprint weights, tokenizer, pooling, and truncation to avoid mixing vectors."""
@@ -128,10 +141,15 @@ class Embedder:
             if self.timer:
                 self.timer.cancel()
             self.timer = None
-            if self.pipeline is not None and self.config["model_standby"] == "idle_unload":
-                self.timer = threading.Timer(self.config["idle_unload_seconds"], self.unload)
+            if self.pipeline is not None and self.config["model_standby"] == "idle_unload" and not self.active():
+                self.timer = threading.Timer(self.config["idle_unload_seconds"], self.release_idle)
                 self.timer.daemon = True
                 self.timer.start()
+
+    def release_idle(self):
+        with self.lock:
+            if self.config['model_standby'] == 'idle_unload' and not self.active():
+                self.unload()
 
     def unload(self):
         with self.lock:

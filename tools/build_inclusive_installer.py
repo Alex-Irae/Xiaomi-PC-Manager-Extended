@@ -1,4 +1,4 @@
-"""Seal a complete single-EXE release without rebuilding PC Manager.
+"""Seal a complete single-EXE release with explicitly selected app replacements.
 
 Dependencies: Python stdlib, Windows Framework compiler, verified previous packages.
 Outputs: a new release, deduplicated payload and self-extracting EXE below 2 GiB.
@@ -41,7 +41,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("previous", "output"):
         parser.add_argument("--" + name, required=True, type=Path, help=name + " path")
-    parser.add_argument("--changes", type=Path, help="Optional JSON of already-built optional-app files to replace")
+    parser.add_argument("--changes", type=Path, help="Optional JSON of already-built app files to replace")
     args = parser.parse_args()
     previous, release = args.previous.resolve(), args.output.resolve()
     release.mkdir(parents=True, exist_ok=False)
@@ -56,13 +56,16 @@ def main():
     if args.changes:
         subprocess.run(["pwsh", "-NoProfile", "-File", str(ROOT / "tools/seal_component_changes.ps1"), "-Release", str(release), "-Changes", str(args.changes.resolve())], check=True)
     manifest = json.loads((release / "packages.json").read_text(encoding="utf-8-sig"))
+    replacements = json.loads(args.changes.read_text(encoding="utf-8")) if args.changes else {}
     if args.changes:
-        replacements = json.loads(args.changes.read_text(encoding="utf-8"))
         for name, files in replacements.items():
             for relative, source in files.items():
                 if manifest["components"][name]["files"].get(relative) != digest(source):
                     raise ValueError("Staged replacement was not sealed: " + name + "/" + relative)
-    assert manifest["components"]["pc-manager"] == json.loads((previous / "packages.json").read_text(encoding="utf-8-sig"))["components"]["pc-manager"]
+    previous_manifest = json.loads((previous / "packages.json").read_text(encoding="utf-8-sig"))
+    for name, component in manifest["components"].items():
+        if name not in replacements and component != previous_manifest["components"][name]:
+            raise ValueError("Unselected component changed: " + name)
     for name, define in (("Xiaomi-Revamp-Setup.exe", "SUITE_SETUP"), ("AI-Center-Setup.exe", "SEARCH_SETUP"), ("Screen-Translator-Setup.exe", "TRANSLATOR_SETUP"), ("Uninstall.exe", "UNINSTALL")):
         compiler(ROOT / "source/shared/Setup.cs", release / name, define)
     shutil.copy2(ROOT / "README.md", release / "README.md")
@@ -131,7 +134,7 @@ def main():
     (release / "SHA256SUMS.txt").write_text("".join(item["sha256"] + "  " + item["name"] + "\n" for item in assets), encoding="utf-8")
     assets.append({"name": "SHA256SUMS.txt", "bytes": (release / "SHA256SUMS.txt").stat().st_size, "sha256": digest(release / "SHA256SUMS.txt")})
     (release / "public-assets.json").write_text(json.dumps({"version": "0.2.0", "assets": assets}, indent=2), encoding="utf-8")
-    (release / "build-config.json").write_text(json.dumps({"previous": str(previous), "changes": str(args.changes.resolve()) if args.changes else None, "unique_files": len(written), "installed_paths_with_toolchain": paths, "pc_manager_unchanged": True, "installer_bytes": installer.stat().st_size}, indent=2), encoding="utf-8")
+    (release / "build-config.json").write_text(json.dumps({"previous": str(previous), "changes": str(args.changes.resolve()) if args.changes else None, "unique_files": len(written), "installed_paths_with_toolchain": paths, "pc_manager_unchanged": "pc-manager" not in replacements, "installer_bytes": installer.stat().st_size}, indent=2), encoding="utf-8")
     print("PASS: complete installer including development tools, " + str(round(installer.stat().st_size / 1024**2, 1)) + " MiB", flush=True)
 
 

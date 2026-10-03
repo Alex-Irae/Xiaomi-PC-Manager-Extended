@@ -84,6 +84,7 @@ async function main(){
   const d=fixture(),settingsCalls=[];
   const fields=['excluded_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','message','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
   for(const key of fields)d.ids[key]=new Element();
+  for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby'])d.ids[key]=new Element();
   for(const key of ['name_enabled','content_enabled','semantic_enabled'])d.ids[key].type='checkbox';
   const controls={roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
   let mode='paused',onStatus;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null}});

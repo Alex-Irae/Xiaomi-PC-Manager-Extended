@@ -38,7 +38,7 @@
   "max_extracted_characters": 2000000,
   "max_chunks_per_file": 3000,
   "idle_unload_seconds": 120,
-  "model_standby": "idle_unload",
+  "model_standby": "keep_loaded",
   "double_ctrl_ms": 450,
   "shortcut": "double_ctrl",
   "run_at_startup": true,

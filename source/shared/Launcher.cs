@@ -43,11 +43,36 @@ internal static class Launcher
         return result.Append('\\', slashes * 2).Append('"').ToString();
     }
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int process);
+    const string DesktopProfile = "--revamp-desktop-profile";
+    static void LaunchFromDesktop(string executable,string arguments)
+    {
+        object windows=null,desktop=null,document=null,shell=null;
+        try
+        {
+            // The inherited MSIX identity redirects AppData writes, splitting
+            // shortcut queues from the normal Windows startup resident.
+            windows=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("9BA05972-F6A8-11CF-A442-00A0C90A8F39")));
+            object location=0,root=0;int hwnd;
+            desktop=((dynamic)windows).FindWindowSW(ref location,ref root,8,out hwnd,1);
+            if(desktop==null)throw new InvalidOperationException("Windows Explorer is unavailable.");
+            document=((dynamic)desktop).Document;shell=((dynamic)document).Application;
+            ((dynamic)shell).ShellExecute(executable,arguments,Path.GetDirectoryName(executable),"open",1);
+        }
+        finally {foreach(object value in new[]{shell,document,desktop,windows})if(value!=null&&Marshal.IsComObject(value))Marshal.ReleaseComObject(value);}
+    }
     [STAThread]
     static int Main(string[] args)
     {
         try
         {
+            if(!args.Contains(DesktopProfile))
+            {
+                // Inherited file redirection can exist even when Windows reports
+                // APPMODEL_ERROR_NO_PACKAGE. Always use the actual desktop broker.
+                LaunchFromDesktop(Process.GetCurrentProcess().MainModule.FileName,DesktopProfile+" "+string.Join(" ",args.Select(Quote)));
+                return 0;
+            }
+            args=args.Where(value=>value!=DesktopProfile).ToArray();
             string root = AppDomain.CurrentDomain.BaseDirectory, runtime = Path.Combine(root, "runtime", "dotnet");
             string executable = Path.Combine(runtime, Native.EndsWith(".dll") ? "dotnet.exe" : Native);
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = root };
@@ -62,7 +87,7 @@ internal static class Launcher
                     if (process == null) throw new InvalidOperationException("Windows refused to start the application.");
                     AllowSetForegroundWindow(process.Id); process.WaitForExit();
 #if FILE_SEARCH
-                    if (process.ExitCode != 0) { Thread.Sleep(5000); start.Arguments = "--tray"; continue; }
+                    if (process.ExitCode != 0 && !args.Any(value=>value.StartsWith("--check-",StringComparison.Ordinal))) { Thread.Sleep(5000); start.Arguments = "--tray"; continue; }
 #endif
                     return process.ExitCode;
                 }

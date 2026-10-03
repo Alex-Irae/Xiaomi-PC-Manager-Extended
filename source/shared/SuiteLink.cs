@@ -271,6 +271,12 @@ internal readonly record struct SuiteChord(string Text, uint Modifiers, uint Key
 internal sealed class SuiteKeyboard : NativeWindow, IDisposable
 {
     readonly Dictionary<int, string> hotkeys = new();
+    readonly Dictionary<int, (string Action, SuiteChord Chord)> blocked = new();
+    readonly Dictionary<string, string> failures = new();
+    readonly object failureLock = new();
+    internal string? Error { get { lock(failureLock)return failures.Count==0?null:string.Join(" ",failures.Values); } }
+    internal bool Registered(string action){lock(failureLock)return !failures.ContainsKey(action);}
+    internal void RetryBlocked(){if(Handle!=IntPtr.Zero)PostMessage(Handle,0x8052,IntPtr.Zero,IntPtr.Zero);}
     readonly Dictionary<string, SuiteChord> hooks = new();
     readonly HashSet<uint> held = new(), suppressed = new();
     readonly Action<string> invoke;
@@ -308,8 +314,9 @@ internal sealed class SuiteKeyboard : NativeWindow, IDisposable
                 if (chord.Text is "double_ctrl" or "Copilot" || chord.Modifiers == 8 && chord.Key == (uint)Keys.C) hooks[item.Key] = chord;
                 else
                 {
-                    if (!RegisterHotKey(Handle, index, chord.Modifiers | 0x4000, chord.Key)) throw new InvalidOperationException($"{chord.Text} is reserved or used by another application.");
-                    hotkeys[index++] = item.Key;
+                    if (RegisterHotKey(Handle, index, chord.Modifiers | 0x4000, chord.Key)) hotkeys[index]=item.Key;
+                    else {blocked[index]=(item.Key,chord);lock(failureLock)failures[item.Key]=$"{chord.Text} for {item.Key} is used by another application. Other shortcuts remain active.";}
+                    index++;
                 }
             }
             if (hooks.Count > 0)
@@ -323,6 +330,13 @@ internal sealed class SuiteKeyboard : NativeWindow, IDisposable
     protected override void WndProc(ref Message message)
     {
         if (message.Msg == 0x8051) { Application.ExitThread(); return; }
+        if (message.Msg == 0x8052)
+        {
+            foreach(var item in blocked.ToArray())
+                if(RegisterHotKey(Handle,item.Key,item.Value.Chord.Modifiers|0x4000,item.Value.Chord.Key))
+                {hotkeys[item.Key]=item.Value.Action;blocked.Remove(item.Key);lock(failureLock)failures.Remove(item.Value.Action);}
+            return;
+        }
         if (message.Msg == 0x312 && hotkeys.TryGetValue(message.WParam.ToInt32(), out var action)) invoke(action);
         base.WndProc(ref message);
     }
@@ -403,10 +417,12 @@ internal sealed class SuiteClient : IDisposable
     SuiteKeyboard? keyboard;
     string signature = "";
     long revision = -1, consumed, lastStatus;
+    long lastRetry;
     bool? lastDefer;
     readonly long started = Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks;
     internal string? Error { get; private set; }
     internal bool Hub => component == "pc-manager";
+    internal bool Registered(string action) => leases.ContainsKey(action.Split('.')[0]) && keyboard?.Registered(action)==true;
     internal SuiteClient(string component, Dictionary<string, string> defaults, Action<string> invoke, Action<SuiteDocument> changed, Func<string> status)
     {
         this.component = component; this.invoke = invoke; this.changed = changed; this.status = status;
@@ -430,7 +446,7 @@ internal sealed class SuiteClient : IDisposable
     {
         try
         {
-            Error = null;
+            Error = keyboard?.Error;
             if (Hub) SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(Environment.ProcessId, started, DateTime.UtcNow.Ticks));
             var document = SuiteStore.Read();
             bool defer = !Hub && HubRunning();
@@ -454,9 +470,11 @@ internal sealed class SuiteClient : IDisposable
             if (settingsChanged) { changed(document); revision = document.Revision; lastDefer = defer; }
             if (nextSignature != signature)
             {
-                try { keyboard = new(bindings, SafeInvoke); signature = nextSignature; Error = null; }
+                try { keyboard = new(bindings, SafeInvoke); signature = nextSignature; Error = keyboard.Error; }
                 catch (Exception error) { signature = ""; Error = error.Message; }
             }
+            if(keyboard?.Error is not null && Environment.TickCount64-lastRetry>1000)
+            {lastRetry=Environment.TickCount64;keyboard.RetryBlocked();}
             if (!Hub && document.Commands.TryGetValue(component, out var commands))
                 foreach (var command in commands.Where(command => command.Number > consumed).OrderBy(command => command.Number))
                 {

@@ -41,6 +41,8 @@ class Service:
         self._closed = False
         self.indexer.refresh_exclusions = self.refresh_exclusions
         self.embedder.on_change = self.notify
+        self.embedder.active = lambda: self.maintenance_active or self.indexer.busy or (
+            self.indexer.mode != 'paused' and bool(self.indexer.jobs or self.indexer.vector_jobs))
 
     def refresh_exclusions(self):
         from .exclusions import refresh

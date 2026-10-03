@@ -1,4 +1,4 @@
-# Purpose: refresh selected optional-app payloads while preserving PC Manager byte for byte.
+# Purpose: refresh explicitly selected app payloads and their development copies.
 # Dependencies: PowerShell 7 and existing verified ZIPs. Outputs: selected ZIPs and packages.json.
 # Command: pwsh -NoProfile -File tools\seal_component_changes.ps1 -Release NEW_RELEASE -Changes changes.json
 param([Parameter(Mandatory=$true)][string]$Release,[Parameter(Mandatory=$true)][string]$Changes)
@@ -7,7 +7,7 @@ Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
 $manifest=Get-Content -LiteralPath (Join-Path $Release 'packages.json') -Raw|ConvertFrom-Json -AsHashtable
 $componentUpdates=Get-Content -LiteralPath $Changes -Raw|ConvertFrom-Json -AsHashtable
 foreach($component in $componentUpdates.Keys){
-    if($component -notin @('file-search','screen-translator')){throw 'Only optional-app changes are allowed.'}
+    if($component -notin @('pc-manager','file-search','screen-translator')){throw 'Unknown app component.'}
     $item=$manifest.components[$component]
     $payload=Join-Path $Release $item.payload
     $development=Join-Path $Release ($component+'-development.zip')
