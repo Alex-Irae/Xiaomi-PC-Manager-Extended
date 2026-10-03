@@ -13,7 +13,7 @@ MODES = {"Balanced": ["NPU", "GPU", "GPU"],
          "Low power": ["NPU", "NPU", "NPU"],
          "Compatibility": ["CPU", "CPU", "CPU"]}
 
-AUTO_POLICY = "native-v4-fixed-ctc-top1-1280-det-f32-validated"
+AUTO_POLICY = "native-v5-fixed-ctc-top1-1280-det-rec-f32-validated"
 
 
 def automatic_pipeline(root, batch_size=8, incremental=True, progress=print):

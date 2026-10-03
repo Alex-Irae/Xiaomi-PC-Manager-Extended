@@ -16,7 +16,7 @@ namespace LocalScreenTranslator;
 internal static class Program
 {
     internal static string Root="",Data="",CacheData="",Python="python",Fixture="";
-    internal static bool NoLoad,CheckUi,CheckSuiteUi,CheckLifecycle,TrayStart,Packaged,NoStartup;
+    internal static bool NoLoad,CheckUi,CheckSuiteUi,CheckLifecycle,CheckShortcuts,TrayStart,Packaged,NoStartup;
     [STAThread]
     static void Main(string[] args)
     {
@@ -30,6 +30,7 @@ internal static class Program
             Data=Path.GetFullPath(Option("--data-dir",XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteEnvironment.Data("screen-translator"):Packaged?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ScreenTranslator"):Path.Combine(Root,"data")));Directory.CreateDirectory(Data);
             Python=Option("--python",Packaged?Path.Combine(Root,"runtime","python","python.exe"):"python");NoLoad=args.Contains("--no-load");CheckSuiteUi=args.Contains("--check-suite-ui");CheckUi=args.Contains("--check-ui")||CheckSuiteUi;TrayStart=args.Contains("--tray")||args.Contains("--toggle")||args.Contains("--region");NoStartup=args.Contains("--no-startup")||CheckSuiteUi;
             CheckLifecycle=args.Contains("--check-model-lifecycle");CheckUi|=CheckLifecycle;NoStartup|=CheckLifecycle;TrayStart|=CheckLifecycle;
+            CheckShortcuts=args.Contains("--check-shortcut-actions");CheckUi|=CheckShortcuts;NoStartup|=CheckShortcuts;TrayStart|=CheckShortcuts;
             CacheData=Path.GetFullPath(Option("--cache-data-dir",Data));
             Fixture=Option("--fixture-directory","");
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
@@ -125,7 +126,7 @@ internal sealed partial class MainWindow : Form
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged+=DisplayChanged;
         InitializeDesktop();
         // Inference and shortcut ownership do not depend on the controls browser.
-        if(!Program.CheckUi)
+        if(!Program.CheckUi||Program.CheckShortcuts)
         {
             if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled)StartSuite();else {RegisterShortcut();RegisterLegacyKeys();}
         }
@@ -183,7 +184,7 @@ internal sealed partial class MainWindow : Form
                 if(!e.IsSuccess){FrontendFailed(new InvalidOperationException("Local frontend navigation failed: "+e.WebErrorStatus));return;}
                 navigated=true;Publish();
                 if(Program.TrayStart)Hide();
-                if(Program.CheckLifecycle)return;
+                if(Program.CheckLifecycle||Program.CheckShortcuts)return;
                 if(Program.CheckSuiteUi){await CheckSuiteUi();return;}
                 if(Program.CheckUi){await CheckUi();return;}
                 // Inference starts on an explicit action, so a tray/settings launch stays lightweight.
@@ -330,7 +331,7 @@ internal sealed partial class MainWindow : Form
     {
         StopVisual();UnloadModels("Inference stopped · memory released");
     }
-    internal void StartHidden(){_=Handle;if(Program.CheckLifecycle)_=CheckModelLifecycle();}
+    internal void StartHidden(){_=Handle;if(Program.CheckShortcuts)_=CheckShortcutActions();else if(Program.CheckLifecycle)_=CheckModelLifecycle();}
     bool ModelIdle=>ready&&!busy&&!selecting&&pendingAction==0&&(!filter||original||ControlsOpen);
     void ArmModelIdle(){modelIdle.Stop();if(ModelIdle&&backend is not null)modelIdle.Start();}
     void UnloadModels(string message)
@@ -428,6 +429,7 @@ internal sealed partial class MainWindow : Form
         if(config["cache"]!.GetValue<bool>()&&!stale&&!redrawOverlay&&sentPageVersion==pageVersion)return;
         if(!Screen.AllScreens.Any(s=>s.Bounds.Contains(target.Value))){StopVisual();Status("Display geometry changed. Select a monitor or region again.");return;}
         busy=true;frameSent=false;long currentEpoch=epoch;requestTime.Restart();Publish();
+        toolbar.Present(bounds,original,filter,overlay.Blocks,overlay.Clipped);
         try
         {
             if(overlay.Visible&&!overlay.CaptureExcluded)overlay.Hide();
@@ -438,8 +440,15 @@ internal sealed partial class MainWindow : Form
             // Bind validity before capturing; changes during capture/encoding belong to pendingChanges.
             pendingPageVersion=pageVersion;sentPageVersion=pageVersion;pendingChanges.Clear();lastFrame=Environment.TickCount64;
             var watch=Stopwatch.StartNew();using var image=new Bitmap(bounds.Width,bounds.Height,PixelFormat.Format24bppRgb);
-            using(var graphics=Graphics.FromImage(image))graphics.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size,CopyPixelOperation.SourceCopy);
+            using(var graphics=Graphics.FromImage(image))
+            {
+                // The explicit diagnostic uses public generated pixels through the real backend.
+                if(Program.CheckShortcuts){using var fixture=new Bitmap(Path.Combine(Program.Fixture,"input.png"));graphics.DrawImageUnscaled(fixture,Point.Empty);}
+                else graphics.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size,CopyPixelOperation.SourceCopy);
+            }
             watch.Stop();captureMs=watch.Elapsed.TotalMilliseconds;
+            // If capture exclusion is unavailable, restore the toolbox as soon as capture ends.
+            if(!toolbar.Visible)toolbar.Present(bounds,original,filter,overlay.Blocks,overlay.Clipped);
             ObservePage(force:true);
             pendingCapture?.Dispose();pendingCapture=(Bitmap)image.Clone();
             // PNG transport remains in RAM. This copy/encode cost is included in total hotkey time.
