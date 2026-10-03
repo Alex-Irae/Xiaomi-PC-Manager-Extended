@@ -19,15 +19,19 @@ sys.path.insert(0, str(ROOT / "source" / "screen-translator"))
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--models", type=Path, required=True, help="Existing zh-en model folder")
+    parser.add_argument("--source", type=Path, help="Optional installed translator folder to test its actual Python modules")
     parser.add_argument("--devices", nargs=2, default=["NPU", "GPU"], help="OCR detector and recognizer devices")
     args = parser.parse_args()
+    if args.source:
+        sys.path.insert(0, str(args.source.resolve()))
     results = ROOT / "results"
     highest = max([int(p.name.split("_")[0]) for p in results.iterdir() if p.is_dir() and p.name.split("_")[0].isdigit()] + [0])
     run = results / f"{highest+1:03d}_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_seed0"
     run.mkdir()
     (run / "config.json").write_text(json.dumps({"seed": 0, "models": str(args.models.resolve()), "devices": args.devices,
         "confidenceThreshold": 0.85, "mode": "Chinese-only-filter", "desktopCaptured": False,
-        "fontSizes": [18, 26], "colors": ["light", "dark"]}, indent=2), encoding="utf-8")
+        "fontSizes": [18, 26], "colors": ["light", "dark"],
+        "source": str(args.source.resolve()) if args.source else str(ROOT / "source/screen-translator")}, indent=2), encoding="utf-8")
     from PIL import Image, ImageDraw, ImageFont
     from screen_translator.core import Pipeline, TextRegion, translation_eligible
     from screen_translator.models import validate
@@ -85,6 +89,7 @@ def main():
             recognized, timing = Pipeline(ocr, model).run(image)
             records.append({"fixture": fixture.name, "regions": [{"text": r.source, "confidence": r.confidence,
                 "eligible": translation_eligible(r)} for r in recognized], "timing": timing})
+            (run / "ocr-records.json").write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
             assert not model.calls, (fixture.name, model.calls)
             assert all(r.source == r.translated for r in recognized)
             print(f"PASS: {fixture.name}, {len(recognized)} OCR boxes, zero translations", flush=True)
