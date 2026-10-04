@@ -334,7 +334,7 @@ function change(method, args = {}) {
   busy = true; pendingWrites++;
   const task = writeTail.then(async () => {
   let result, failed = false;
-  try { result = await Native.call(method, args); failed=result?.complete===false; if(method==='suite.shortcut')shortcutSaved[args.action]=result?.saved===true?{chord:result.chord,active:result.active}:null; if (result?.message && (method === "suite.shortcut" || method === "settings.shortcuts" || method === "settings.snapshot" || method === "settings.backupExport" || method === "settings.backupImport" || prefs().developerMode || result.complete === false)) notice(result.message,failed); }
+  try { result = await Native.call(method, args); failed=result?.complete===false; if (result?.message && (method === "suite.shortcut" || method === "settings.shortcuts" || method === "settings.snapshot" || method === "settings.backupExport" || method === "settings.backupImport" || prefs().developerMode || result.complete === false)) notice(result.message,failed); }
   catch (error) { failed = true; notice(error.message, true); }
   finally { if (--pendingWrites === 0) { busy = false; dirty = failed&&!result?.saved; if (!failed||result?.saved) await refresh(true); } }
   if (result?.token && $("api-token")) { $("api-token").textContent = result.token; dirty = true; }
@@ -347,7 +347,7 @@ function performAction(action, args = {}) {
   if (action === "suite-shortcut") {
     const selector=$("suite-"+args.action.replaceAll(".","-")),save=selector.closest('.MiSettingRow').querySelector('[data-action="suite-shortcut"]');
     if(save){save.textContent='Saving…';save.setAttribute('aria-busy','true');save.disabled=true;}
-    return change("suite.shortcut",{action:args.action,chord:selector.value}).finally(()=>{if(save?.isConnected){save.removeAttribute('aria-busy');save.disabled=false;const confirmed=shortcutSaved[args.action];save.textContent=confirmed?.chord===selector.value?(confirmed.active?'Saved ✓':'Saved · inactive'):'Save';}});
+    return change("suite.shortcut",{action:args.action,chord:selector.value}).finally(()=>{if(save?.isConnected){save.removeAttribute('aria-busy');save.disabled=false;save.textContent='Save';}});
   }
   if (action === "suite-appearance-save") return change("suite.appearance", { on: $("suite-appearance").checked });
   if (action === "suite.open") return change("suite.open", args);

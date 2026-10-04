@@ -102,7 +102,7 @@ internal sealed class SuiteCommand
     public string Action { get; set; } = "";
     public long Created { get; set; }
 }
-internal sealed record SuiteStatus(string Component, int Pid, string State, string Owner, string? Error, long Updated, string[] Owned);
+internal sealed record SuiteStatus(string Component, int Pid, string State, string Owner, string? Error, long Updated, string[] Owned, object? Keyboard = null);
 internal sealed record SuiteLease(int Pid, long Started, long Updated);
 
 internal static class SuiteStore
@@ -287,6 +287,8 @@ internal sealed class SuiteKeyboard : NativeWindow, IDisposable
     IntPtr hook;
     long ctrlDown, lastCtrl;
     bool ctrlChord;
+    long controlEvents, doubleCtrlActions;
+    internal object Diagnostics => new { controlEvents=Interlocked.Read(ref controlEvents),doubleCtrlActions=Interlocked.Read(ref doubleCtrlActions),listenerThreadAlive=thread.IsAlive };
     internal SuiteKeyboard(Dictionary<string, string> bindings, Action<string> invoke)
     {
         this.invoke = invoke; callback = OnKey;
@@ -346,8 +348,12 @@ internal sealed class SuiteKeyboard : NativeWindow, IDisposable
         {
             uint key = (uint)Marshal.ReadInt32(data);
             bool down = message.ToInt32() is 0x100 or 0x104;
-            bool fresh = down ? held.Add(key) : held.Remove(key);
             bool control = key is 0x11 or 0xA2 or 0xA3;
+            if(control)Interlocked.Increment(ref controlEvents);
+            // A release may be lost across desktop switches or swallowed by another hook.
+            // Windows' async state still describes keys before this event, including Ctrl repeats.
+            if (control && down) held.RemoveWhere(value => !Pressed((int)value));
+            bool fresh = down ? held.Add(key) : held.Remove(key);
             long now = Environment.TickCount64;
             if (down && fresh)
             {
@@ -361,6 +367,7 @@ internal sealed class SuiteKeyboard : NativeWindow, IDisposable
                     if (lastCtrl > 0 && now - lastCtrl <= 450)
                     {
                         lastCtrl = 0;
+                        Interlocked.Increment(ref doubleCtrlActions);
                         foreach (var item in hooks.Where(item => item.Value.Text == "double_ctrl")) SafeInvoke(item.Key);
                     }
                     else lastCtrl = now;
@@ -485,7 +492,7 @@ internal sealed class SuiteClient : IDisposable
             if (DateTime.UtcNow.Ticks - lastStatus > TimeSpan.FromSeconds(1).Ticks)
             {
                 lastStatus = DateTime.UtcNow.Ticks;
-                SuiteStore.AtomicWrite(SuiteStore.FilePath("status-" + component + ".json"), new SuiteStatus(component, Environment.ProcessId, status(), Hub ? "PC Manager" : defer ? "PC Manager" : "Standalone", Error, lastStatus, leases.Keys.ToArray()));
+                SuiteStore.AtomicWrite(SuiteStore.FilePath("status-" + component + ".json"), new SuiteStatus(component, Environment.ProcessId, status(), Hub ? "PC Manager" : defer ? "PC Manager" : "Standalone", Error, lastStatus, leases.Keys.ToArray(),keyboard?.Diagnostics));
             }
         }
         catch (Exception error) { Error = error.Message; }

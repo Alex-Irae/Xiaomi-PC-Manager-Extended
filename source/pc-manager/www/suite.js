@@ -1,7 +1,6 @@
 /* Purpose: suite app launchers, shared bindings and optional shared appearance.
  * Dependencies: app.js and its native bridge. Outputs: suite settings. Run: PCManager.exe --manager. */
 let suiteState;
-const shortcutSaved={};
 const suiteLabel = action => ({
   'file-search.open': 'Open File Search', 'screen-translator.toggle': 'Toggle translation',
   'screen-translator.screen': 'Translate screen', 'screen-translator.region': 'Translate region',
@@ -35,13 +34,12 @@ async function chooseShortcut(node) {
     node.dataset.committed=node.value;
     return performAction('shortcut-save');
   }
-    delete shortcutSaved[node.dataset.suiteAction];
   const save=node.closest('.MiSettingRow').querySelector('[data-action="suite-shortcut"]');
   if(save){save.textContent='Save';save.removeAttribute('data-saved');}
 }
 function suiteKeyboardCard() {
   if (!suiteState?.enabled) return '';
-  return card('Connected app shortcuts', `<p class="inline-note shortcut-intro">Choose a shortcut or select Press a shortcut to record your keys. Saving an assigned shortcut swaps the two actions' keys automatically. Each app handles its shortcuts when PC Manager is closed.</p><div class="suite-shortcut-list">${(suiteState.bindings || []).map(item => {const saved=shortcutSaved[item.action];const label=saved?.chord===item.chord?(saved.active?'Saved ✓':'Saved · inactive'):'Save';return row(suiteLabel(item.action), item.action.startsWith('file-search') ? 'Semantic File Search' : 'Screen Translator', `${shortcutPicker(item.chord,'suite-'+item.action.replaceAll('.','-'),item.action)}${button(label, 'suite-shortcut', { action: item.action })}`);}).join('')}</div>${suiteState.error ? `<p class="error" role="status">${UI.escape(suiteState.error)}</p>` : ''}`, 'keyboard');
+  return card('Connected app shortcuts', `<p class="inline-note shortcut-intro">Choose a shortcut or select Press a shortcut to record your keys. Saving an assigned shortcut swaps the two actions' keys automatically. Each app handles its shortcuts when PC Manager is closed.</p><div class="suite-shortcut-list">${(suiteState.bindings || []).map(item => row(suiteLabel(item.action), item.action.startsWith('file-search') ? 'Semantic File Search' : 'Screen Translator', `${shortcutPicker(item.chord,'suite-'+item.action.replaceAll('.','-'),item.action)}${button('Save', 'suite-shortcut', { action: item.action })}`)).join('')}</div>${suiteState.error ? `<p class="error" role="status">${UI.escape(suiteState.error)}</p>` : ''}`, 'keyboard');
 }
 function suiteToolsCard() {
   if (!suiteState?.enabled) return '';

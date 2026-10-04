@@ -447,8 +447,11 @@ internal sealed partial class CenterContext : ApplicationContext
         Search.Hide();await Wait(()=>Task.FromResult(!Search.BrowserLoaded));
         Search.ShowSearch();await Page(Search);await Query();
         await Wait(async()=>await Search.Evaluate("document.querySelector('.result .name')?.textContent==='chosen.md'&&!document.getElementById('history').hidden")=="true");
+        var launchesBeforeEnter=launches.Count;
         await Query();await Search.Evaluate("document.getElementById('query').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))");
-        await Wait(()=>Task.FromResult(launches.Count(item=>item.action=="open"&&Path.GetFileName(item.path)=="chosen.md")==2));
+        await Wait(async()=>await Search.Evaluate("document.querySelector('.result .name')?.textContent==='chosen.md'")=="true");
+        await Task.Delay(300);
+        if(launches.Count!=launchesBeforeEnter)throw new Exception("Enter opened a document instead of searching");
         await Search.Evaluate("document.querySelector('.result').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:120,clientY:120}));document.getElementById('menu-open-with').click()");
         await Wait(()=>Task.FromResult(launches.Any(item=>item.action=="open_with")));
         await Search.Evaluate("document.querySelector('.result').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:120,clientY:120}));document.getElementById('menu-reveal').click()");
@@ -457,7 +460,10 @@ internal sealed partial class CenterContext : ApplicationContext
         await Wait(async()=>await Search.Evaluate("document.querySelector('.result .name')?.textContent==='efs.txt'&&document.getElementById('history').hidden")=="true");
         await Task.Delay(1000);
         if(new SearchHistory(Program.Data).Read().Queries.Length!=0)throw new Exception("Removed history was resaved");
-        return new {passed=true,includedRows=true,excludedRows=true,expandAboveFour=true,contextMenu=true,open=true,openWith=true,showInExplorer=true,choiceSurvivesBrowserDisposal=true,exactHistoryVisible=true,repeatQueryFavoriteFirst=true,enterBeforeResultsOpensFirst=true,removeForgetsChoice=true,removedQueryStaysRemoved=true,externalAppsLaunched=false,openWithDialogVisuallyTested=false};
+        await Search.Evaluate("(()=>{const q=document.getElementById('query');q.value='efs md';q.dispatchEvent(new Event('input'));})()");
+        await Wait(async()=>await Search.Evaluate("document.getElementById('file-type').value==='md'&&document.querySelectorAll('.result').length>0&&[...document.querySelectorAll('.result .name')].every(n=>n.textContent.endsWith('.md'))")=="true");
+        await Search.SavePreview("extension-filter.png");
+        return new {passed=true,includedRows=true,excludedRows=true,expandAboveFour=true,contextMenu=true,open=true,openWith=true,showInExplorer=true,choiceSurvivesBrowserDisposal=true,exactHistoryVisible=true,repeatQueryFavoriteFirst=true,enterSearchDoesNotOpenFile=true,exactExtensionFilter=true,removeForgetsChoice=true,removedQueryStaysRemoved=true,externalAppsLaunched=false,openWithDialogVisuallyTested=false};
     }
     internal void Post(Action action){if(!Search.IsDisposed&&Search.IsHandleCreated)Search.BeginInvoke(action);}
     internal void Send(JsonElement message,string owner)
@@ -550,7 +556,7 @@ internal sealed partial class CenterContext : ApplicationContext
         var envelope=JsonNode.Parse(message.GetRawText())!;envelope["owner"]=owner;
         if(method=="local_search")
         {
-            try{var parameters=envelope["data"]!["request"]!["params"]!;parameters["preferred_paths"]=JsonSerializer.SerializeToNode(new SearchHistory(Program.Data).Preferred(parameters["text"]?.GetValue<string>()??""));}
+            try{var parameters=envelope["data"]!["request"]!["params"]!;parameters["preferred_paths"]=JsonSerializer.SerializeToNode(new SearchHistory(Program.Data).Preferred(parameters["history_query"]?.GetValue<string>()??parameters["text"]?.GetValue<string>()??""));}
             catch(Exception error){Program.Log("Remembered choices unavailable: "+error.Message);}
         }
         Write(envelope);
