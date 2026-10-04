@@ -30,7 +30,7 @@ globalThis.runSuiteValidation=async function(token) {
     const action='screen-translator.original',selected=document.getElementById('suite-'+action.replaceAll('.','-'));
     const confirmation=await performAction('suite-shortcut',{action});
     const savedLabel=document.querySelector(`[data-action="suite-shortcut"][data-args*="${action}"]`)?.textContent;
-    check('saved-after-persistence-and-registration',confirmation.saved===true&&confirmation.active===true&&savedLabel==='Saved ✓',{confirmation,savedLabel});
+    check('toast-only-after-persistence-and-registration',confirmation.saved===true&&confirmation.active===true&&savedLabel==='Save'&&!document.getElementById('toast').hidden&&document.getElementById('toast').textContent==='Shortcut saved.',{confirmation,savedLabel});
     const after=await Native.call('suite.read');const beforeChord=after.bindings.find(item=>item.action===action).chord;
     let rejected=false;try{await Native.call('suite.shortcut',{action,chord:'Win+L'});}catch{rejected=true;}
     const retained=await Native.call('suite.read');

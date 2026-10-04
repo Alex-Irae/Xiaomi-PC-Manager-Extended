@@ -127,6 +127,7 @@ def main():
             for path in public_source(ROOT / name):
                 archive.write(path, path.relative_to(ROOT).as_posix())
         archive.write(ROOT / "README.md", "README.md")
+        archive.write(ROOT / "RELEASE_NOTES.md", "RELEASE_NOTES.md")
         archive.write(ROOT / "source/pc-manager/LICENSE", "LICENSE")
     shutil.copy2(outer, release / "Xiaomi-Revamp-Installer.zip")
     names = [installer.name, "Xiaomi-Revamp-Installer.zip", "development-toolchain.zip", "pc-manager-development.zip", "file-search-development.zip", "screen-translator-development.zip", source_zip.name]

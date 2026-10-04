@@ -254,10 +254,22 @@ internal sealed class ReplacementOverlay : Form
     protected override void Dispose(bool disposing){if(disposing)canvas?.Dispose();base.Dispose(disposing);}
 }
 
+internal sealed class ToolbarButton : Button
+{
+    // Remove WinForms' rectangular white cue. A subtle fill change preserves
+    // keyboard focus feedback inside the button's existing rounded region.
+    protected override bool ShowFocusCues=>false;
+    public override Color BackColor
+    {
+        get{var colour=base.BackColor;return Focused&&Enabled?Color.FromArgb((colour.R*9+ForeColor.R)/10,(colour.G*9+ForeColor.G)/10,(colour.B*9+ForeColor.B)/10):colour;}
+        set=>base.BackColor=value;
+    }
+}
+
 internal sealed class TranslationToolbar : Form
 {
     Color accent=Color.FromArgb(52,130,255),surface=Color.White,foreground=Color.FromArgb(47,64,87);
-    readonly Button original=new(),filter=new(),screenshot=new(),dismiss=new();
+    readonly Button original=new ToolbarButton(),filter=new ToolbarButton(),screenshot=new ToolbarButton(),dismiss=new ToolbarButton();
     readonly Label state=new();
     readonly Label title=new();
     internal bool IsActive

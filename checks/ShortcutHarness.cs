@@ -1,6 +1,7 @@
 // Purpose: exercise shared bindings and real Windows hotkey handover with isolated fake app agents.
 // Dependencies: .NET 8 Desktop/Win32 only. Outputs: numbered check directory, config.json and summary.json.
-// Command after compilation: private-dotnet ShortcutHarness.dll verify. Never starts PC hardware or screen capture.
+// Commands after compilation: private-dotnet ShortcutHarness.dll verify; or observe OUTPUT_JSON (45 seconds).
+// Observe records only Ctrl events and gesture counts. Never starts PC hardware or screen capture.
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -49,6 +50,20 @@ internal static class ShortcutHarness
     [STAThread]
     static int Main(string[] args)
     {
+        if(args[0]=="observe")
+        {
+            ApplicationConfiguration.Initialize();var samples=new List<object>();int actions=0;
+            Hook probe=(code,message,data)=>{if(code>=0&&(uint)Marshal.ReadInt32(data) is 0x11 or 0xA2 or 0xA3)samples.Add(new{key=Marshal.ReadInt32(data),kind=message.ToInt32(),tick=Environment.TickCount64});return CallNextHookEx(IntPtr.Zero,code,message,data);};
+            IntPtr listener=SetWindowsHookEx(13,probe,GetModuleHandle(null),0);
+            if(listener==IntPtr.Zero)throw new System.ComponentModel.Win32Exception();
+            using var keyboard=new SuiteKeyboard(new(){["file-search.open"]="double_ctrl"},_=>Interlocked.Increment(ref actions));
+            using var window=new Form{Text="Xiaomi Revamp keyboard probe",ClientSize=new Size(470,90),ShowInTaskbar=true};
+            window.Controls.Add(new Label{Text="Double Ctrl diagnostic. Only Ctrl events are counted.",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter});
+            using var end=new System.Windows.Forms.Timer{Interval=45000};end.Tick+=(_,_)=>window.Close();end.Start();
+            try{Application.Run(window);}
+            finally{UnhookWindowsHookEx(listener);GC.KeepAlive(probe);File.WriteAllText(args[1],JsonSerializer.Serialize(new{actions,samples},new JsonSerializerOptions{WriteIndented=true}));}
+            return 0;
+        }
         if (args[0] == "agent")
         {
             ApplicationConfiguration.Initialize(); string component = args[1];
@@ -84,6 +99,20 @@ internal static class ShortcutHarness
             }
             Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(snapshot)!, "*.pending").Any(), "Atomic writes leaked a temporary file.");
             Console.WriteLine("PASS: atomic replacement preserves reader snapshots and retries brief Windows file contention");
+            using(var gesture=new SuiteKeyboard(new(){["file-search.open"]="double_ctrl"},action=>evidence["doubleCtrlRecovered"]=true))
+            {
+                var dispatch=typeof(SuiteKeyboard).GetMethod("OnKey",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                IntPtr eventData=Marshal.AllocHGlobal(24);
+                try
+                {
+                    void Key(uint key,bool down){Marshal.WriteInt32(eventData,(int)key);dispatch.Invoke(gesture,new object[]{0,new IntPtr(down?0x100:0x101),eventData});}
+                    // A hook can miss a release during a desktop transition or another listener's suppression.
+                    Key(0x41,true);Key(0xA2,true);Key(0xA2,false);Key(0xA2,true);Key(0xA2,false);
+                    Assert(evidence.ContainsKey("doubleCtrlRecovered"),"A missed non-Ctrl release permanently disabled Double Ctrl.");
+                    Console.WriteLine("PASS: Double Ctrl recovers after a missed key release");
+                }
+                finally{Marshal.FreeHGlobal(eventData);}
+            }
             Assert(RegisterHotKey(IntPtr.Zero,29993,0x4007,(uint)Keys.F17),"Could not reserve the conflict fixture.");
             using(var partial=new SuiteKeyboard(new(){["good"]="Ctrl+Alt+Shift+F16",["blocked"]="Ctrl+Alt+Shift+F17"},_=>{}))
             {
@@ -159,4 +188,9 @@ internal static class ShortcutHarness
     }
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr owner, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr owner, int id);
+    delegate IntPtr Hook(int code,IntPtr message,IntPtr data);
+    [DllImport("user32.dll",SetLastError=true)]static extern IntPtr SetWindowsHookEx(int kind,Hook callback,IntPtr module,uint thread);
+    [DllImport("user32.dll")]static extern bool UnhookWindowsHookEx(IntPtr handle);
+    [DllImport("user32.dll")]static extern IntPtr CallNextHookEx(IntPtr handle,int code,IntPtr message,IntPtr data);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]static extern IntPtr GetModuleHandle(string? name);
 }
