@@ -8,6 +8,15 @@ $run=[IO.Path]::GetFullPath($RunDirectory)
 if(Test-Path -LiteralPath $run){throw 'Use a new result directory.'}
 New-Item -ItemType Directory -Path $run|Out-Null
 $source=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\source\shared\Setup.cs'))
+$fixtureRegistry='Software\XiaomiRevampSetupTests\'+(Split-Path -Leaf $run)
+$compiledSource=Join-Path $run 'Setup-fixture.cs'
+# Isolate shell destinations and registry namespaces. Test app names and owned
+# shortcut behavior without modifying real Start Menu/desktop or uninstall keys.
+$testSource=[IO.File]::ReadAllText($source)
+$testSource=$testSource.Replace('Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonStartMenu : Environment.SpecialFolder.StartMenu)','Path.Combine(Path.GetDirectoryName(root), "ShortcutFixture")')
+$testSource=$testSource.Replace('Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory)','Path.Combine(Path.GetDirectoryName(root), "DesktopFixture")')
+$testSource=$testSource.Replace('Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiRevamp.',($fixtureRegistry+'\Uninstall\XiaomiRevamp.')).Replace('Software\Microsoft\Windows\CurrentVersion\Run',($fixtureRegistry+'\Run'))
+[IO.File]::WriteAllText($compiledSource,$testSource)
 $root=Join-Path $run 'Installed'
 $data=Join-Path $run 'Chosen Data'
 $protectedData=Join-Path $env:ProgramFiles ('XiaomiRevamp-Data-Check-'+[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'))
@@ -29,7 +38,7 @@ function Apply($arguments,$expect=0){
 }
 $compiler=Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $executable=Join-Path $run 'Xiaomi-Revamp-Setup.exe'
-& $compiler /nologo /target:winexe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /define:SUITE_SETUP "/win32manifest:$(Join-Path ([IO.Path]::GetDirectoryName($source)) 'Setup.manifest')" "/out:$executable" $source
+& $compiler /nologo /target:winexe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /define:SUITE_SETUP "/win32manifest:$(Join-Path ([IO.Path]::GetDirectoryName($source)) 'Setup.manifest')" "/out:$executable" $compiledSource
 if($LASTEXITCODE -ne 0){throw 'Setup compilation failed.'}
 Copy-Item -LiteralPath $executable -Destination (Join-Path $run 'Uninstall.exe')
 $components=@{}
@@ -59,6 +68,12 @@ if($ContentStore){
 $package|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $run 'packages.json')
 try{
     Apply @('--apply','--target',$root,'--components','file-search,screen-translator','--data-root',$data,'--search-data',$protectedData,'--all-users','--development')
+    $menu=Join-Path $run 'ShortcutFixture\Programs\Xiaomi Revamp'
+    $shell=New-Object -ComObject WScript.Shell
+    $centerLink=$shell.CreateShortcut((Join-Path $menu 'AI Center.lnk'))
+    $searchLink=$shell.CreateShortcut((Join-Path $menu 'File Search.lnk'))
+    Assert ($centerLink.Arguments -eq '--center' -and $searchLink.Arguments -eq '--search') 'AI Center opens launcher and File Search opens the bar'
+    $oldLink=$shell.CreateShortcut((Join-Path $menu 'AI Center settings.lnk'));$oldLink.TargetPath=Join-Path $root 'AI Center\AI Center.exe';$oldLink.Arguments='--center';$oldLink.Save()
     $marker=Get-Content -LiteralPath (Join-Path $root 'suite-install.json') -Raw|ConvertFrom-Json
     $searchPath=$marker.componentData.'file-search'.Replace('{sid}',$sid)
     $translatorPath=$marker.componentData.'screen-translator'.Replace('{sid}',$sid)
@@ -70,9 +85,11 @@ try{
     $dev=Join-Path $root 'AI Center\Development\source\edit.txt'
     [IO.File]::WriteAllText($dev,'my development edit')
     Apply @('--apply','--target',$root,'--components','file-search','--all-users','--development')
+    Assert (!(Test-Path (Join-Path $menu 'AI Center settings.lnk'))) 'upgrade removes owned legacy settings shortcut'
     Assert ((Get-Content -LiteralPath $dev -Raw) -eq 'my development edit') 'upgrade preserves editable development source'
     [IO.File]::WriteAllText((Join-Path $root 'AI Center\added.txt'),'added')
     Apply @('--apply','--action','remove','--target',$root,'--components','file-search','--remove-data','--remove-changed')
+    Assert (!(Test-Path (Join-Path $menu 'AI Center.lnk')) -and !(Test-Path (Join-Path $menu 'File Search.lnk'))) 'uninstall removes both owned AI Center shortcuts'
     Assert (!(Test-Path -LiteralPath $searchPath)) 'requested search settings and data were removed'
     Assert (Test-Path -LiteralPath $translatorPath) 'unselected translator settings were retained'
     Assert ((Get-Content -LiteralPath $dev -Raw) -eq 'my development edit') 'uninstall preserves development when that removal option is off'
@@ -90,7 +107,7 @@ try{
     # Recovery folders contain earlier app versions and are deliberately retained on upgrades.
     Assert (!(Test-Path -LiteralPath (Join-Path $root 'AI Center'))) 'selected app folders were removed'
     Assert (!(Test-Path -LiteralPath $root)) 'full removal also clears verified recovery and staging folders'
-    $uninstall=@(Get-ChildItem 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall'|Get-ItemProperty|Where-Object{$_.InstallLocation -like ($root+'*')})
+    $uninstall=@(Get-ChildItem ('HKLM:\'+$fixtureRegistry+'\Uninstall') -ErrorAction SilentlyContinue|Get-ItemProperty|Where-Object{$_.InstallLocation -like ($root+'*')})
     Assert ($uninstall.Count -eq 0) 'all-users uninstall registry entries were removed'
     @{passed=$true;checks=$script:checkCount;installUpgradeUninstall=$true;programFilesData=$true;allUsersRegistration=$true;developmentPreserved=$true;modelsInitialized=$false}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'summary.json')
 }catch{

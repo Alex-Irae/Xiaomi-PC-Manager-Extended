@@ -105,6 +105,25 @@ internal static class Setup
         return result.Append('\\', slashes * 2).Append('"').ToString();
     }
     static string Hash(string path) { using (var stream = File.OpenRead(path)) using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant(); }
+    static void MoveDirectory(string source, string destination)
+    {
+        // Newly extracted executable files can still be held by virus scanners.
+        // Retry only transient sharing/access errors; never replace a target.
+        for (int attempt = 0; ; attempt++)
+        {
+            try { Directory.Move(source, destination); return; }
+            catch (IOException error)
+            {
+                int code = error.HResult & 0xffff;
+                if (attempt >= 19 || (code != 5 && code != 32) || !Directory.Exists(source) || Directory.Exists(destination)) throw;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt >= 19 || !Directory.Exists(source) || Directory.Exists(destination)) throw;
+            }
+            System.Threading.Thread.Sleep(250);
+        }
+    }
     static Dictionary<string, object> Object(object value) { return (Dictionary<string, object>)value; }
     static string Child(string root, string relative)
     {
@@ -172,9 +191,13 @@ internal static class Setup
         string profile = Profile(root), app = Child(root, Folders[component]), executable = Path.Combine(app, Executables[component]);
         bool all = AllUsers(root);
         string menu = Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonStartMenu : Environment.SpecialFolder.StartMenu), "Programs", "Xiaomi Revamp"); Directory.CreateDirectory(menu);
-        string arguments = component == "pc-manager" ? "--manager" : component == "file-search" ? "--search" : "";
+        string arguments = component == "pc-manager" ? "--manager" : component == "file-search" ? "--center" : "";
         Shortcut(Path.Combine(menu, Folders[component] + ".lnk"), executable, arguments);
-        if (component == "file-search") Shortcut(Path.Combine(menu, "AI Center settings.lnk"), executable, "--center");
+        if (component == "file-search")
+        {
+            RemoveShortcut(Path.Combine(menu, "AI Center settings.lnk"), executable);
+            Shortcut(Path.Combine(menu, "File Search.lnk"), executable, "--search");
+        }
         if (desktop) Shortcut(Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory), Folders[component] + ".lnk"), executable, arguments);
         using (var key = (all ? Registry.LocalMachine : Registry.CurrentUser).CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiRevamp." + profile + "." + component))
         {
@@ -277,15 +300,15 @@ internal static class Setup
                         Directory.GetFileSystemEntries(destination).All(value => Path.GetFileName(value) == "Development" || Path.GetFileName(value) == "suite-component.json");
                     if (!owned.ContainsKey(component) && !retainedDevelopment) throw new InvalidOperationException("Existing component folder is not owned by this installation.");
                     foreach (string path in Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories)) using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None)) { }
-                    Directory.Move(destination, previous);
+                    MoveDirectory(destination, previous);
                 }
                 else previous = "";
-                commits.Add(Tuple.Create(destination, previous)); Directory.Move(prepared, destination); owned[component] = item;
+                commits.Add(Tuple.Create(destination, previous)); MoveDirectory(prepared, destination); owned[component] = item;
                 // An upgrade never overwrites the user's editable development copy.
                 if (previous.Length > 0 && Directory.Exists(Path.Combine(previous, "Development")))
                 {
-                    if (Directory.Exists(Path.Combine(destination, "Development"))) Directory.Move(Path.Combine(destination, "Development"), Child(stage, "fresh-development-" + component));
-                    Directory.Move(Path.Combine(previous, "Development"), Path.Combine(destination, "Development"));
+                    if (Directory.Exists(Path.Combine(destination, "Development"))) MoveDirectory(Path.Combine(destination, "Development"), Child(stage, "fresh-development-" + component));
+                    MoveDirectory(Path.Combine(previous, "Development"), Path.Combine(destination, "Development"));
                     Writable(Path.Combine(destination, "Development"), allUsers);
                 }
             }
@@ -305,9 +328,9 @@ internal static class Setup
             foreach (var commit in Enumerable.Reverse(commits))
             {
                 if (commit.Item2.Length > 0 && Directory.Exists(Path.Combine(commit.Item1, "Development")) && !Directory.Exists(Path.Combine(commit.Item2, "Development")))
-                    Directory.Move(Path.Combine(commit.Item1, "Development"), Path.Combine(commit.Item2, "Development"));
-                if (Directory.Exists(commit.Item1)) Directory.Move(commit.Item1, Child(stage, "failed-" + Path.GetFileName(commit.Item1)));
-                if (commit.Item2.Length > 0) Directory.Move(commit.Item2, commit.Item1);
+                    MoveDirectory(Path.Combine(commit.Item1, "Development"), Path.Combine(commit.Item2, "Development"));
+                if (Directory.Exists(commit.Item1)) MoveDirectory(commit.Item1, Child(stage, "failed-" + Path.GetFileName(commit.Item1)));
+                if (commit.Item2.Length > 0) MoveDirectory(commit.Item2, commit.Item1);
             }
             foreach (var file in metadata)
             {
@@ -420,7 +443,7 @@ internal static class Setup
             if (!Directory.EnumerateFileSystemEntries(app).Any()) Directory.Delete(app);
             if (removeChanged) foreach (string recovery in Directory.GetDirectories(root, ".previous-" + component + "-*")) SafeDelete(recovery);
             string menu = Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonStartMenu : Environment.SpecialFolder.StartMenu), "Programs", "Xiaomi Revamp");
-            foreach (string shortcut in new[] { Path.Combine(menu, Folders[component] + ".lnk"), Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory), Folders[component] + ".lnk"), component == "file-search" ? Path.Combine(menu, "AI Center settings.lnk") : "" }) if (shortcut.Length > 0) RemoveShortcut(shortcut, Path.Combine(app, Executables[component]));
+            foreach (string shortcut in new[] { Path.Combine(menu, Folders[component] + ".lnk"), Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory), Folders[component] + ".lnk"), component == "file-search" ? Path.Combine(menu, "AI Center settings.lnk") : "", component == "file-search" ? Path.Combine(menu, "File Search.lnk") : "" }) if (shortcut.Length > 0) RemoveShortcut(shortcut, Path.Combine(app, Executables[component]));
             if (Directory.Exists(menu) && !Directory.EnumerateFileSystemEntries(menu).Any()) Directory.Delete(menu);
             (all ? Registry.LocalMachine : Registry.CurrentUser).DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiRevamp." + Profile(root) + "." + component, false);
             using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) key.DeleteValue("XiaomiRevampSuite." + (component == "file-search" ? "Search." : "Translator.") + Identity(root), false);

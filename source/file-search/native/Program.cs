@@ -193,6 +193,7 @@ internal sealed partial class CenterContext : ApplicationContext
     JsonElement settings;
     JsonElement? settingsHistory;
     Func<string,string,bool>? testFileLaunch;
+    string? testBackupFolder;
     NativeInput? keyboard;
     string installedShortcut="";
     bool disposed;
@@ -207,10 +208,10 @@ internal sealed partial class CenterContext : ApplicationContext
         settings=JsonSerializer.SerializeToElement(defaults);
         Search=new SearchWindow(this);_=Search.Handle;NativeInput.SetWindowText(Search.Handle,Program.InstanceTitle);
         if(!headless)ApplyStartup();
-        tray=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center · Ctrl then Ctrl",Visible=false,ContextMenuStrip=new ContextMenuStrip()};
+        tray=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center",Visible=true,ContextMenuStrip=new ContextMenuStrip()};
         tray.ContextMenuStrip.Items.Add("AI Center",null,(_,_)=>ShowCenter());
-        tray.ContextMenuStrip.Items.Add("Search",null,(_,_)=>Search.ShowSearch());
-        tray.ContextMenuStrip.Items.Add("Quit",null,(_,_)=>Quit());tray.DoubleClick+=(_,_)=>ShowCenter();
+        tray.ContextMenuStrip.Items.Add("File Search",null,(_,_)=>Search.ShowSearch());
+        tray.ContextMenuStrip.Items.Add("Quit AI Center",null,(_,_)=>Quit());tray.DoubleClick+=(_,_)=>ShowCenter();
         idle.Tick+=(_,_)=>{if(!KeepSearchReady&&outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");};
         string schedule=Path.Combine(Program.Data,"schedule.txt");
         if(File.Exists(schedule)&&DateTime.TryParse(File.ReadAllText(schedule),out var time))lastScheduled=time.ToUniversalTime();
@@ -256,7 +257,7 @@ internal sealed partial class CenterContext : ApplicationContext
         }
         settings=JsonSerializer.SerializeToElement(current);
     }
-    internal void CenterVisibility()=>tray.Visible=center?.Visible==true;
+    internal void CenterVisibility()=>tray.Visible=!Program.Exiting;
     bool ActiveWindow=>Search.Visible||(center?.Visible==true&&center.WindowState!=FormWindowState.Minimized);
     internal Color WindowColor
     {
@@ -369,16 +370,18 @@ internal sealed partial class CenterContext : ApplicationContext
     internal async Task<object> CheckResident()
     {
         async Task Wait(Func<bool> condition,int timeout=15000){var watch=Stopwatch.StartNew();while(!condition()&&watch.ElapsedMilliseconds<timeout)await Task.Delay(50);if(!condition())throw new TimeoutException("Resident check timed out");}
-        if(tray.Visible||Search.BrowserLoaded)throw new InvalidOperationException("Hidden startup allocated UI resources");
+        if(!tray.Visible||Search.BrowserLoaded)throw new InvalidOperationException("Hidden startup must have a tray icon without a WebView");
         ShowCenter();await Wait(()=>center!.PageReady);if(!tray.Visible)throw new InvalidOperationException("Center has no tray icon");
         if(!await center!.CheckAccent(new[]{new[]{".brand","backgroundColor"},new[]{".center-tabs .active","color"},new[]{".tool-icon","color"},new[]{".primary","backgroundColor"},new[]{".secondary","color"}}))throw new InvalidOperationException("Center accent did not propagate");
-        center!.Hide();await Wait(()=>!center.BrowserLoaded);if(tray.Visible)throw new InvalidOperationException("Hidden center kept tray icon");
-        Search.ShowSearch();await Wait(()=>Search.PageReady);if(tray.Visible)throw new InvalidOperationException("Search created tray icon");
+        center!.WindowState=FormWindowState.Minimized;await Task.Delay(100);if(!tray.Visible)throw new InvalidOperationException("Minimized center lost tray icon");
+        center.WindowState=FormWindowState.Normal;
+        center.Hide();await Wait(()=>!center.BrowserLoaded);if(!tray.Visible)throw new InvalidOperationException("Hidden center lost tray icon");
+        Search.ShowSearch();await Wait(()=>Search.PageReady);if(!tray.Visible)throw new InvalidOperationException("Search lost tray icon");
         if(!await Search.CheckAccent(new[]{new[]{".submit","backgroundColor"},new[]{"nav .active","color"}}))throw new InvalidOperationException("Search accent did not propagate");
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
-        Search.ShowSearch();await Wait(()=>Search.PageReady);if(tray.Visible)throw new InvalidOperationException("Recreated search created tray icon");
+        Search.ShowSearch();await Wait(()=>Search.PageReady);if(!tray.Visible)throw new InvalidOperationException("Recreated search lost tray icon");
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
-        return new {passed=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,hiddenCenterTrayVisible=false,searchTrayVisible=false,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
+        return new {passed=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
     }
     internal async Task<object> CheckUX()
     {
@@ -436,6 +439,13 @@ internal sealed partial class CenterContext : ApplicationContext
         await center.Evaluate("localBridge.call('local_index_now',{force:true,wait:false}).then(()=>window.fixtureIndexReady=true)");
         await Wait(async()=>await center.Evaluate("window.fixtureIndexReady===true")=="true");
         await Wait(()=>Task.FromResult(!IndexingActive));
+        testBackupFolder=Path.GetFullPath(Path.Combine(Program.Data,"..","..","Backups"));Directory.CreateDirectory(testBackupFolder);
+        if(await center.Evaluate("document.getElementById('index-location').textContent.endsWith('index.sqlite3.dpapi')")!="true")throw new Exception("Index path was not displayed");
+        await center.Evaluate("document.getElementById('backup-index').click()");
+        await Wait(async()=>await center.Evaluate("document.getElementById('index-backup-status').textContent.startsWith('Backup complete')&&!document.getElementById('backup-index').disabled")=="true");
+        if(Directory.GetFiles(testBackupFolder,"manifest.json",SearchOption.AllDirectories).Length!=1)throw new Exception("Backup manifest was not published");
+        await center.Evaluate("document.getElementById('index-backup-title').scrollIntoView({block:'start'})");await center.SavePreview("index-backup.png");
+        testBackupFolder=null;
         Search.ShowSearch();await Page(Search);
         async Task Query()=>await Search.Evaluate("(()=>{const q=document.getElementById('query');q.value='efs';q.dispatchEvent(new Event('input'));})()");
         await Query();await Wait(async()=>await Search.Evaluate("document.querySelector('.result .name')?.textContent==='efs.txt'")=="true");
@@ -481,6 +491,19 @@ internal sealed partial class CenterContext : ApplicationContext
         if(method=="local_suite_manager"){try{OpenSuiteManager();Reply(new {opened=true});}catch(Exception error){Reply(null,1,error.Message);}return;}
         if(method=="local_save_config"){try{SaveSuiteShortcut(request.GetProperty("params"));}catch(Exception error){Reply(null,1,error.Message);return;}}
         if(method=="local_config"){try{ReadScope();BroadcastTheme();Reply(new {settings,path=Program.Config});}catch(Exception error){Reply(null,1,error.Message);}return;}
+        if(method is "local_index_info" or "local_index_folder")
+        {
+            if(owner!="manager"){Reply(null,1,"Index backups belong to AI Center search settings");return;}
+            try
+            {
+                string path=Path.Combine(Program.Data,"index.sqlite3"+(settings.GetProperty("index_protection").GetString()=="windows"?".dpapi":""));
+                var file=new FileInfo(path);
+                if(method=="local_index_folder")Process.Start(new ProcessStartInfo("explorer.exe"){UseShellExecute=true,Arguments="\""+Program.Data+"\""});
+                Reply(new {path,bytes=file.Exists?file.Length:0,saved=file.Exists?file.LastWriteTimeUtc.ToString("O"):null,model_path=settings.GetProperty("model_path").GetString()});
+            }
+            catch(Exception error){Reply(null,1,error.Message);}return;
+        }
+        if(method=="local_backup_index"&&owner!="manager"){Reply(null,1,"Open index backup in AI Center search settings");return;}
         if(method is "local_exclusions_get" or "local_exclusions_edit")
         {
             try
@@ -546,7 +569,7 @@ internal sealed partial class CenterContext : ApplicationContext
         // WebView messages can arrive one dispatch after the center is closed.
         // Accept its already-issued edits/index actions while that page exists;
         // hidden search requests and subscriptions must still stay canceled.
-        bool pendingEdit=owner=="manager"&&center?.BrowserLoaded==true&&method is "local_save_config" or "local_index_now" or "local_reset_index" or "local_mode";
+        bool pendingEdit=owner=="manager"&&center?.BrowserLoaded==true&&method is "local_save_config" or "local_index_now" or "local_reset_index" or "local_mode" or "local_backup_index";
         bool warmRead=KeepSearchReady&&owner=="search"&&(method.StartsWith("register_",StringComparison.Ordinal)||method=="local_status");
         if(!ActiveWindow&&!pendingEdit&&!warmRead){Reply(null,1,"Search is dismissed");return;}
         EnsureBackend();Touch();
@@ -634,7 +657,7 @@ internal sealed partial class CenterContext : ApplicationContext
                 return new {opened};
             case "reveal":if(testFileLaunch is not null){testFileLaunch(action,args.GetProperty("path").GetString()!);break;}var explorer=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};explorer.ArgumentList.Add("/select,");explorer.ArgumentList.Add(args.GetProperty("path").GetString()!);Process.Start(explorer);break;
             case "copy":Clipboard.SetText(args.GetProperty("path").GetString()!);break;
-            case "choose_folder":using(var dialog=new FolderBrowserDialog())return dialog.ShowDialog(center)==DialogResult.OK?dialog.SelectedPath:null;
+            case "choose_folder":if(testBackupFolder is not null)return testBackupFolder;using(var dialog=new FolderBrowserDialog {Description="Choose a backup or folder location"})return dialog.ShowDialog(center)==DialogResult.OK?dialog.SelectedPath:null;
             case "resize":Search.ResizeLogical(args.GetProperty("width").GetInt32(),args.GetProperty("height").GetInt32());break;
             case "appearance":settings=args.Clone();InstallShortcut();ApplyStartup();if(KeepSearchReady){EnsureBackend();Search.Prepare();}Search.Script("window.dispatchEvent(new CustomEvent('settings-changed',{detail:"+args.GetRawText()+"}))");BroadcastTheme();break;
             case "hide":Search.Hide();break;case "show_search":Search.ShowSearch();break;case "manage":ShowCenter();break;case "quit":Post(Quit);break;
