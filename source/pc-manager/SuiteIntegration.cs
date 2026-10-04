@@ -131,6 +131,7 @@ public sealed partial class ManagerApplication
     }
     internal void SuiteOpen(string action)
     {
+        XiControl.Log.Write("Shortcuts.Invoke action="+action);
         if (!SuiteEnvironment.Enabled) throw new InvalidOperationException("Suite integration is unavailable.");
         if(action.StartsWith("pc-manager.custom.")) { int index=int.Parse(action["pc-manager.custom.".Length..])-1; if(index>=0&&index<Preferences.Shortcuts.Count)Advanced?.RunCustomAction(Preferences.Shortcuts[index]); return; }
         if(action=="pc-manager.copilot") {Advanced?.RunCustomAction(Preferences.CopilotShortcut);return;}

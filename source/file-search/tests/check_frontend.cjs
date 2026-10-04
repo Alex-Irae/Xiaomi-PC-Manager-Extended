@@ -15,7 +15,7 @@ class Element {
   contains(node){return node===this||this.children.some(child=>child.contains(node));}
 }
 function fixture(){
-  const ids=Object.fromEntries(['query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','profile-picture','profile-image','reset-picture','message','home','preferences'].map(key=>[key,new Element()]));
+  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','profile-picture','profile-image','reset-picture','message','home','preferences'].map(key=>[key,new Element()]));
   ids['search-form'].offsetHeight=76;
   const footer=new Element(),grip=new Element(),document=new Element(),window=new Element();document.body=new Element();document.documentElement=new Element();
   document.getElementById=id=>ids[id];document.createElement=tag=>new Element(tag);
@@ -34,6 +34,7 @@ async function main(){
   f.stored.set('local-search-history-v1',JSON.stringify(['estimation-free','EFS','budget']));
   let deferred,encryptedHistory=[];
   f.context.localBridge={feedback(){},host(){},appearance(){},call:async(method,params)=>{calls.push({method,params});if(method==='local_config')return {settings};if(method==='local_history_get')return {queries:encryptedHistory};if(method==='local_history_save'){encryptedHistory=[...params.queries];return {saved:true};}if(method==='local_history_remember'){encryptedHistory=[params.query,...encryptedHistory.filter(q=>q!==params.query)];return {queries:encryptedHistory};}if(method==='local_history_remove'){encryptedHistory=encryptedHistory.filter(q=>q!==params.query);return {queries:encryptedHistory};}if(method==='local_history_clear'){encryptedHistory=[];return {queries:encryptedHistory};}if(method==='local_search'){if(params.text==='slow')return new Promise(resolve=>deferred=resolve);return {results:[{file_id:7,name:'article.pdf',file_type:32,file_name_with_highlight:'article.pdf',file_path:'C:/article.pdf',matches:params.semantic?['Semantic']:['Content']}],timing:{total_ms:1},warnings:[]};}return null;}};
+  vm.runInContext(fs.readFileSync('frontend/query-filters.js','utf8'),f.context);
   vm.runInContext(fs.readFileSync('frontend/search.js','utf8'),f.context);await flush();
   assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
   f.ids.query.value='est';f.ids.query.emit('input');
@@ -48,11 +49,32 @@ async function main(){
   f.ids['menu-open-with'].emit('click');await flush();assert(calls.some(c=>c.method==='open_file_with'&&c.params.file_id===7&&c.params.query==='estimation-free'));assert.equal(f.ids['result-menu'].hidden,true);
   f.ids.history.children[1].children[1].emit('click');await flush();f.advance(900);await flush();assert(!encryptedHistory.includes('estimation-free'),'Removal must not resave the active query');
   console.log('PASS: exact history match, immediate action history, context-menu Open with, remove without auto-resave');
-  const openedBefore=calls.filter(c=>c.method==='open_file').length;f.ids.query.value='efs';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();assert.equal(calls.filter(c=>c.method==='open_file').length,openedBefore+1);assert(calls.some(c=>c.method==='open_file'&&c.params.query==='efs'));
-  console.log('PASS: Enter before results waits for and opens the first result once');
-  f.ids.query.value='slow';f.ids.query.emit('input');f.advance(180);await flush();assert(deferred);
+  const openedBefore=calls.filter(c=>c.method==='open_file'||c.method==='open_file_folder').length;
+  f.ids.query.value='efs';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+  f.context.document.emit('keydown',{key:'Enter',ctrlKey:true});await flush();
+  assert.equal(calls.filter(c=>c.method==='open_file'||c.method==='open_file_folder').length,openedBefore);
+  assert(calls.some(c=>c.method==='local_search'&&c.params.text==='efs'));
+  console.log('PASS: Enter before/after results and Ctrl+Enter search without opening a document');
+  const parse=f.window.SearchFilters.parse;
+  for(const value of ['invoice pdf','PDF invoice','invoice .pdf','invoice *.pdf','pdf invoice pdf']){const parsed=parse(value);assert.equal(parsed.extension,'pdf');assert.equal(parsed.text,'invoice');assert.equal(parsed.error,'');}
+  assert.equal(parse('pdf').text,'');assert.equal(parse('pdf').extension,'pdf');
+  assert.equal(parse('invoice pdf annual').extension,'');assert.equal(parse('"pdf" invoice').extension,'');assert.equal(parse('invoice "pdf"').extension,'');assert.equal(parse('report.pdf').extension,'');
+  assert.equal(parse('invoice .log').extension,'log');assert(parse('pdf invoice docx').error);
+  console.log('PASS: boundary extensions, case, explicit extensions, single type, literal quotes/middle words and ambiguous types');
+  async function typeQuery(value){f.ids.query.value=value;f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();}
+  await typeQuery('invoice pdf');assert.equal(f.ids['file-type'].value,'pdf');assert(calls.some(c=>c.method==='local_search'&&c.params.text==='invoice ext:pdf'&&c.params.history_query==='invoice pdf'));
+  assert(f.ids.results.children.some(n=>n.className?.startsWith('result')));
+  f.ids['file-type'].value='docx';f.ids['file-type'].emit('change');await flush();assert.equal(f.ids.query.value,'invoice');assert.equal(calls.filter(c=>c.method==='local_search').at(-1).params.text,'invoice ext:docx');assert(!f.ids.results.children.some(n=>n.className?.startsWith('result')),'Wrong extensions must not render');
+  await typeQuery('budget');assert.equal(f.ids['file-type'].value,'docx','Manual filter survives query edits');
+  f.ids['file-type'].value='';f.ids['file-type'].emit('change');await flush();
+  await typeQuery('pdf invoice');await typeQuery('invoice');assert.equal(f.ids['file-type'].value,'','Removing an inferred type clears it');
+  await typeQuery('pdf');assert.equal(calls.filter(c=>c.method==='local_search').at(-1).params.text,'ext:pdf');
+  f.ids['file-type'].value='';f.ids['file-type'].emit('change');await flush();assert.equal(f.ids.query.value,'');assert.equal(f.ids.results.hidden,true);
+  const requestsBefore=calls.filter(c=>c.method==='local_search').length;await typeQuery('pdf invoice docx');assert.equal(calls.filter(c=>c.method==='local_search').length,requestsBefore,'Ambiguous type must not silently run');
+  console.log('PASS: automatic/manual selector, original history query, exact rendering, inferred filter removal, All types and ambiguous query');
+  f.ids.query.value='slow';f.ids.query.emit('input');f.advance(180);await flush();assert(deferred);f.context.document.emit('keydown',{key:'Enter'});await flush();
   f.window.emit('local-search-dismiss');assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
-  deferred({results:[{name:'stale'}],timing:{total_ms:1},warnings:[]});await flush();assert.equal(f.ids.results.hidden,true);
+  deferred({results:[{name:'stale'}],timing:{total_ms:1},warnings:[]});await flush();assert.equal(f.ids.results.hidden,true);assert.equal(calls.filter(c=>c.method==='open_file'||c.method==='open_file_folder').length,openedBefore);
   const focusedBefore=f.ids.query.focusCalls||0;
   f.ids.query.value='old';f.window.emit('local-search-open');await flush();assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
   assert((f.ids.query.focusCalls||0)>focusedBefore,'Invocation must request query input focus');
