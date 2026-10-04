@@ -106,12 +106,12 @@ async function main(){
   const d=fixture(),settingsCalls=[];
   const fields=['excluded_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','message','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
   for(const key of fields)d.ids[key]=new Element();
-  for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby'])d.ids[key]=new Element();
+  for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby','index-location','index-storage','embedding-model-location','index-folder','backup-index','index-backup-status'])d.ids[key]=new Element();
   for(const key of ['name_enabled','content_enabled','semantic_enabled'])d.ids[key].type='checkbox';
   const controls={roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
-  let mode='paused',onStatus;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null}});
+  let mode='paused',onStatus,backup={active:false,phase:''},cancelBackup=false;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null},backup});
   const previews=[];
-  d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
+  d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_index_info')return {path:'C:/Data/index.sqlite3.dpapi',bytes:2147483648,saved:'2026-10-04T00:00:00Z',model_path:'C:/Models/qwen'};if(method==='local_backup_index'){if(cancelBackup)return {cancelled:true};backup={active:true,phase:'Copying encrypted index'};return {accepted:true};}if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
   vm.runInContext(fs.readFileSync('frontend/settings.js','utf8'),d.context);await flush();
   assert.equal(d.ids['paths-summary'].children.length,2);
   d.ids['paths-exclude'].emit('click');for(const path of ['C:/One','C:/Two','C:/Three','C:/Four','C:/Five']){d.ids['path-input'].value=path;d.ids['path-add'].emit('click');await flush();}
@@ -136,6 +136,13 @@ async function main(){
   d.ids['reset-index'].emit('click');assert.equal(d.ids['reset-dialog'].open,true);d.ids['cancel-reset'].emit('click');assert.equal(d.ids['reset-dialog'].open,false);assert(!settingsCalls.some(c=>c.method==='local_reset_index'));
   d.ids['reset-index'].emit('click');d.ids['confirm-reset'].emit('click');await flush();assert(settingsCalls.some(c=>c.method==='local_reset_index'&&c.params.wait===false));
   console.log('PASS: immediate settings, undo/redo, channel validation, transactional paths editor, PC roots only, asynchronous index, pause and reset confirmation');
+  assert.equal(d.ids['index-location'].textContent,'C:/Data/index.sqlite3.dpapi');assert(d.ids['index-storage'].textContent.includes('2.00 GiB'));assert.equal(d.ids['embedding-model-location'].textContent,'C:/Models/qwen');
+  d.ids['index-folder'].emit('click');await flush();assert(settingsCalls.some(c=>c.method==='local_index_folder'));
+  d.ids['backup-index'].emit('click');await flush();assert.equal(d.ids['backup-index'].disabled,true);assert(d.ids['index-backup-status'].textContent.includes('Copying'));
+  backup={active:false,phase:'Complete',path:'E:/Backup/AI-Center-Index-test',bytes:2147483648};onStatus(state());await flush();assert.equal(d.ids['backup-index'].disabled,false);assert(d.ids['index-backup-status'].textContent.includes('Backup complete'));
+  cancelBackup=true;d.ids['backup-index'].emit('click');await flush();assert.equal(d.ids['backup-index'].disabled,false);assert.equal(d.ids['index-backup-status'].textContent,'Backup cancelled.');
+  backup={active:false,phase:'Failed',error:'Disk full'};onStatus(state());assert(d.ids['index-backup-status'].textContent.includes('Disk full'));assert.equal(d.ids['index-backup-status'].className,'error');
+  console.log('PASS: index/model locations, GiB size, asynchronous backup progress, completion, cancel and failure feedback');
 
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
