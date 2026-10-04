@@ -5,6 +5,14 @@ The complete offline EXE installer includes PC Manager, optional AI Center and S
 their models and private runtimes, editable development sources and the offline development toolchain.
 The installer ZIP contains the same complete setup.
 
+- AI Center now opens the launcher, with a separate File Search shortcut for the bar.
+  The misleading AI Center settings shortcut is removed during installation or upgrade.
+- AI Center retains its tray icon while minimized/hidden, with a Quit AI Center menu action.
+- Search settings displays the index location, saved size/time and separate model folder.
+  Index backups preserve metadata and embeddings in new dated folders with SHA256 manifests
+  and recovery instructions. Encrypted backups require the original Windows profile keys;
+  copying to another laptop or a reinstalled Windows profile is not supported.
+
 - Protected search checkpoints now stream authenticated compressed batches, removing the former
   single-buffer 2 GiB boundary. Existing encrypted indexes migrate atomically without discarding data.
 - Search keeps its browser, backend and embedding model ready. Closing search does not interrupt

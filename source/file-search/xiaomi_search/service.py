@@ -23,6 +23,9 @@ class Service:
         self.maintenance_lock = threading.Lock()
         self.maintenance_thread = None
         self.maintenance_active = False
+        self.backup_lock = threading.Lock()
+        self.backup_thread = None
+        self.backup_state = {'active': False, 'phase': ''}
         self.store.roots = config['roots']
         self.store.excluded_folders = config["excluded_folders"]
         self.store.excluded_extensions = config["excluded_extensions"]
@@ -53,13 +56,59 @@ class Service:
 
     def status(self):
         return {"counts": self.store.counts(), "indexer": self.activity(), "model": {"path": self.config["model_path"], "available": (Path(self.config["model_path"]) / "openvino_model.xml").is_file(), "loaded": self.embedder.pipeline is not None, "device": self.embedder.device, "error": self.embedder.error},
-            "roots": self.config["roots"], "shortcut": self.config["shortcut"], "semantic_enabled": self.config["semantic_enabled"], "offline": True}
+            "roots": self.config["roots"], "shortcut": self.config["shortcut"], "semantic_enabled": self.config["semantic_enabled"], "offline": True,
+            "backup": dict(self.backup_state)}
 
     def activity(self):
         state = self.indexer.status()
         if self.maintenance_active and not state['busy']:
             state.update(busy=True, phase='Saving snapshot' if not state['queued_files'] and not state['queued_embedding_files'] else 'Indexing')
+        if self.backup_state['active'] and not state['busy']:
+            state.update(busy=True, phase=self.backup_state['phase'])
         return state
+
+    def backup_index(self):
+        """Choose a destination and acknowledge before a large checkpoint finishes."""
+        if not self.backup_lock.acquire(blocking=False):
+            raise RuntimeError('An index backup is already running')
+        try:
+            parent = self.window_action('choose_folder', {})
+            if not parent:
+                self.backup_lock.release()
+                return {'cancelled': True}
+            parent = Path(parent).resolve(strict=True)
+            app = Path(__file__).resolve().parent.parent
+            if parent == app or app in parent.parents:
+                raise ValueError('Choose a backup folder outside the AI Center installation')
+            profile = self.config_path.parent
+            if parent == profile or profile in parent.parents:
+                raise ValueError('Choose a backup folder outside AI Center application data')
+            configuration = copy.deepcopy(self.config)
+            self.backup_state = {'active': True, 'phase': 'Saving checkpoint'}
+            # Pin the native worker before acknowledging the RPC, even if the
+            # settings window closes while the disk copy is in progress.
+            self.emit({'kind': 'index_activity', 'indexer': self.activity()})
+            def progress(phase):
+                self.backup_state = {'active': True, 'phase': phase}
+                self.notify()
+            def background():
+                from .backup import create_backup
+                try:
+                    result = create_backup(self.store, parent, configuration, progress)
+                    self.backup_state = {'active': False, 'phase': 'Complete', **result}
+                except Exception as exc:
+                    self.backup_state = {'active': False, 'phase': 'Failed', 'error': str(exc)}
+                    LOG.exception('Index backup failed')
+                finally:
+                    self.backup_lock.release()
+                    self.notify()
+            self.backup_thread = threading.Thread(target=background, name='index-backup', daemon=True)
+            self.backup_thread.start()
+            return {'accepted': True}
+        except Exception:
+            self.backup_state = {'active': False, 'phase': ''}
+            self.backup_lock.release()
+            raise
 
     def subscription_data(self, method):
         if method == "register_aiservice_state_change":
@@ -219,6 +268,8 @@ class Service:
             return {"settings": self.config, "path": str(self.config_path)}
         if method == "local_choose_folder":
             return self.window_action("choose_folder", {})
+        if method == 'local_backup_index':
+            return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
             allowed = {"roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance"}
@@ -364,5 +415,7 @@ class Service:
         self.indexer.stop()
         if self.maintenance_thread:
             self.maintenance_thread.join(timeout=10)
+        if self.backup_thread:
+            self.backup_thread.join()
         self.embedder.unload()
         self.store.close()
