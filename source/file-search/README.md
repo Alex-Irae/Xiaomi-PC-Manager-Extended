@@ -375,6 +375,24 @@ The live development launch uncovered an additional stall that the in-process mo
 On the refreshed full development index, EFS found the intended PDF second, estimation-free first, and the tested descriptive query second. Test sources containing the same phrases compete legitimately: the descriptive query's first result is the diagnostic script itself. These corpus changes limit a first-place claim but do not indicate missing semantic coverage. Full-development warm service probes took 287–419 ms, and the initial query took 1.67 seconds including model setup. The faster partial-drive sample timings above must not be substituted for these full-development measurements. Actual ranks and competitors are saved in `development-acceptance.json`.
 
 
+## Indexing progress
+
+Search settings displays Overall known work, Indexing and Embedding percentages.
+Indexing counts resolved file attempts, including unsupported, empty and failed
+files; failures are shown separately. Embedding counts stored vectors against
+extracted text passages. Overall combines files and passages with equal weight,
+not elapsed time. Totals grow during discovery, so a percentage may decrease and
+100% known coverage does not mean the drive scan has finished. Existing indexed
+files can still be checked for changes.
+
+Approximate remaining time uses up to two minutes of observed progress after
+at least 30 seconds. It estimates only known remaining work, and disappears when
+paused, blocked or stalled. It is unavailable for undetected work or a different
+embedding model's coverage. No extra database queries or changes to the indexing
+worker are introduced. Reopening a settings window resets its throughput sample.
+Run focused checks with the existing Node runtime:
+`node tests/check_index_progress.cjs` and `node tests/check_frontend.cjs`.
+
 ## Folder summaries, file actions and remembered choices
 
 The installed AI Center entry opens the main launcher. File Search opens only the compact bar. AI Center keeps a tray icon while resident; use its menu to reopen the launcher/search or quit the process.
