@@ -137,8 +137,10 @@ internal static class SuiteStore
             for (int attempt = 0; ; attempt++)
             {
                 try { if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path); break; }
-                catch (IOException error) when (attempt < 10 && (error.HResult & 0xffff) is 32 or 33) { Thread.Sleep(20); }
-                catch (UnauthorizedAccessException) when (attempt < 10) { Thread.Sleep(20); }
+                // 32/33: sharing or lock violation. 1175-1177: File.Replace could not swap the
+                // files because another program (an indexer, a scanner) had one open.
+                catch (IOException error) when (attempt < 25 && (error.HResult & 0xffff) is 32 or 33 or 1175 or 1176 or 1177) { Thread.Sleep(20); }
+                catch (UnauthorizedAccessException) when (attempt < 25) { Thread.Sleep(20); }
             }
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
@@ -513,6 +515,8 @@ internal sealed class SuiteClient : IDisposable
     public void Dispose()
     {
         timer.Stop(); timer.Dispose(); Release();
-        if (Hub) SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(0, 0, 0));
+        // Releasing the hub lease is best effort: a busy file must not crash an app that is closing.
+        try { if (Hub) SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(0, 0, 0)); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 }

@@ -181,7 +181,7 @@ function catalog(group) {
   const fields = settingState.rows.filter(s => s.group === group && (prefs().developerMode || !s.key.startsWith("Api."))), advanced = fields.filter(s => /Ramp|Converge|Backoff|Divisor|Snap|Deadband|Settle|LearnMs|Hysteresis|LearnBlend|FineStep|RevertMs/.test(s.key));
   const ordinary = fields.filter(s => !advanced.includes(s) && (!s.key.endsWith("Command") || ["launch", "app"].includes(fields.find(r => r.key === s.key.slice(0, -7) + "Action")?.value)));
   const content = values => values.map(s => row(s.key.endsWith("Command") && fields.find(r => r.key === s.key.slice(0, -7) + "Action")?.value === "app" ? "Selected app" : s.label, "", settingControl(s), settingHelp(s), s.key)).join("");
-  return card("Preferences", content(ordinary), pages[group]?.[1] || "settings") + (advanced.length ? `<details data-persist="tuning"><summary>Brightness response tuning</summary>${card("Response tuning", content(advanced), "screen")}</details>` : "");
+  return card("Preferences", content(ordinary), pages[group]?.[1] || "settings") + (group === "settings" && appVersion ? `<p class="inline-note">PC Manager version ${UI.escape(appVersion)}</p>` : "") + (advanced.length ? `<details data-persist="tuning"><summary>Brightness response tuning</summary>${card("Response tuning", content(advanced), "screen")}</details>` : "");
 }
 function customizationPage() {
   const c = customization || {}, icons = c.icons || [], position = ["TopLeft","Top","TopRight","Left","Center","Right","BottomLeft","Bottom","BottomRight"];
@@ -230,7 +230,7 @@ function settingsPage() {
       `<p class="inline-note">Missing apps do not disable the resident controls. Opening a missing shortcut also offers a file picker.</p>`, "tools")+
     catalog("settings") + (p.developerMode ? card("HTTP API token", `<p class="inline-note">The API requires a bearer token; only its hash is stored.</p>${button("Generate new token", "settings.apiToken")}<output id="api-token" class="break-path"></output>`) : "");
 }
-let isolationStatus = "", settingsError = "";
+let isolationStatus = "", settingsError = "", appVersion = "";
 const openDetails = new Set();
 function render() {
   document.querySelectorAll("details[data-persist]").forEach(node => { if (node.open) openDetails.add(node.dataset.persist); else openDetails.delete(node.dataset.persist); });
@@ -306,7 +306,7 @@ async function refresh(force = false) {
     // Keep the last complete inventory visible until a newer one is ready.
     const specs = state.hardware?.specs ?? snapshot?.hardware?.specs ?? null;
     snapshot = { ...snapshot, ...state, hardware: { ...snapshot?.hardware, ...state.hardware, specs } };
-    const w = await Native.call("window.state"); awake = w.awake; sleepOff = w.preventSleep; isolationStatus = w.isolationStatus;
+    const w = await Native.call("window.state"); awake = w.awake; sleepOff = w.preventSleep; isolationStatus = w.isolationStatus; appVersion = w.version || "";
     if (!settingState || force || page === "keyboard") { try { settingState = await Native.call("settings.read"); settingsError = ""; } catch (error) { settingsError = error.message; } }
     if (page === "settings" && (!customization || force)) customization = await Native.call("settings.customization");
     if (["keyboard", "tools", "settings"].includes(page)) suiteState = await Native.call("suite.read");

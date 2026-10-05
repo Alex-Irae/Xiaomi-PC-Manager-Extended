@@ -211,7 +211,10 @@ public sealed class HardwareService : IDisposable
             throw new InvalidOperationException("The firmware did not confirm this mode. Availability depends on the laptop and power source.");
         if (PowerStatus.Read().LineStatus != source)
             throw new InvalidOperationException("The charger changed during this operation. The mode was not saved; refresh its actual state.");
-        ModeConfirmed?.Invoke(mode, online);
+        // Only a choice made by the user is announced. Policies that restore the saved mode
+        // at startup, on a power change or from the 30-second guard stay silent.
+        if (remember) ModeConfirmed?.Invoke(mode, online);
+        else PolicyReadingsChanged?.Invoke();
         if (!remember) return;
         if (advanced is not null)
         {
@@ -234,6 +237,13 @@ public sealed class HardwareService : IDisposable
         {
             var source = PowerStatus.Read().LineStatus;
             if (source == PowerLineStatus.Unknown || firmware?.GetPerfMode() is not PerfMode mode || !ModeVisibility.IsAvailable(mode, source == PowerLineStatus.Online)) return;
+            // In Smart mode the firmware announces its own internal steps (values 7 and 8) with the
+            // same event as the mode key, about once a minute under load. The mode itself has not
+            // changed then, so nothing is shown and no settings file is rewritten.
+            bool onAc = source == PowerLineStatus.Online;
+            PerfMode? known = advanced is { PowerProfiles: true } ? (onAc ? advanced.AcPerfMode : advanced.BatteryPerfMode)
+                : Enum.TryParse<PerfMode>(onAc ? preferences.AcMode : preferences.BatteryMode, out var saved) ? saved : null;
+            if (known == mode) return;
             if (advanced is not null)
             {
                 advanced.PowerProfiles = true; advanced.RestoreMode = false; advanced.ForceStartMode = null;

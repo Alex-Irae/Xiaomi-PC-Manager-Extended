@@ -313,7 +313,14 @@ class Indexer:
                     if not self.running or self.mode == "paused" or not self.config["semantic_enabled"] or (self.mode == "battery_saver" and on_battery()):
                         self.vector_jobs.add(fid)
                         return
+                    began = time.monotonic()
                     vector = self.embedder.encode([chunk["text"]])[0]  # shape: [D]
+                    # Indexing load limit: rest after each passage so the embedding device is
+                    # busy for only the chosen share of the time (50% rests as long as it worked).
+                    # Searches are never slowed; this loop only fills the index.
+                    share = int(self.config["indexing_load"])
+                    if share < 100:
+                        time.sleep((time.monotonic() - began) * (100 - share) / share)
                     if self.embedder.identity() != model_id:
                         raise ValueError("Model files changed during indexing. Restart semantic backfill")
                     ready.append((chunk["id"], vector))

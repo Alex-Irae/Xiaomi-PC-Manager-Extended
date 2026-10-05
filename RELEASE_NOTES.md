@@ -1,3 +1,15 @@
+# Xiaomi Revamp 0.3.1
+
+PC Manager 0.2.2, AI Center 0.3.1, Screen Translator 0.2.2.
+
+- **PC Manager: the performance OSD no longer appears by itself.** In Smart mode the firmware announces its internal steps with the same event as the mode key, about once a minute under load. Each one showed the OSD and rewrote the settings file. An event that does not change the mode is now ignored, and restoring the saved mode at startup or from the policy guard is silent.
+- **All apps: no crash when a shared settings file is busy.** The shared writer retries when another program has the file open, and closing an app no longer fails on it.
+- **AI Center: indexing hardware load.** A new setting rests the embedding device between passages: 100, 75, 50 or 25 percent. Measured on an Arc B390: 94, 79, 46 and 18 percent GPU use, at 54, 34, 24 and 9 passages per second. Searches are not slowed.
+- **Screen Translator: faster, steadier model loading.** The tokenizer no longer imports a large framework (0.1 s instead of 2 s warm and up to 25 s cold; identical token ids and text on the test set). A warm load measured 2.8 s instead of 6.4 s. Models now stay ready for a chosen time after use (default 2 minutes, previously a fixed 10 seconds; loaded models hold about 1.9 GB). Pressing the shortcut again while models load no longer cancels the load.
+- **Version in settings.** Each app shows its version: PC Manager at the bottom of Settings, AI Center on its overview page, Screen Translator in its footer.
+
+Not changed: the first model load on a new Screen Translator profile still validates every device and is slow and memory-hungry once.
+
 # Xiaomi Revamp 0.3.0
 
 AI Center 0.3.0, PC Manager 0.2.1 and Screen Translator 0.2.1. The two 0.2.1 apps only receive the new launcher with the testing control switch; their own code is unchanged.

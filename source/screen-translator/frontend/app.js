@@ -20,7 +20,7 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
 $('drag').addEventListener('pointerdown',event => {if(event.button === 0)send('drag');});
 $('monitor').addEventListener('change',() => send('monitor',{value:Number($('monitor').value)}));
 function fill(config) {
-  for(const field of ['models','interval_ms','theme','accent','profile','font_family','display_style','screenshot_folder'])$(field).value = config[field];
+  for(const field of ['models','interval_ms','model_idle_seconds','theme','accent','profile','font_family','display_style','screenshot_folder'])$(field).value = config[field];
   setShortcut(config.shortcut);
   $('font_scale').value = Math.round(config.font_scale * 100);
   for(const field of ['cache','incremental','debug','toolbar_focus_only','autostart','font_fit','follow_suite_appearance'])$(field).checked = config[field];
@@ -41,13 +41,14 @@ $('shortcut').addEventListener('change',() => {
 $('settings-form').addEventListener('submit',event => {
   event.preventDefault();
   const config = {...state.config,models:$('models').value.trim(),mode:'Managed',batch_size:8};
-  config.interval_ms=Number($('interval_ms').value);config.font_scale=Number($('font_scale').value)/100;
+  config.interval_ms=Number($('interval_ms').value);config.model_idle_seconds=Number($('model_idle_seconds').value);config.font_scale=Number($('font_scale').value)/100;
   for(const field of ['cache','incremental','debug','toolbar_focus_only','autostart','font_fit','follow_suite_appearance'])config[field] = $(field).checked;
   for(const field of ['theme','accent','shortcut','profile','font_family','display_style','screenshot_folder'])config[field] = $(field).value;
   dirty = false;send('save',{config});
 });
 $('reset-settings').addEventListener('click',() => {if(state)fill(state.config);});
 function render(value) {
+  if(value.version)document.getElementById('footer-status').textContent='Version '+value.version;
   state = value;
   if(!$('font_family').options.length) $('font_family').replaceChildren(...(value.fonts || ['Segoe UI']).map(name=>{const option=document.createElement('option');option.value=option.textContent=name;return option;}));
   document.documentElement.dataset.theme=value.config.theme;

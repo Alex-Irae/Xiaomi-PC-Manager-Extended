@@ -48,6 +48,8 @@ def validate(config, path):
         raise ValueError("excluded_names must be a list of directory names")
     if config["indexing_mode"] not in ("normal", "battery_saver", "paused"):
         raise ValueError("indexing_mode must be normal, battery_saver, or paused")
+    if config["indexing_load"] not in ("100", "75", "50", "25"):
+        raise ValueError("indexing_load must be 100, 75, 50 or 25")
     if config['indexing_frequency'] not in ('realtime', '5_minutes', '15_minutes', 'hourly', 'daily', 'manual'):
         raise ValueError('Unsupported indexing frequency')
     if config['theme'] not in ('system', 'light', 'dark') or config['index_protection'] not in ('windows', 'none', 'efs'):

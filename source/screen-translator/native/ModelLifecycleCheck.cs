@@ -22,12 +22,14 @@ internal sealed partial class MainWindow
         }
         try
         {
+            config["model_idle_seconds"]=10; // the check waits for an idle release; real use defaults to two minutes
             Hide();Require(backend is null&&!ready,"Startup loaded models without an action.");
             Require(web.CoreWebView2 is null,"Hidden startup created the controls browser.");
             evidence["hiddenStartupWithoutBrowser"]=true;Step("startup");
             await Hotkey(6);Require(pendingAction==6&&busy&&!ControlsOpen,"Cold toggle did not queue or opened settings.");
-            await Hotkey(6);Require(backend is null&&!busy&&pendingAction==0,"Second toggle did not cancel loading.");
-            evidence["coldToggleQueuedWithoutGui"]=true;evidence["loadingToggleCancels"]=true;
+            // A second press while loading must not cancel the load; the loading bar's close button does that.
+            var loading=backend;await Hotkey(6);Require(backend==loading&&busy&&pendingAction==6,"Second toggle interrupted loading.");
+            evidence["coldToggleQueuedWithoutGui"]=true;evidence["secondToggleKeepsLoading"]=true;
             for(int pass=0;pass<2;pass++)
             {
                 var clock=Stopwatch.StartNew();await Hotkey(2);

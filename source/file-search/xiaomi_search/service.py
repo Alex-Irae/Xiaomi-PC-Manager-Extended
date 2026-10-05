@@ -319,14 +319,17 @@ class Service:
         if method == "local_errors":
             return self.store.errors()
         if method == "local_config":
-            return {"settings": self.config, "path": str(self.config_path)}
+            # The installer writes the released version beside the package; an editable copy has none.
+            manifest = Path(__file__).resolve().parents[1] / "package-manifest.json"
+            version = json.loads(manifest.read_text(encoding="utf-8")).get("version", "") if manifest.is_file() else "development"
+            return {"settings": self.config, "path": str(self.config_path), "version": version}
         if method == "local_choose_folder":
             return self.window_action("choose_folder", {})
         if method == 'local_backup_index':
             return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
-            allowed = {"roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
+            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
             if set(params) - allowed:
                 raise ValueError("Unsupported setting")
             settings = validate({**self.config, **params}, self.config_path)

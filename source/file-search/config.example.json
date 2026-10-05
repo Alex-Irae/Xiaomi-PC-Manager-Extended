@@ -55,5 +55,6 @@
   "embedding_padding_side": "left",
   "follow_suite_appearance": true,
   "windows_semantic_enabled": true,
-  "programs_enabled": true
+  "programs_enabled": true,
+  "indexing_load": "100"
 }

@@ -326,7 +326,7 @@ internal sealed class TranslationToolbar : Form
     internal void SavePreview(string path){using var preview=new Bitmap(Width,Height);DrawToBitmap(preview,ClientRectangle);preview.Save(path,ImageFormat.Png);}
     internal void MarkStale(){state.Text="Updating changed text…";}
     internal void Loading(Rectangle bounds)
-    { Present(bounds,false,false,0,0);state.Text="Loading cached models…";original.Enabled=filter.Enabled=screenshot.Enabled=false; }
+    { Present(bounds,false,false,0,0);state.Text="Loading models… a few seconds";original.Enabled=filter.Enabled=screenshot.Enabled=false; }
     internal void Appearance(Color colour,bool dark)
     {
         accent=colour;surface=dark?Color.FromArgb(37,41,47):Color.White;foreground=dark?Color.FromArgb(232,237,244):Color.FromArgb(47,64,87);

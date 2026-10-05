@@ -3,7 +3,7 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};
@@ -43,7 +43,7 @@
       catch(e){if(ticket===revision){settings=copy(committed);history=[copy(committed)];position=0;remember();render();}error(e);return false;}
     });return chain;
   }
-  async function load(){try{const value=await call('local_config');if(!settings){const saved=await call('local_settings_history_get').catch(()=>null);settings=copy(value.settings);committed=copy(settings);if(saved?.snapshots&&same(saved.snapshots[saved.position],settings)){history=copy(saved.snapshots);position=saved.position;}else{history=[copy(settings)];position=0;}render();}}catch(e){error(e);}}
+  async function load(){try{const value=await call('local_config');if(!settings){const saved=await call('local_settings_history_get').catch(()=>null);settings=copy(value.settings);if($('app-version'))$('app-version').textContent='AI Center version '+(value.version||'unknown');committed=copy(settings);if(saved?.snapshots&&same(saved.snapshots[saved.position],settings)){history=copy(saved.snapshots);position=saved.position;}else{history=[copy(settings)];position=0;}render();}}catch(e){error(e);}}
   load();indexInfo();window.addEventListener('local-center-focus',()=>{load();indexInfo();});
   window.addEventListener('suite-settings',event=>{if(!settings)return; settings={...settings,...event.detail};committed={...committed,...event.detail};history[position]=copy(settings);render();});
   window.addEventListener('suite-owner',event=>{$('suite-owner').textContent=event.detail;});

@@ -16,6 +16,8 @@ namespace LocalScreenTranslator;
 internal static class Program
 {
     internal static string Root="",Data="",CacheData="",Python="python",Fixture="";
+    // A development copy runs as ScreenTranslator-test.exe and says so in its window and tray.
+    internal static string TestSuffix=>Path.GetFileNameWithoutExtension(Environment.ProcessPath??"").EndsWith("-test",StringComparison.OrdinalIgnoreCase)?"-test":"";
     internal static bool NoLoad,CheckUi,CheckSuiteUi,CheckLifecycle,CheckShortcuts,TrayStart,Packaged,NoStartup;
     [STAThread]
     static void Main(string[] args)
@@ -95,7 +97,7 @@ internal sealed partial class MainWindow : Form
         modelIdle.Tick+=(_,_)=>{modelIdle.Stop();if(ModelIdle)UnloadModels("Idle · inference memory released; compiled cache retained");};
         // Poll settled foreground state; activation callbacks fire during window transitions.
         visibilityTimer.Tick+=async (_,_)=>{if(target is not null){ObservePage();SyncOverlayVisibility();await RefreshChangedPage();}};
-        Text="Screen Translator";AutoScaleMode=AutoScaleMode.None;
+        Text="Screen Translator"+Program.TestSuffix;AutoScaleMode=AutoScaleMode.None;
         StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.None;
         // WebView CSS uses logical pixels; initialize the host size at its actual Windows DPI.
         _=Handle;double scale=DeviceDpi/96.0;var area=Screen.FromHandle(Handle).WorkingArea;
@@ -115,7 +117,7 @@ internal sealed partial class MainWindow : Form
         config["mode"]="Managed";config["batch_size"]=8;
         ValidateConfig(config);SaveConfig();Controls.Add(web);
         Icon=DesktopOptions.AppIcon();
-        tray=new NotifyIcon {Icon=Icon,Text="Screen Translator · offline",Visible=true,ContextMenuStrip=new ContextMenuStrip()};
+        tray=new NotifyIcon {Icon=Icon,Text="Screen Translator"+Program.TestSuffix+" · offline",Visible=true,ContextMenuStrip=new ContextMenuStrip()};
         tray.ContextMenuStrip.Items.Add("Show controls",null,(_,_)=>ShowControls());
         tray.ContextMenuStrip.Items.Add("Translate screen",null,async (_,_)=>await Hotkey(1));
         tray.ContextMenuStrip.Items.Add("Translate region",null,async (_,_)=>await Hotkey(2));
@@ -136,7 +138,7 @@ internal sealed partial class MainWindow : Form
     {
         ["models"]=Path.Combine(Program.Root,"models","zh-en"),["mode"]="Managed",
         ["devices"]=new JsonArray("NPU","GPU","GPU"),["benchmark"]="",["batch_size"]=8,
-        ["cache"]=true,["incremental"]=true,["interval_ms"]=600,["font_scale"]=1.0,["debug"]=false,["toolbar_focus_only"]=false,["refresh_version"]=2,
+        ["cache"]=true,["incremental"]=true,["interval_ms"]=600,["model_idle_seconds"]=120,["font_scale"]=1.0,["debug"]=false,["toolbar_focus_only"]=false,["refresh_version"]=2,
         ["follow_suite_appearance"]=true,["theme"]="system",["accent"]="#3482ff",["picture"]="",["shortcut"]="Copilot",["shortcut_version"]=2,["profile"]="Auto",["autostart"]=!XiaomiRevamp.Suite.SuiteEnvironment.Portable,
         ["font_family"]="Segoe UI",["font_fit"]=true,["display_style"]="underline",
         ["screenshot_folder"]=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Screen Translator")
@@ -148,6 +150,7 @@ internal sealed partial class MainWindow : Form
         if(value["mode"]?.GetValue<string>()!="Managed")throw new ArgumentException("Hardware is selected automatically");
         if(value["batch_size"]!.GetValue<int>() is <1 or >64)throw new ArgumentException("Batch size must be 1 to 64");
         if(value["interval_ms"]!.GetValue<int>() is <200 or >10000)throw new ArgumentException("Filter interval must be 200 to 10000 ms");
+        if(value["model_idle_seconds"]!.GetValue<int>() is not (0 or (>=10 and <=3600)))throw new ArgumentException("Keep models ready for 10 to 3600 seconds, or 0 to keep them loaded");
         double font=value["font_scale"]!.GetValue<double>();if(!double.IsFinite(font)||font is <.5 or >2.5)throw new ArgumentException("Text size must be 50% to 250%");
         foreach(string key in new[]{"cache","incremental","debug","toolbar_focus_only"})_=value[key]!.GetValue<bool>();
         _=value["benchmark"]!.GetValue<string>();
@@ -231,7 +234,6 @@ internal sealed partial class MainWindow : Form
         if(id==6&&target is not null){Dismiss();return;}
         if((id is 1 or 2 or 4 or 6) && !ready)
         {
-            if(id==6&&pendingAction==6){Stop();return;}
             if(!busy)LoadModels(id,id==4?target:null);else pendingAction=id;
             Program.Log("Queued translation action "+id+"; controls hidden while loading");
             Hide();toolbar.Loading(SelectedScreen().Bounds);return;
@@ -263,14 +265,14 @@ internal sealed partial class MainWindow : Form
     {
         if(!ready&&busy){Stop();return;}
         bool waiting=frameSent&&busy;StopVisual();busy=waiting;
-        Status(waiting?"Translation dismissed · finishing pending inference":"Translation dismissed · releasing models after 10 seconds idle");
+        Status(waiting?"Translation dismissed · finishing pending inference":IdleSeconds==0?"Translation dismissed · models stay loaded":$"Translation dismissed · releasing models after {IdleSeconds} seconds idle");
         ArmModelIdle();
     }
     Screen SelectedScreen()=>Screen.AllScreens[Math.Clamp(monitor,0,Screen.AllScreens.Length-1)];
     void Publish()
     {
         if(!navigated||exiting)return;
-        web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {kind="state",status,lastError,ready,busy,original,filter,
+        web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {kind="state",version=typeof(Program).Assembly.GetName().Version?.ToString(3)+Program.TestSuffix,status,lastError,ready,busy,original,filter,
             config,models,timing=lastTiming,monitor,suiteOwner=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?SuiteClientHubOwner():"",suiteBindings=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteStore.Read().Bindings:null,hotkeyErrors=suite?.Error is string suiteError?hotkeyErrors.Concat(new[]{suiteError}).ToArray():hotkeyErrors.ToArray(),hasTranslation=overlay.Blocks>0,effectiveProfile=EffectiveProfile(),packaged=Program.Packaged,fonts=DesktopOptions.FontNames,
             pictureVersion=File.GetLastWriteTimeUtc(Path.Combine(Program.Data,"appearance","picture.png")).Ticks,
             monitors=Screen.AllScreens.Select((s,i)=>new {id=i,name=s.DeviceName,width=s.Bounds.Width,height=s.Bounds.Height,primary=s.Primary})}));
@@ -334,7 +336,9 @@ internal sealed partial class MainWindow : Form
     }
     internal void StartHidden(){_=Handle;if(Program.CheckShortcuts)_=CheckShortcutActions();else if(Program.CheckLifecycle)_=CheckModelLifecycle();}
     bool ModelIdle=>ready&&!busy&&!selecting&&pendingAction==0&&(!filter||original||ControlsOpen);
-    void ArmModelIdle(){modelIdle.Stop();if(ModelIdle&&backend is not null)modelIdle.Start();}
+    // 0 keeps the models loaded until the app exits or Stop is pressed.
+    int IdleSeconds=>config["model_idle_seconds"]!.GetValue<int>();
+    void ArmModelIdle(){modelIdle.Stop();if(ModelIdle&&backend is not null&&IdleSeconds>0){modelIdle.Interval=IdleSeconds*1000;modelIdle.Start();}}
     void UnloadModels(string message)
     {
         modelIdle.Stop();pendingAction=0;resumeBounds=null;activeId="";ready=busy=frameSent=false;

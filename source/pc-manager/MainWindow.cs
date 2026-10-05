@@ -541,7 +541,7 @@ public sealed class MainWindow : Form
                 switch (method)
                 {
                     case "window.awake": await app.Ready; windowResult = app.SetAwake(args.GetProperty("on").GetBoolean()); break;
-                    case "window.state": windowResult = new { awake = app.Awake, preventSleep = app.PreventSleep, ready = app.Ready.IsCompletedSuccessfully, isolationStatus = app.IsolationStatus, maximized = WindowState == FormWindowState.Maximized, screenBottomGap = compact ? (int?)null : Screen.FromControl(this).Bounds.Bottom - Bounds.Bottom }; break;
+                    case "window.state": windowResult = new { version = typeof(Program).Assembly.GetName().Version?.ToString(3) + (Program.TestMode ? "-test" : ""), awake = app.Awake, preventSleep = app.PreventSleep, ready = app.Ready.IsCompletedSuccessfully, isolationStatus = app.IsolationStatus, maximized = WindowState == FormWindowState.Maximized, screenBottomGap = compact ? (int?)null : Screen.FromControl(this).Bounds.Bottom - Bounds.Bottom }; break;
                     case "window.reconnect":
                         await app.Ready;
                         await app.Queue.WaitAsync();
