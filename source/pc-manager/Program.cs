@@ -41,6 +41,9 @@ internal static class Program
             "--hide" => "hide", "--quit" => "quit", "--install-startup" => "install-startup", "--register-startup" => "register-startup",
             "--cycle-mode" => "cycle-mode", "--brightness-up" => "brightness-up", "--brightness-down" => "brightness-down", "--toggle-travel" => "toggle-travel", "--screen-off" => "screen-off", "--verify-hardware" => "verify-hardware", "--reapply-policies" => "reapply-policies", "--validate-controls" => "validate-controls", "--validate-oem" => "validate-oem", "--validate-ui" => "validate-ui", "--validate-brightness" => "validate-brightness", _ => "invalid"
         } : "invalid";
+        // Testing control switch ("PCManager.exe" --disable, see shared/Launcher.cs). The startup task
+        // runs this native EXE directly every minute, so the automatic start is refused here as well.
+        if (command == "tray" && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XiaomiRevamp", "control", "pc-manager.off"))) return;
         if (commands.SequenceEqual(new[] { "--validate-ui" })) command = "validate-ui";
         if (commands.SequenceEqual(new[] { "--validate-suite" })) command = "validate-suite";
         if (commands.SequenceEqual(new[] { "--validate-screenoff" })) command = "validate-screenoff";

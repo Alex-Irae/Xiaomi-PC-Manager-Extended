@@ -24,7 +24,7 @@ Each app EXE accepts:
 & "C:\Program Files\Xiaomi Revamp\AI Center\AI Center.exe" --enable    # allow starts again
 ~~~
 
-While disabled, Windows startup, PC Manager's automatic `--tray` start, shortcuts and AI Center's restart loop all end silently; opening the app by hand shows a message with the enable command. `--status` exits with 0 when enabled and 3 when disabled. The state is one per-user file, `%LOCALAPPDATA%\XiaomiRevamp\control\<component>.off`.
+While disabled, Windows startup, PC Manager's once-a-minute startup task, PC Manager's automatic `--tray` start of the other apps, shortcuts and AI Center's restart loop all end silently; opening the app by hand shows a message with the enable command. `--status` exits with 0 when enabled and 3 when disabled. The state is one per-user file, `%LOCALAPPDATA%\XiaomiRevamp\control\<component>.off`.
 
 ## Known limits
 
@@ -32,7 +32,7 @@ While disabled, Windows startup, PC Manager's automatic `--tray` start, shortcut
 - A file whose exact name equals the query is listed above a program of the same name.
 - Sentence-length lexical queries take 0.5 to 0.7 s on a 731k-passage index.
 - Windows only returns what it has indexed, and its word breaking is fixed to English here.
-- PC Manager runs elevated, so `--disable` from a normal shell can ask it to quit but cannot force it.
+- PC Manager's startup task keeps firing every minute while it is disabled; each start exits immediately. PC Manager runs elevated, so `--disable` asks it to quit but cannot force a hung instance to end.
 
 # PC Manager 0.2.0
 
