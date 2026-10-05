@@ -35,6 +35,8 @@ async function main(){
   let deferred,encryptedHistory=[];
   f.context.localBridge={feedback(){},host(){},appearance(){},call:async(method,params)=>{calls.push({method,params});if(method==='local_config')return {settings};if(method==='local_history_get')return {queries:encryptedHistory};if(method==='local_history_save'){encryptedHistory=[...params.queries];return {saved:true};}if(method==='local_history_remember'){encryptedHistory=[params.query,...encryptedHistory.filter(q=>q!==params.query)];return {queries:encryptedHistory};}if(method==='local_history_remove'){encryptedHistory=encryptedHistory.filter(q=>q!==params.query);return {queries:encryptedHistory};}if(method==='local_history_clear'){encryptedHistory=[];return {queries:encryptedHistory};}if(method==='local_search'){if(params.text==='slow')return new Promise(resolve=>deferred=resolve);return {results:[{file_id:7,name:'article.pdf',file_type:32,file_name_with_highlight:'article.pdf',file_path:'C:/article.pdf',matches:params.semantic?['Semantic']:['Content']}],timing:{total_ms:1},warnings:[]};}return null;}};
   vm.runInContext(fs.readFileSync('frontend/query-filters.js','utf8'),f.context);
+  vm.runInContext(fs.readFileSync('frontend/result-fusion.js','utf8'),f.context);
+  f.context.ResultFusion=f.window.ResultFusion; // in a browser, window is the global object
   vm.runInContext(fs.readFileSync('frontend/search.js','utf8'),f.context);await flush();
   assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
   f.ids.query.value='est';f.ids.query.emit('input');

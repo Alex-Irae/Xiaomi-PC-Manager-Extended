@@ -3,7 +3,7 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};
@@ -28,7 +28,7 @@
     buttons();
   }
   function apply(next,record=true){
-    if(!next.name_enabled&&!next.content_enabled&&!next.semantic_enabled){error(new Error('Enable at least one search channel.'));render();return Promise.resolve(false);}
+    if(!next.name_enabled&&!next.content_enabled&&!next.semantic_enabled&&!next.windows_semantic_enabled){error(new Error('Enable at least one search channel.'));render();return Promise.resolve(false);}
     if(same(settings,next))return chain;
     const target=copy(next),changes=Object.fromEntries(Object.keys(target).filter(key=>!same(target[key],settings[key])).map(key=>[key,target[key]]));
     settings=target;

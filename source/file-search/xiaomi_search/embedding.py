@@ -76,6 +76,10 @@ class Embedder:
             try:
                 settings = genai.TextEmbeddingPipeline.Config()
                 settings.max_length = self.config["max_tokens"]
+                # Fixed 512-token shapes, measured on this laptop: fastest on GPU, required
+                # by NPU (dynamic shapes returned NaN vectors there), and flat in memory on
+                # CPU. Dynamic CPU shapes cut a short query from 560 ms to 36 ms but the
+                # worker grew past 3.6 GiB while indexing (BENCHMARKS.md, runs 003 and 005).
                 settings.batch_size = 1
                 settings.pad_to_max_length = True
                 settings.padding_side = self.config.get('embedding_padding_side','left')

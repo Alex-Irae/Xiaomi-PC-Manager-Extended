@@ -50,14 +50,16 @@ def validate(config, path):
         raise ValueError("indexing_mode must be normal, battery_saver, or paused")
     if config['indexing_frequency'] not in ('realtime', '5_minutes', '15_minutes', 'hourly', 'daily', 'manual'):
         raise ValueError('Unsupported indexing frequency')
-    if config['theme'] not in ('system', 'light', 'dark') or config['index_protection'] not in ('windows', 'none'):
+    if config['theme'] not in ('system', 'light', 'dark') or config['index_protection'] not in ('windows', 'none', 'efs'):
         raise ValueError('Unsupported theme or index protection')
-    if any(type(config[key]) is not bool for key in ('name_enabled', 'content_enabled', 'semantic_enabled')) or not any(config[key] for key in ('name_enabled', 'content_enabled', 'semantic_enabled')):
-        raise ValueError('Enable at least one search channel: names, contents, or meaning')
+    if any(type(config[key]) is not bool for key in ('name_enabled', 'content_enabled', 'semantic_enabled', 'windows_semantic_enabled')) or not any(config[key] for key in ('name_enabled', 'content_enabled', 'semantic_enabled', 'windows_semantic_enabled')):
+        raise ValueError('Enable at least one search channel: names, contents, meaning, or Windows')
     if not isinstance(config["shortcut"], str) or not config["shortcut"].strip() or len(config["shortcut"]) > 80:
         raise ValueError("shortcut must be a nonempty key combination of at most 80 characters")
     if type(config["follow_suite_appearance"]) is not bool:
         raise ValueError("follow_suite_appearance must be true or false")
+    if type(config['programs_enabled']) is not bool:
+        raise ValueError('programs_enabled must be a boolean')
     if type(config['run_at_startup']) is not bool:
         raise ValueError('run_at_startup must be a boolean')
     for key in ("excluded_folders", "excluded_extensions"):

@@ -21,8 +21,8 @@ using System.Security.AccessControl;
 using System.Runtime.Versioning;
 
 [assembly: AssemblyTitle("Xiaomi Revamp Setup")]
-[assembly: AssemblyVersion("0.2.0.0")]
-[assembly: AssemblyFileVersion("0.2.0.0")]
+[assembly: AssemblyVersion("0.3.0.0")]
+[assembly: AssemblyFileVersion("0.3.0.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
 
 internal static class Setup
@@ -33,7 +33,8 @@ internal static class Setup
     static readonly Dictionary<string, string> Executables = new Dictionary<string, string> { { "pc-manager", "PCManager.exe" }, { "file-search", "AI Center.exe" }, { "screen-translator", "ScreenTranslator.exe" } };
     static string Sid { get { return WindowsIdentity.GetCurrent().User.Value; } }
     static bool Admin { get { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } }
-    const string Version = "0.2.0";
+    const string Version = "0.3.0"; // suite release
+    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.1" }, { "file-search", "0.3.0" }, { "screen-translator", "0.2.1" } };
     static string Uninstaller { get { return "Uninstall.exe"; } }
     static string Expand(string path) { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path).Replace("{sid}", Sid)); }
     static Dictionary<string, object> Marker(string root) { return Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(root, "suite-install.json")))); }
@@ -201,7 +202,7 @@ internal static class Setup
         if (desktop) Shortcut(Path.Combine(Environment.GetFolderPath(all ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory), Folders[component] + ".lnk"), executable, arguments);
         using (var key = (all ? Registry.LocalMachine : Registry.CurrentUser).CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiRevamp." + profile + "." + component))
         {
-            key.SetValue("DisplayName", Folders[component]); key.SetValue("DisplayVersion", Version); key.SetValue("InstallLocation", app);
+            key.SetValue("DisplayName", Folders[component]); key.SetValue("DisplayVersion", Versions[component]); key.SetValue("InstallLocation", app);
             key.SetValue("DisplayIcon", executable); key.SetValue("UninstallString", Quote(Path.Combine(app, Uninstaller)) + " --target " + Quote(root) + " --component " + component);
             key.SetValue("NoModify", 1); key.SetValue("NoRepair", 1);
         }

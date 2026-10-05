@@ -14,7 +14,8 @@ from .exclusions import is_within
 from .protection import IndexCapacityError
 
 LOG = logging.getLogger(__name__)
-SKIP_EXTENSIONS = {".exe", ".sys", ".safetensors", ".gguf", ".bin", ".onnx", ".pyc", ".pyo", ".pth", ".pt"}
+# Executables are listed by name only (never read), so they can be found and launched.
+SKIP_EXTENSIONS = {".sys", ".safetensors", ".gguf", ".bin", ".onnx", ".pyc", ".pyo", ".pth", ".pt"}
 
 
 def on_battery():
@@ -51,6 +52,7 @@ class Indexer:
         self.mode = config["indexing_mode"]
         self.refresh_exclusions = lambda: None
         self.exclusions_checked = 0.0
+        self._ancestors = {}  # folder -> (expiry, no reparse/super-hidden ancestor)
         self.extraction_key = json.dumps({"extractor": EXTRACTOR_VERSION, "chunker": CHUNK_VERSION, "characters": config["chunk_characters"], "overlap": config["overlap_characters"], "maximum": config["max_extracted_characters"], "max_chunks": config["max_chunks_per_file"]}, sort_keys=True)
 
     def allowed(self, path):
@@ -73,21 +75,34 @@ class Indexer:
             if not any(path.is_relative_to(root) and not any(p.casefold() in exclusions for p in path.relative_to(root).parts) for root in self.roots):
                 return False
             # Never follow junctions/symlinks or hydrate cloud placeholders.
-            for part in (original, *original.parents):
-                try:
-                    information = part.lstat()
-                except FileNotFoundError:
-                    continue  # Deleted paths still need missing-file reconciliation.
-                attributes = getattr(information, 'st_file_attributes', 0)
-                if stat.S_ISLNK(information.st_mode) or attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                    return False
-                # Windows marks the drive root hidden/system. It must not
-                # exclude every descendant when the user explicitly selects C:\.
-                if part != Path(part.anchor) and any(part.is_relative_to(root) for root in self.roots) and attributes & stat.FILE_ATTRIBUTE_HIDDEN and attributes & stat.FILE_ATTRIBUTE_SYSTEM:
-                    return False
-            return True
+            # Siblings share every ancestor, so the folder verdict is reused briefly
+            # instead of re-reading each parent's attributes for every file.
+            now = time.monotonic()
+            cached = self._ancestors.get(original.parent)
+            if cached is None or cached[0] < now:
+                if len(self._ancestors) > 50000:
+                    self._ancestors.clear()
+                cached = (now + 30, self._plain(original.parent, *original.parent.parents))
+                self._ancestors[original.parent] = cached
+            return cached[1] and self._plain(original)
         except (OSError, ValueError):
             return False
+
+    def _plain(self, *parts):
+        """True when no given path is a reparse point or a hidden system entry."""
+        for part in parts:
+            try:
+                information = part.lstat()
+            except FileNotFoundError:
+                continue  # Deleted paths still need missing-file reconciliation.
+            attributes = getattr(information, 'st_file_attributes', 0)
+            if stat.S_ISLNK(information.st_mode) or attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                return False
+            # Windows marks the drive root hidden/system. It must not
+            # exclude every descendant when the user explicitly selects C:\.
+            if part != Path(part.anchor) and any(part.is_relative_to(root) for root in self.roots) and attributes & stat.FILE_ATTRIBUTE_HIDDEN and attributes & stat.FILE_ATTRIBUTE_SYSTEM:
+                return False
+        return True
 
     def enqueue(self, path, delay=0.8):
         if not self.allowed(path):
@@ -223,20 +238,23 @@ class Indexer:
                     failure(exc)
         # Reconcile missing entries after explicit/initial scans, including changes
         # made while this application was stopped. Permission errors never tombstone.
+        # Only entries beneath the scanned folder are checked: a new subfolder must
+        # not cost a pass over every indexed path on the drive.
+        prefix = str(root).rstrip("\\/")
         with self.store.connect() as db:
-            paths = [r[0] for r in db.execute("SELECT path FROM files WHERE active=1")]
+            paths = [r[0] for r in db.execute("SELECT path FROM files WHERE active=1 AND (lower(path)=lower(?) OR lower(substr(path,1,?))=lower(?))", (prefix, len(prefix) + 1, prefix + "\\"))]
         for name in paths:
             if not self.running:
                 return
-            path = Path(name)
-            if path.is_relative_to(root):
-                try:
-                    path.stat()
-                except FileNotFoundError:
-                    self.store.mark_missing(path)
-                except OSError:
-                    pass
-        self.store.retain_roots(self.roots, self.allowed)
+            try:
+                Path(name).stat()
+            except FileNotFoundError:
+                self.store.mark_missing(Path(name))
+            except OSError:
+                pass
+        if Path(root) in self.roots:
+            # Scope changes are reconciled on whole-root scans; queries already filter them.
+            self.store.retain_roots(self.roots, self.allowed)
         LOG.info("Discovery complete: %d files", discovered)
 
     def _file(self, path):
@@ -289,16 +307,19 @@ class Indexer:
         try:
             model_id = self.embedder.identity()
             pending = self.store.pending_vectors(fid, model_id, limit=9)
-            for chunk in pending[:8]:
-                if not self.allowed(Path(row["path"])):
-                    return
-                if not self.running or self.mode == "paused" or not self.config["semantic_enabled"] or (self.mode == "battery_saver" and on_battery()):
-                    self.vector_jobs.add(fid)
-                    return
-                vector = self.embedder.encode([chunk["text"]])[0]  # shape: [D]
-                if self.embedder.identity() != model_id:
-                    raise ValueError("Model files changed during indexing. Restart semantic backfill")
-                self.store.put_vector(chunk["id"], vector, model_id)
+            ready = []
+            try:
+                for chunk in pending[:8]:
+                    if not self.running or self.mode == "paused" or not self.config["semantic_enabled"] or (self.mode == "battery_saver" and on_battery()):
+                        self.vector_jobs.add(fid)
+                        return
+                    vector = self.embedder.encode([chunk["text"]])[0]  # shape: [D]
+                    if self.embedder.identity() != model_id:
+                        raise ValueError("Model files changed during indexing. Restart semantic backfill")
+                    ready.append((chunk["id"], vector))
+            finally:
+                # One transaction per step, including vectors finished before a pause.
+                self.store.put_vectors(ready, model_id)
             if len(pending) > 8:
                 self.vector_jobs.add(fid)
         except IndexCapacityError:

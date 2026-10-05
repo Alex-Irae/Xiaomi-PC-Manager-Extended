@@ -135,7 +135,9 @@ def chunks(path, config):
     width = config["chunk_characters"]
     overlap = config["overlap_characters"]
     for location, text in segments(Path(path), config["max_extracted_characters"]):
-        text = text.strip()
+        # PDF extractors can emit split surrogate halves (math letters); join valid pairs
+        # and replace strays, otherwise SQLite rejects the whole file as non-UTF-8.
+        text = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace").strip()
         start = 0
         while start < len(text):
             end = min(start + width, len(text))

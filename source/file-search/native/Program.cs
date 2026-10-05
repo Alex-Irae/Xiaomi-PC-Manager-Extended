@@ -105,14 +105,14 @@ internal static class Program
                 catch(Exception error){Log(error.ToString());Environment.ExitCode=1;}
                 return;
             }
-            if(args.Contains("--check-resident")||args.Contains("--check-ux")||args.Contains("--check-search-ux"))
+            if(args.Contains("--check-resident")||args.Contains("--check-ux")||args.Contains("--check-search-ux")||args.Contains("--check-live"))
             {
-                bool ux=args.Contains("--check-ux"),searchUX=args.Contains("--check-search-ux");
+                bool ux=args.Contains("--check-ux"),searchUX=args.Contains("--check-search-ux"),live=args.Contains("--check-live");
                 using var check=new CenterContext(false,true,!ux,true);
                 async void RunCheck(object? sender,EventArgs eventArgs)
                 {
                     Application.Idle-=RunCheck;
-                    try{var report=searchUX?await check.CheckSearchUX():ux?await check.CheckUX():await check.CheckResident();File.WriteAllText(Path.Combine(Data,searchUX?"search-ux-check.json":ux?"ux-check.json":"resident-check.json"),JsonSerializer.Serialize(report,new JsonSerializerOptions {WriteIndented=true}));}
+                    try{var report=live?await check.CheckLive():searchUX?await check.CheckSearchUX():ux?await check.CheckUX():await check.CheckResident();File.WriteAllText(Path.Combine(Data,live?"live-check.json":searchUX?"search-ux-check.json":ux?"ux-check.json":"resident-check.json"),JsonSerializer.Serialize(report,new JsonSerializerOptions {WriteIndented=true}));}
                     catch(Exception error){Log(error.ToString());Environment.ExitCode=1;}
                     finally{check.Quit();}
                 }
@@ -422,6 +422,34 @@ internal sealed partial class CenterContext : ApplicationContext
         Program.Log("UX: search dismissed on foreign window activation");
         return new {passed=true,light=true,dark=true,windowsTheme=true,undoRedo=true,historySurvivesBrowserDisposal=true,scopeDoesNotStartIndex=true,pathsDialog=true,rapidEditsSurviveClose=true,focusLossDismisses=true,separateShortcutLoop=true,doubleCtrlGesture=true};
     }
+    // Drives the real search bar against the current index: programs, typed extension,
+    // meaning. Launches are intercepted, so nothing is opened. Saves previews in Data.
+    internal async Task<object> CheckLive()
+    {
+        async Task Wait(Func<Task<bool>> condition,string what){var watch=Stopwatch.StartNew();while(!await condition()&&watch.ElapsedMilliseconds<45000)await Task.Delay(50);if(!await condition())throw new TimeoutException("Live check timed out: "+what);}
+        var launches=new List<(string action,string path)>();testFileLaunch=(action,path)=>{launches.Add((action,path));return true;};
+        string stamp=DateTime.Now.ToString("yyyyMMddTHHmmss");var rows=new Dictionary<string,object>();
+        Search.ShowSearch();await Wait(()=>Task.FromResult(Search.PageReady),"search page");
+        async Task<string> Ask(string query,string name,string ready)
+        {
+            await Search.Evaluate("(()=>{const q=document.getElementById('query');q.value="+JsonSerializer.Serialize(query)+";q.dispatchEvent(new Event('input'));})()");
+            try{await Wait(async()=>await Search.Evaluate(ready)=="true",query);}
+            catch(TimeoutException){await Search.SavePreview("live-"+stamp+"-"+name+"-timeout.png");Program.Log("Live check page: "+await Search.Evaluate("document.getElementById('local-feedback')?.textContent+' | '+[...document.querySelectorAll('.result .name')].slice(0,8).map(n=>n.textContent).join(' ; ')"));throw;}
+            await Task.Delay(2500); // let the meaning and Windows channels land before the capture
+            await Search.SavePreview("live-"+stamp+"-"+name+".png");
+            string top=await Search.Evaluate("[...document.querySelectorAll('.result')].slice(0,6).map(r=>r.querySelector('.name').textContent+' ['+r.lastChild.textContent+']').join(' | ')");
+            rows[query]=top;return top;
+        }
+        await Ask("warm","warm","true"); // starts the background Start-apps enumeration
+        await Ask("calc","program","[...document.querySelectorAll('.result .name')].some(n=>n.textContent==='Calculator')");
+        await Search.Evaluate("[...document.querySelectorAll('.result')].find(r=>r.querySelector('.name').textContent==='Calculator').click()");
+        await Wait(()=>Task.FromResult(launches.Any(item=>item.action=="open"&&item.path.StartsWith("shell:AppsFolder\\",StringComparison.Ordinal))),"program launch");
+        Search.ShowSearch();await Wait(()=>Task.FromResult(Search.PageReady),"search page");
+        await Ask("estimation pdf","extension","document.getElementById('file-type').value==='pdf'&&document.querySelectorAll('.result').length>0&&[...document.querySelectorAll('.result .name')].every(n=>n.textContent.toLowerCase().endsWith('.pdf'))");
+        await Ask("generate artificial observations without learning a neural network","meaning","[...document.querySelectorAll('.result')].some(r=>['Meaning','Windows'].includes(r.lastChild.textContent))");
+        Search.Hide();
+        return new {passed=true,programListedAndLaunchIntercepted=true,typedExtensionSelectsFilter=true,meaningOrWindowsBadge=true,launches=launches.Select(item=>item.action+" "+item.path).ToArray(),top=rows};
+    }
     internal async Task<object> CheckSearchUX()
     {
         async Task Wait(Func<Task<bool>> condition){var watch=Stopwatch.StartNew();while(!await condition()&&watch.ElapsedMilliseconds<20000)await Task.Delay(50);if(!await condition())throw new TimeoutException("Search UX check timed out");}
@@ -577,7 +605,7 @@ internal sealed partial class CenterContext : ApplicationContext
         if(method=="local_save_config")settingsRequests.Add(owner+":"+data.GetProperty("id").GetRawText());
         if(message.TryGetProperty("mode",out var mode)&&mode.GetInt32()==0&&data.TryGetProperty("id",out var identifier)&&(!data.TryGetProperty("persistent",out var persistent)||!persistent.GetBoolean()))outstanding.Add(owner+":"+identifier.GetRawText());
         var envelope=JsonNode.Parse(message.GetRawText())!;envelope["owner"]=owner;
-        if(method=="local_search")
+        if(method is "local_search" or "local_windows_search")
         {
             try{var parameters=envelope["data"]!["request"]!["params"]!;parameters["preferred_paths"]=JsonSerializer.SerializeToNode(new SearchHistory(Program.Data).Preferred(parameters["history_query"]?.GetValue<string>()??parameters["text"]?.GetValue<string>()??""));}
             catch(Exception error){Program.Log("Remembered choices unavailable: "+error.Message);}

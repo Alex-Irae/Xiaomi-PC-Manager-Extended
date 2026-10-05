@@ -378,3 +378,50 @@ class ProtectedDatabase:
             self.flush()
         finally:
             self.db.close(); self.file_lock.close()
+
+
+def encrypt_folder(folder):
+    """Mark a folder EFS-encrypted so files created in it are encrypted for this account.
+
+    Transparent NTFS encryption: SQLite reads and writes normally, nothing is held
+    in RAM beyond its page cache. Needs NTFS and a Windows edition with EFS.
+    """
+    if os.name != "nt":
+        raise RuntimeError("EFS index protection requires Windows")
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    advapi.EncryptFileW.argtypes = [ctypes.c_wchar_p]
+    advapi.EncryptFileW.restype = wintypes.BOOL
+    if not advapi.EncryptFileW(str(folder)):
+        raise OSError("Windows could not EFS-encrypt the index folder (NTFS and a Pro/Enterprise edition are required): "
+                      + ctypes.FormatError(ctypes.get_last_error()))
+
+
+def export_snapshot(sealed, target):
+    """Convert an in-RAM-era .dpapi snapshot into an on-disk SQLite file, once.
+
+    sealed: existing snapshot path; target: new database path. The snapshot is
+    renamed to .migrated afterwards, never deleted. No-op when there is no snapshot.
+    """
+    if not sealed.exists():
+        return
+    if target.exists():
+        raise ValueError("Both a protected snapshot and an on-disk index exist. Keep one in this data directory.")
+    # Not ".pending": the snapshot writer of older versions uses that name, and a save
+    # interrupted at exit leaves an encrypted partial file there.
+    pending = target.with_name(target.name + ".converting")
+    pending.unlink(missing_ok=True)  # leftover of an interrupted conversion
+    with sealed.open("rb") as stream:
+        chunked = stream.read(len(CHUNKED_MAGIC)) == CHUNKED_MAGIC
+        stream.seek(0)
+        if chunked:
+            # Statements stream straight to disk; RAM use stays bounded by one batch.
+            database = sqlite3.connect(pending)
+            try:
+                restore_database(stream, database)
+                database.commit()
+            finally:
+                database.close()
+        else:
+            pending.write_bytes(unseal(stream.read()))
+    pending.replace(target)
+    sealed.rename(sealed.with_name(sealed.name + ".migrated"))

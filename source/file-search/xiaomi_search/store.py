@@ -4,11 +4,21 @@ import html
 import json
 import re
 import sqlite3
+import threading
 import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 from .exclusions import is_within
+
+# Leading dimensions of each passage vector kept in RAM for the first-pass scan.
+# Qwen3 embeddings are Matryoshka-trained, so a renormalized prefix preserves ranking
+# closely; the exact full vector still decides the final order. Calibrate with
+# the prefix-quality measurement described in BENCHMARKS.md (run 004).
+COARSE_DIMENSION = 256
+COARSE_CANDIDATES = 2000
+FTS_CANDIDATES = 3000  # best full-text matches kept before scope filters
+COMBINING = re.compile('[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]')  # combining accent blocks
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -26,6 +36,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS file_fts USING fts5(name,path,tokenize='unico
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(text,tokenize='unicode61 remove_diacritics 2');
 CREATE TRIGGER IF NOT EXISTS chunks_delete AFTER DELETE ON chunks BEGIN
  DELETE FROM chunk_fts WHERE rowid=old.id;
+END;
+CREATE TABLE IF NOT EXISTS vectors(
+ slot INTEGER PRIMARY KEY AUTOINCREMENT, chunk_id INTEGER NOT NULL,
+ model_id TEXT NOT NULL, coarse BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS vectors_chunk ON vectors(chunk_id);
+CREATE TRIGGER IF NOT EXISTS chunks_delete_vectors AFTER DELETE ON chunks BEGIN
+ DELETE FROM vectors WHERE chunk_id=old.id;
 END;
 """
 
@@ -50,12 +67,16 @@ def file_type(path):
         return 512
     if suffix in (".zip", ".7z", ".rar", ".gz", ".tar"):
         return 1024
+    if suffix in (".exe", ".msi", ".lnk"):
+        return 2048  # Programs category, shared with Start apps
     from .extract import SUPPORTED
     return 64 if suffix in SUPPORTED else 1
 
 
 def highlighted(text, tokens):
     """Escape file text before adding only our own literal highlight tags."""
+    # A lone Latin letter ("a" in a sentence query) would light up every such letter.
+    tokens = [t for t in tokens if len(t) > 1 or not t.isascii()]
     if not tokens:
         return html.escape(text)
     pattern = re.compile("(" + "|".join(re.escape(t) for t in sorted(set(tokens), key=len, reverse=True)) + ")", re.IGNORECASE)
@@ -81,11 +102,27 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.protected = None
+        self.unencrypted = '' if protection != 'none' else 'Plain on disk was chosen in settings.'
+        self._local = threading.local()   # one long-lived on-disk connection per thread
+        self._connections = []
+        self._connections_lock = threading.Lock()
+        self._coarse_lock = threading.Lock()
+        self._coarse = None  # (model_id, last_slot, count, chunk ids [capacity], matrix [capacity,C])
         if protection == 'windows':
             from .protection import ProtectedDatabase
             self.protected = ProtectedDatabase(self.path)
-        elif Path(str(self.path)+'.dpapi').exists():
-            raise ValueError('A protected index exists. Use Windows account protection for this data directory.')
+        else:
+            from .protection import encrypt_folder, export_snapshot
+            if protection == 'efs':
+                # New files in an EFS folder are encrypted transparently by NTFS for
+                # this Windows account: on-disk SQLite, no whole-index copy in RAM.
+                try:
+                    encrypt_folder(self.path.parent)
+                except OSError as error:
+                    # Windows Home and non-NTFS volumes have no EFS. Search must still
+                    # start; the status and the log say plainly that the index is not encrypted.
+                    self.unencrypted = str(error)
+            export_snapshot(Path(str(self.path)+'.dpapi'), self.path)
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA)
@@ -128,15 +165,22 @@ class Store:
                     raise capacity_error() from exc
                 raise
             return
-        db = sqlite3.connect(self.path, timeout=15)
-        db.create_function('path_within', 2, is_within, deterministic=True)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
+        db = getattr(self._local, 'db', None)
+        if db is None:
+            # Each thread keeps its connection instead of reopening the file (and, on an
+            # EFS folder, unwrapping its key) for every statement group.
+            db = sqlite3.connect(self.path, timeout=15, check_same_thread=False)
+            db.create_function('path_within', 2, is_within, deterministic=True)
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA foreign_keys=ON")
+            # WAL stays consistent after a crash; only the last commits before a power
+            # loss can roll back, and the next scan re-derives them from the files.
+            db.execute("PRAGMA synchronous=NORMAL")
+            self._local.db = db
+            with self._connections_lock:
+                self._connections.append(db)
+        with db:
+            yield db
 
     def discover(self, path, stat):
         path = Path(path)
@@ -177,6 +221,11 @@ class Store:
     def close(self):
         if self.protected:
             self.protected.close()
+        with self._connections_lock:
+            for db in self._connections:
+                db.close()
+            self._connections.clear()
+        self._local = threading.local()
 
     def reset(self):
         """Archive the current index, then clear only derived data, never originals."""
@@ -226,11 +275,87 @@ class Store:
                 arguments.append(limit)
             return [dict(r) for r in db.execute(sql, arguments)]
 
-    def put_vector(self, chunk_id, vector, model_id):
+    @staticmethod
+    def _coarse_blob(vector):
+        """Renormalized leading dimensions as little-endian float16 bytes."""
+        import numpy as np
+        prefix = np.asarray(vector[:COARSE_DIMENSION], dtype=np.float32)  # shape: [C]
+        return (prefix / max(float(np.linalg.norm(prefix)), 1e-12)).astype('<f2').tobytes()
+
+    def put_vectors(self, rows, model_id):
+        """Store unit vectors [D] for chunk ids in one transaction.
+
+        rows: iterable of (chunk_id, float32 vector [D]). The exact vector stays in
+        chunks.vector; its coarse prefix goes to the compact vectors table.
+        """
+        rows = list(rows)
+        if not rows:
+            return
         with self.connect() as db:
-            db.execute("UPDATE chunks SET vector=?,dimension=?,model_id=? WHERE id=?", (vector.astype("<f4").tobytes(), len(vector), model_id, chunk_id))
+            for chunk_id, vector in rows:
+                db.execute("UPDATE chunks SET vector=?,dimension=?,model_id=? WHERE id=?", (vector.astype("<f4").tobytes(), len(vector), model_id, chunk_id))
+                db.execute("DELETE FROM vectors WHERE chunk_id=?", (chunk_id,))
+                db.execute("INSERT INTO vectors(chunk_id,model_id,coarse) VALUES(?,?,?)", (chunk_id, model_id, self._coarse_blob(vector)))
             db.execute("INSERT OR REPLACE INTO meta VALUES('embedding_model_hash',?)", (model_id,))
-            db.execute("INSERT OR REPLACE INTO meta VALUES('embedding_dimension',?)", (str(len(vector)),))
+            db.execute("INSERT OR REPLACE INTO meta VALUES('embedding_dimension',?)", (str(len(rows[0][1])),))
+
+    def put_vector(self, chunk_id, vector, model_id):
+        self.put_vectors([(chunk_id, vector)], model_id)
+
+    def backfill_coarse(self, model_id, running=lambda: True):
+        """Give vectors written by an older build their coarse prefix; returns rows added.
+
+        Runs once per model on a background thread. Each batch commits on its own,
+        so searches keep working and simply see more passages as it progresses.
+        """
+        import numpy as np
+        with self.connect() as db:
+            done = db.execute("SELECT value FROM meta WHERE key='coarse_model'").fetchone()
+        if done is not None and done[0] == model_id:
+            return 0
+        added, last = 0, 0
+        while running():
+            with self.connect() as db:
+                # Walk chunk ids in order so each batch is one bounded range read.
+                batch = db.execute("SELECT c.id,c.vector FROM chunks c WHERE c.id>? AND c.model_id=? AND c.vector IS NOT NULL AND NOT EXISTS(SELECT 1 FROM vectors v WHERE v.chunk_id=c.id AND v.model_id=c.model_id) ORDER BY c.id LIMIT 2000", (last, model_id)).fetchall()
+                if not batch:
+                    db.execute("INSERT OR REPLACE INTO meta VALUES('coarse_model',?)", (model_id,))
+                    return added
+                db.executemany("INSERT INTO vectors(chunk_id,model_id,coarse) VALUES(?,?,?)",
+                    [(r[0], model_id, self._coarse_blob(np.frombuffer(r[1], dtype='<f4'))) for r in batch])
+            added += len(batch)
+            last = batch[-1][0]
+        return added
+
+    def coarse(self, model_id):
+        """Return (chunk ids [N], float32 matrix [N,C]) for one model, kept in RAM.
+
+        Only slots added since the previous call are read. Vectors written by an
+        older build are converted by backfill_coarse. Deleted chunks keep a stale row
+        until restart; the SQL join after the scan drops them.
+        """
+        import numpy as np
+        with self._coarse_lock, self.connect() as db:
+            if self._coarse is None or self._coarse[0] != model_id:
+                self._coarse = (model_id, 0, 0, np.empty(0, dtype=np.int64), np.empty((0, COARSE_DIMENSION), dtype=np.float32))
+            _, last, count, ids, matrix = self._coarse
+            cursor = db.execute("SELECT slot,chunk_id,coarse FROM vectors WHERE slot>? AND model_id=? ORDER BY slot", (last, model_id))
+            while batch := cursor.fetchmany(8192):
+                batch = [r for r in batch if len(r[2]) == COARSE_DIMENSION * 2]
+                if not batch:
+                    continue
+                if count + len(batch) > len(ids):
+                    # Double capacity so appends stay amortized O(1).
+                    capacity = max(2 * len(ids), count + len(batch), 8192)
+                    ids = np.concatenate([ids, np.empty(capacity - len(ids), dtype=np.int64)])  # shape: [capacity]
+                    matrix = np.concatenate([matrix, np.empty((capacity - len(matrix), COARSE_DIMENSION), dtype=np.float32)])  # shape: [capacity,C]
+                ids[count:count + len(batch)] = [r[1] for r in batch]
+                # Decode float16 rows into the float32 scan matrix.
+                matrix[count:count + len(batch)] = np.frombuffer(b''.join(r[2] for r in batch), dtype='<f2').reshape(len(batch), COARSE_DIMENSION)  # shape: [B,C]
+                count += len(batch)
+                last = batch[-1][0]
+            self._coarse = (model_id, last, count, ids, matrix)
+            return ids[:count], matrix[:count]
 
     def get_file(self, file_id=None, path=None):
         with self.connect() as db:
@@ -241,12 +366,18 @@ class Store:
             return dict(row) if row else None
 
     def counts(self):
+        # Status pushes arrive every second while indexing; counting 700k passages
+        # each time took 0.8 s, so a recent answer is reused.
+        cached = getattr(self, '_counts', None)
+        if cached and time.monotonic() - cached[0] < 5:
+            return dict(cached[1])
         with self.connect() as db:
             counts = dict(db.execute("SELECT status,count(*) FROM files WHERE active=1 AND file_type<>2 GROUP BY status"))
             counts["files"] = sum(counts.values())
             counts["folders"] = db.execute("SELECT count(*) FROM files WHERE active=1 AND file_type=2").fetchone()[0]
             counts["chunks"] = db.execute("SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed'").fetchone()[0]
             counts["vectors"] = db.execute("SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed' AND c.vector IS NOT NULL").fetchone()[0]
+            self._counts = (time.monotonic(), dict(counts))
             return counts
 
     def errors(self):
@@ -276,14 +407,14 @@ class Store:
         if self.excluded_extensions:
             clauses.append("(f.file_type=2 OR f.extension NOT IN (" + ",".join("?" for _ in self.excluded_extensions) + "))")
             params.extend(self.excluded_extensions)
-        types = {"folder": 2, "pdf": 32, "document": 124, "docs": 124, "image": 256, "audio": 128, "video": 512, "archive": 1024, "code": 64}
+        types = {"folder": 2, "pdf": 32, "document": 124, "docs": 124, "image": 256, "audio": 128, "video": 512, "archive": 1024, "code": 64, "program": 2048}
         if requested_type is not None and requested_type != 4095:
             clauses.append("(f.file_type & ?)<>0")
             params.append(requested_type)
         if "type" in filters:
             kind = filters["type"].lower()
             if kind not in types:
-                raise ValueError("Unknown type filter; use pdf, docs, code, image, audio, video, archive")
+                raise ValueError("Unknown type filter; use pdf, docs, code, image, audio, video, archive, program")
             clauses.append("(f.file_type & ?)<>0")
             params.append(types[kind])
         if filters.get("type", "").lower() == "code":
@@ -307,7 +438,7 @@ class Store:
 
         Returns real files with one best passage, match labels and elapsed times.
         Exact filenames dominate rank fusion. Vector scanning is exact and bounded
-        in memory, but O(chunks * dimension), pending a measured ANN requirement.
+        over a 256-dimension prefix kept in RAM, then exact on the best candidates.
         """
         begin = time.perf_counter()
         text, filters, tokens = parse_query(query)
@@ -316,7 +447,12 @@ class Store:
         warnings = []
         def words(value):
             # Match FTS unicode61's case/accent normalization for lexical coverage.
-            normalized = ''.join(c for c in unicodedata.normalize('NFD', value.casefold()) if unicodedata.category(c) != 'Mn')
+            normalized = value.casefold()
+            if not normalized.isascii():
+                # Strip combining accents after decomposition. A compiled range over the
+                # combining-mark blocks runs in C; the earlier per-character category test
+                # dominated lexical queries on PDF text full of symbols.
+                normalized = COMBINING.sub('', unicodedata.normalize('NFD', normalized))
             return set(re.findall(r'[^\W_]+', normalized))
 
         query_words = words(text)
@@ -328,7 +464,9 @@ class Store:
             if lexical:
                 # Partial OR matches should not receive the same vote as a full description.
                 # Sort coverage first, BM25 order second; retain the best passage per file.
-                rows = sorted(rows, key=coverage, reverse=True)
+                for row in rows:
+                    row['coverage'] = coverage(row)
+                rows = sorted(rows, key=lambda row: row['coverage'], reverse=True)
             seen = set()
             for row in rows:
                 fid = row["file_id"]
@@ -337,7 +475,7 @@ class Store:
                 seen.add(fid)
                 # Reciprocal rank fusion compares channels without mixing BM25 scales.
                 # Cosine confidence preserves separation between adjacent semantic ranks.
-                strength = coverage(row) ** 2 if lexical else row.get('similarity', 1)
+                strength = row['coverage'] ** 2 if lexical else row.get('similarity', 1)
                 if channel == 'Filename' and not query_words.issubset(words(row.get('name',''))):
                     # An incidental substring such as EFS inside "refs" must
                     # not outrank a document matching both contents and meaning.
@@ -361,10 +499,14 @@ class Store:
                 if tokens:
                     expression = " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
                     if names:
-                        paths = db.execute(f"SELECT f.id AS file_id,f.name,f.path FROM file_fts JOIN files f ON f.id=file_fts.rowid WHERE file_fts MATCH ? AND {where} ORDER BY bm25(file_fts,5,1) LIMIT 500", [expression] + params).fetchall()
+                        # Rank inside FTS first, then apply scope filters to that short list. Joining
+                        # and filtering every match took seconds on a 700k-passage index because
+                        # the scope predicate is a Python callback per row.
+                        # ponytail: filters apply after the top-N cut; raise FTS_CANDIDATES if a narrow scope over a huge index loses matches.
+                        paths = db.execute(f"SELECT f.id AS file_id,f.name,f.path FROM (SELECT rowid AS id,bm25(file_fts,5,1) AS score FROM file_fts WHERE file_fts MATCH ? ORDER BY score LIMIT {FTS_CANDIDATES}) m JOIN files f ON f.id=m.id WHERE {where} ORDER BY m.score LIMIT 500", [expression] + params).fetchall()
                         add([dict(r) for r in paths], "Path", 1)
                     if contents:
-                        content = db.execute(f"SELECT c.file_id,c.location,c.text FROM chunk_fts JOIN chunks c ON c.id=chunk_fts.rowid JOIN files f ON f.id=c.file_id WHERE chunk_fts MATCH ? AND {where} AND f.status='indexed' ORDER BY bm25(chunk_fts) LIMIT 1000", [expression] + params).fetchall()
+                        content = db.execute(f"SELECT c.file_id,c.location,c.text FROM (SELECT rowid AS id,rank AS score FROM chunk_fts WHERE chunk_fts MATCH ? ORDER BY rank LIMIT {FTS_CANDIDATES}) m JOIN chunks c ON c.id=m.id JOIN files f ON f.id=c.file_id WHERE {where} AND f.status='indexed' ORDER BY m.score LIMIT 1000", [expression] + params).fetchall()
                         add([dict(r) for r in content], "Content", 1)
         lexical_ms = (time.perf_counter() - begin) * 1000
         semantic_ms = 0.0
@@ -373,27 +515,35 @@ class Store:
             try:
                 import numpy as np
                 model_id = embedder.identity()
-                with self.connect() as db:
-                    available = db.execute(f"SELECT 1 FROM chunks c JOIN files f ON f.id=c.file_id WHERE {where} AND f.status='indexed' AND c.model_id=? AND c.vector IS NOT NULL LIMIT 1", params + [model_id]).fetchone()
-                if available:
+                ids, matrix = self.coarse(model_id)  # shapes: [N], [N,C]
+                if len(ids):
                     query_vector = embedder.encode([text], query=True)[0]  # shape: [D]
                     if embedder.identity() != model_id:
                         raise ValueError("Model files changed during search. Restart semantic backfill")
+                    threshold = embedder.config["semantic_threshold"]
+                    # First pass: cosine of every stored passage against the query on the
+                    # renormalized leading dimensions (one BLAS matrix-vector product).
+                    prefix = query_vector[:COARSE_DIMENSION]
+                    coarse_scores = matrix @ (prefix / np.linalg.norm(prefix))  # shape: [N], reduces C
+                    # ponytail: filters apply after this top-K cut, so a very selective filter over a huge index can lose matches; raise COARSE_CANDIDATES or filter first if that shows up.
+                    keep = min(COARSE_CANDIDATES, len(ids))
+                    top = np.argpartition(-coarse_scores, keep - 1)[:keep]  # shape: [K], unordered best K
+                    # The prefix score only approximates the exact cosine (largest gap measured on
+                    # real Qwen vectors: 0.144, BENCHMARKS.md run 004), so keep a margin below the threshold.
+                    candidates = [int(i) for i in ids[top[coarse_scores[top] >= threshold - .2]]]
                     best = {}
-                    with self.connect() as db:
-                        cursor = db.execute(f"SELECT c.file_id,c.location,c.text,c.vector,c.dimension FROM chunks c JOIN files f ON f.id=c.file_id WHERE {where} AND f.status='indexed' AND c.model_id=? AND c.vector IS NOT NULL", params + [model_id])
-                        while batch := cursor.fetchmany(1024):
-                            valid = [r for r in batch if r["dimension"] == len(query_vector) and len(r["vector"]) == len(query_vector) * 4]
-                            if not valid:
-                                continue
-                            matrix = np.stack([np.frombuffer(r["vector"], dtype="<f4") for r in valid])  # shape: [B,D]
-                            # Compare each normalized stored passage with the query.
-                            similarities = matrix @ query_vector  # shape: [B], reduces D
-                            for row, similarity in zip(valid, similarities):
+                    if candidates:
+                        with self.connect() as db:
+                            rows = db.execute(f"SELECT c.file_id,c.location,c.text,c.vector FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.id IN ({','.join('?' * len(candidates))}) AND {where} AND f.status='indexed' AND c.model_id=? AND c.dimension=?", candidates + params + [model_id, len(query_vector)]).fetchall()
+                        rows = [r for r in rows if len(r["vector"]) == len(query_vector) * 4]
+                        if rows:
+                            exact_matrix = np.frombuffer(b''.join(r["vector"] for r in rows), dtype="<f4").reshape(len(rows), len(query_vector))  # shape: [K,D]
+                            # Second pass: exact cosine on the full normalized vectors.
+                            similarities = exact_matrix @ query_vector  # shape: [K], reduces D
+                            for row, similarity in zip(rows, similarities):
                                 fid = row["file_id"]
-                                if similarity >= embedder.config["semantic_threshold"] and (fid not in best or similarity > best[fid][0]):
+                                if similarity >= threshold and (fid not in best or similarity > best[fid][0]):
                                     best[fid] = (float(similarity), {"file_id": fid, "location": row["location"], "text": row["text"], "similarity": float(similarity)})
-                    # ponytail: exact O(ND) scan; use ANN once measured corpus latency requires it.
                     ordered = sorted(best.values(), key=lambda r: r[0], reverse=True)[:500]
                     add([r[1] for r in ordered], "Semantic", 1.2)
                 else:

@@ -9,17 +9,22 @@ from pathlib import Path
 
 from .embedding import Embedder
 from .indexer import Indexer
-from .store import Store
+from .store import Store, file_type
+from .windows_search import WindowsSearch, APP_TYPE, APP_PREFIX
+from .exclusions import canonical_path
 
 LOG = logging.getLogger(__name__)
 
 
 class Service:
     def __init__(self, config, data, config_path="config.json"):
+        self.windows = WindowsSearch(config["idle_unload_seconds"])
         self.config = config
         self.config_path = Path(config_path).resolve()
         self.data = Path(data).resolve()
         self.store = Store(self.data / "index.sqlite3", config['index_protection'])
+        if config['index_protection'] == 'efs' and self.store.unencrypted:
+            LOG.warning('Index is NOT encrypted on disk: %s', self.store.unencrypted)
         self.maintenance_lock = threading.Lock()
         self.maintenance_thread = None
         self.maintenance_active = False
@@ -44,8 +49,20 @@ class Service:
         self._closed = False
         self.indexer.refresh_exclusions = self.refresh_exclusions
         self.embedder.on_change = self.notify
+        if config['programs_enabled']:
+            self.windows.programs('preload')  # starts the background Start-apps enumeration
+        if config['semantic_enabled']:
+            threading.Thread(target=self._backfill, daemon=True, name='coarse-backfill').start()
         self.embedder.active = lambda: self.maintenance_active or self.indexer.busy or (
             self.indexer.mode != 'paused' and bool(self.indexer.jobs or self.indexer.vector_jobs))
+
+    def _backfill(self):
+        try:
+            added = self.store.backfill_coarse(self.embedder.identity(), lambda: not self._closed)
+            if added:
+                LOG.info('Converted %d stored vectors for the fast scan', added)
+        except Exception:
+            LOG.exception('Vector conversion failed; semantic search covers converted passages only')
 
     def refresh_exclusions(self):
         from .exclusions import refresh
@@ -56,7 +73,7 @@ class Service:
 
     def status(self):
         return {"counts": self.store.counts(), "indexer": self.activity(), "model": {"path": self.config["model_path"], "available": (Path(self.config["model_path"]) / "openvino_model.xml").is_file(), "loaded": self.embedder.pipeline is not None, "device": self.embedder.device, "error": self.embedder.error},
-            "roots": self.config["roots"], "shortcut": self.config["shortcut"], "semantic_enabled": self.config["semantic_enabled"], "offline": True,
+            "roots": self.config["roots"], "shortcut": self.config["shortcut"], "semantic_enabled": self.config["semantic_enabled"], "offline": True, "index_unencrypted": self.store.unencrypted,
             "backup": dict(self.backup_state)}
 
     def activity(self):
@@ -170,6 +187,10 @@ class Service:
         if requested_type is not None and (type(requested_type) is not int or not 1 <= requested_type <= 4095):
             raise ValueError("Invalid file type")
         preferred_paths = params.get('preferred_paths', [])
+        # Remembered programs are app identifiers, not filesystem paths.
+        preferred_programs = [p for p in preferred_paths if isinstance(p, str) and p.startswith(APP_PREFIX)] if isinstance(preferred_paths, list) else []
+        if preferred_programs:
+            preferred_paths = [p for p in preferred_paths if p not in preferred_programs]
         if not isinstance(preferred_paths, list) or len(preferred_paths)>20 or any(not isinstance(path,str) or not Path(path).is_absolute() for path in preferred_paths):
             raise ValueError('Invalid remembered file choices')
         revision = self.store.revision()
@@ -179,7 +200,7 @@ class Service:
                 model_id = self.embedder.identity()
             except (OSError, ValueError):
                 pass
-        key = (query, bool(semantic), requested_type, revision, model_id, tuple(preferred_paths), json.dumps(self.config, sort_keys=True))
+        key = (query, bool(semantic), requested_type, revision, model_id, tuple(preferred_paths), tuple(preferred_programs), json.dumps(self.config, sort_keys=True))
         with self._cache_lock:
             cached = self._cache.get(key)
             if cached is not None:
@@ -187,8 +208,11 @@ class Service:
                 result = copy.deepcopy(cached)
                 result["timing"] = {"total_ms": round((time.perf_counter() - begin) * 1000, 2), "cache_hit": True, "original_total_ms": cached["timing"]["total_ms"]}
                 self.latest_search = result
-                return result
+                return self._with_programs(result, query, requested_type, preferred_programs)
         result = self.store.search(query, self.embedder if semantic else None, requested_type, limit=500, names=self.config['name_enabled'], contents=self.config['content_enabled'], preferred_paths=preferred_paths)
+        choice_order = {canonical_path(p): i for i, p in enumerate(preferred_paths)}
+        for row in result["results"]:
+            row["preference_rank"] = choice_order.get(canonical_path(row["file_path"]), 1000000)
         result["timing"]["cache_hit"] = False
         # Cache successful responses only; SQLite triggers invalidate after any
         # metadata/content/vector change. A compiling model never poisons cache.
@@ -198,16 +222,38 @@ class Service:
                 while len(self._cache) > 64:
                     self._cache.popitem(last=False)
         self.latest_search = result
+        return self._with_programs(result, query, requested_type, preferred_programs)
+
+    def _with_programs(self, result, query, requested_type, preferred_programs):
+        """Prepend matching Start apps; never cached, because the app list loads in the background."""
+        if self.config['programs_enabled'] and (requested_type is None or requested_type & APP_TYPE):
+            from .store import parse_query
+            programs = self.windows.programs(parse_query(query)[0])
+            for row in programs:
+                remembered = row['file_path'] in preferred_programs
+                row['preference_rank'] = preferred_programs.index(row['file_path']) if remembered else 1000000
+                if remembered:
+                    row['matches'] = row['matches'] + ['Previously opened']
+            # Programs lead the local list so rank fusion keeps them above file matches.
+            result["results"] = sorted(programs, key=lambda r: r['preference_rank']) + result["results"]
         return result
 
     def _indexed_file(self, params):
         fid = params.get("file_id")
         path = params.get("file_path")
+        if params.get('program') is True:
+            if fid is None and self.config['programs_enabled'] and self.windows.program_path(path):
+                return {'id': None, 'path': path, 'file_type': APP_TYPE}
+            raise ValueError('This program is no longer listed. Search again.')
         if fid is None and not isinstance(path, str):
             raise ValueError("An indexed file ID or path is required")
         row = self.store.get_file(file_id=fid, path=path)
         if path is not None and (not isinstance(path,str) or row is not None and Path(row['path']).resolve()!=Path(path).resolve()):
             raise ValueError('This result changed. Search again before opening it.')
+        if row is None and fid is None and params.get('windows_result') is True and isinstance(path, str):
+            candidate = Path(path)
+            if self.config.get('windows_semantic_enabled') and self.windows.issued_path(candidate) and candidate.is_file() and self.indexer.allowed(candidate):
+                row = {'id': None, 'path': str(candidate.resolve()), 'file_type': file_type(candidate)}
         if row is None or not self.indexer.allowed(Path(row["path"])):
             raise ValueError("File is outside the active index")
         return row
@@ -218,6 +264,8 @@ class Service:
             return {}  # No telemetry or logs containing query/file contents.
         if method == "request_get_device_info":
             return {"ai_pc_flag": True}
+        if method == "local_windows_search":
+            return self.windows.search(self, params)
         if method in ("search", "search_by_file_type", "local_search"):
             result = self.search(params)
             if method == "local_search":
@@ -239,6 +287,12 @@ class Service:
             return {"txt_match_points": self.store.preview(row["id"], params.get("text", "")), "img_match_points": [], "match_points": []}
         if method in ("open_file", "open_file_with", "open_doc_highlight_text", "open_doc_jump_image", "open_file_folder", "check_file_exist", "copy_file_path_to_clipboard", "copy_to_clipboard"):
             row = self._indexed_file(params)
+            if row['file_type'] == APP_TYPE:
+                if method != 'open_file':
+                    raise ValueError('Programs can only be opened')
+                query = params.get('query', '')
+                self.window_action('open', {'path': row['path'], 'query': query if isinstance(query, str) and len(query) <= 256 else ''})
+                return {"status": 0, 'opened': True}
             if not Path(row["path"]).exists():
                 return {"status": 1}
             if method == "check_file_exist":
@@ -272,7 +326,7 @@ class Service:
             return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
-            allowed = {"roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance"}
+            allowed = {"roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
             if set(params) - allowed:
                 raise ValueError("Unsupported setting")
             settings = validate({**self.config, **params}, self.config_path)
@@ -408,6 +462,7 @@ class Service:
             return {"id": identifier, "response": {"code": 1, "message": str(exc), "data": {}}}
 
     def close(self):
+        self.windows.close()
         with self._notification_lock:
             self._closed = True
             if self._notification_timer:

@@ -26,6 +26,8 @@ INSTALL = ROOT / 'install'
 SKIP = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', 'bin', 'obj', 'test-data', 'model_cache')
 PRIVATE = {'bin', 'obj', '__pycache__', 'model_cache', '.git', '.venv', 'data', 'results', '.test-environment'}
 PRIVATE_FILES = {'config.json', 'included-folders.txt', 'excluded-folders.txt'}
+RELEASE = '0.3.0'
+VERSIONS = {'pc-manager': '0.2.1', 'file-search': '0.3.0', 'screen-translator': '0.2.1'}
 
 
 def public_source(directory):
@@ -47,7 +49,7 @@ def development_copy(app, component, executable):
     (dev / 'Launch.cmd').write_text('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Launch.ps1" %*\r\nif errorlevel 1 pause\r\n', encoding='ascii')
     project = {'pc-manager': 'XiaomiAIManager.csproj', 'file-search': 'native/AICenter.csproj', 'screen-translator': 'native/ScreenTranslator.csproj'}[component]
     info = {'name': app.name, 'component': component, 'executable': executable,
-            'project': f'source/{component}/{project}', 'version': '0.2.0'}
+            'project': f'source/{component}/{project}', 'version': VERSIONS[component]}
     (dev / 'development.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
     (dev / 'README.md').write_text(f'''# {app.name} development
 
@@ -217,7 +219,7 @@ def main():
                 copy_tree(notices, app / 'notices')
             icon = SOURCE / component / 'native' / 'assets' / 'app.ico'
             compile_launcher(csc, app / 'AI Center.exe', 'FILE_SEARCH', icon)
-            (app / 'package-manifest.json').write_text(json.dumps({'appId': 'XiaomiRevamp.AICenter', 'version': '0.2.0'}), encoding='utf-8')
+            (app / 'package-manifest.json').write_text(json.dumps({'appId': 'XiaomiRevamp.AICenter', 'version': VERSIONS[component]}), encoding='utf-8')
         else:
             copy_tree(outputs[component], app)
             for name in ['frontend', 'screen_translator']:
@@ -227,7 +229,7 @@ def main():
                 dependency_versions = copy_translator_python(app / 'runtime' / 'python')
             for name in ['LICENSE', 'NOTICE.md']:
                 shutil.copy2(SOURCE / component / name, app / name)
-            (app / 'packaged.json').write_text(json.dumps({'name': 'Screen Translator', 'version': '0.2.0', 'offline': True}), encoding='utf-8')
+            (app / 'packaged.json').write_text(json.dumps({'name': 'Screen Translator', 'version': VERSIONS[component], 'offline': True}), encoding='utf-8')
             icon = SOURCE / component / 'frontend' / 'logo.ico'
             compile_launcher(csc, app / 'ScreenTranslator.exe', 'SCREEN_TRANSLATOR', icon)
             # A private import path prevents accidental imports from developer or installed app folders.
@@ -247,7 +249,7 @@ def main():
     highest = max([int(path.name.split('_')[0]) for path in release_root.iterdir() if path.is_dir() and path.name.split('_')[0].isdigit()] + [0])
     release = release_root / f'{highest+1:03d}_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}'
     release.mkdir()
-    manifest = {'schema': 1, 'version': '0.2.0', 'created': datetime.now(timezone.utc).isoformat(), 'components': {}}
+    manifest = {'schema': 1, 'version': RELEASE, 'created': datetime.now(timezone.utc).isoformat(), 'components': {}}
     # Reuse verified local tools; never install dependencies as part of the build.
     tool_payload = release / 'development-toolchain.zip'
     with zipfile.ZipFile(tool_payload, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:

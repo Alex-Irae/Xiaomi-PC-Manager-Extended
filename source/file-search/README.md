@@ -1,5 +1,27 @@
 # Xiaomi Semantic Search and AI Center
 
+## Version 0.3.0
+
+Pipeline: search bar (WebView) -> C# host -> Python backend over stdio -> in parallel: names and paths (substring + FTS5), contents (FTS5), meaning (Qwen3 vector, prefix scan then exact rerank), Windows index (optional), Programs (optional) -> rank fusion -> scope-validated file actions.
+
+| Area | 0.2 | 0.3 |
+| --- | --- | --- |
+| Index storage | Encrypted snapshot, whole index in RAM, rewritten on each save | SQLite on disk in an EFS-encrypted data folder (`index_protection: efs`), or plain (`none`), or the 0.2 format (`windows`) |
+| Meaning search | Reads every stored vector per query | `vectors` table of 256-dimension float16 prefixes scanned in RAM, exact rerank of 2,000 candidates |
+| Other sources | none | Windows index with semantic predicate (`windows_semantic_enabled`), Start apps and executables (`programs_enabled`) |
+
+New or changed files: `xiaomi_search/windows_search.py` and `WindowsSearch.ps1` (persistent read-only Windows Search and Start-apps worker), `xiaomi_search/store.py` (schema, two-pass search, per-thread connections), `xiaomi_search/protection.py` (EFS folder protection, snapshot conversion), `xiaomi_search/indexer.py` (scoped reconciliation), `frontend/result-fusion.js` (local and Windows merge), `native/Program.cs` (`--check-live`).
+
+The index can be opened with any SQLite tool as the same Windows user: `files`, `chunks` (text, location, exact float32 vector), `vectors` (prefix per passage), `file_fts`, `chunk_fts`, `meta`.
+
+Hardware tested: Intel Core Ultra X7 358H, Arc B390 iGPU, Intel AI Boost NPU, 32 GB RAM. Embedding measured 54.5 passages/s on GPU, 17.6 on NPU, 1.8 on CPU, all with fixed 512-token shapes; the backend tries GPU, then NPU, then CPU. No accelerator is required for names, contents, Windows and programs.
+
+Query syntax adds `type:program`; `ext:`, `type:`, `folder:`, `before:` and `after:` are unchanged.
+
+Limits: equal-weight fusion of local and Windows lists; scope filters apply after the best 3,000 full-text and 2,000 vector candidates; Windows word breaking fixed to English; no EFS on Windows Home (index then stored unencrypted, reported in the log and status).
+
+The sections below describe behaviour shared with 0.2.
+
 Current connected build: Double Ctrl and `file-search.open` show compact search only. Starting an existing instance with `--tray` leaves both window states unchanged. Launch the EXE without arguments or use PC Manager's settings invocation (`--center`) to open the main AI Center window. `--search` explicitly opens compact search. The native launch-routing check exercises real resident-instance messages without loading the browser or inference models.
 
 Compact search uses Enter to search, never to open a file. Its file-type selector restricts exact

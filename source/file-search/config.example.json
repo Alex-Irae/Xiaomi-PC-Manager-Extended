@@ -50,8 +50,10 @@
   "content_enabled": true,
   "indexing_frequency": "realtime",
   "theme": "system",
-  "index_protection": "windows",
+  "index_protection": "efs",
   "embedding_pooling": "LAST_TOKEN",
   "embedding_padding_side": "left",
-  "follow_suite_appearance": true
+  "follow_suite_appearance": true,
+  "windows_semantic_enabled": true,
+  "programs_enabled": true
 }

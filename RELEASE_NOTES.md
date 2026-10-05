@@ -1,4 +1,41 @@
+# Xiaomi Revamp 0.3.0
+
+AI Center 0.3.0, PC Manager 0.2.1 and Screen Translator 0.2.1. The two 0.2.1 apps only receive the new launcher with the testing control switch; their own code is unchanged.
+
+## AI Center 0.3.0
+
+- **On-disk index.** The index is a SQLite file on disk, EFS-encrypted for the Windows account by default, instead of an encrypted snapshot held entirely in RAM and rewritten on every save. On the author's whole-drive index (143k files, 731k passages) the worker went from 8.1 GB to 1.4 GB of memory and from about 49 GB to about 3 GB written per hour while indexing. An existing 0.2 snapshot is converted on first start (77 s for 2.5 GB) and kept beside the new file as `index.sqlite3.dpapi.migrated`.
+- **Two-pass meaning search.** A 256-dimension prefix of every passage vector is scanned in RAM, then the best 2,000 candidates are reranked with the exact vectors. Retrieval at 250,000 passages measured 38 ms against 1.4 s.
+- **Windows channel.** Optional results from the existing Windows index, including its semantic matches (`CONTAINSSEMANTIC`), through one persistent local worker. Cloud providers are never queried, and every candidate passes the same folder, type and date rules as local results.
+- **Programs.** A Programs category lists Start apps and executables (`.exe`, `.msi`, `.lnk`) inside included folders; `type:program` works in queries.
+- **Indexer.** A new subfolder no longer triggers a pass over the whole index, vectors are written in batches, and PDF text with split Unicode surrogates no longer drops the file.
+- **Settings.** Windows and Programs toggles; three index protection choices (encrypted on disk, plain on disk, 0.2 snapshot in RAM).
+- **Check.** `"AI Center.exe" --check-live` drives the real search bar (program, typed extension, meaning), intercepts launches and saves previews to the data folder.
+
+Windows Home and non-NTFS volumes have no EFS: the index is then stored unencrypted, and the log and status say so.
+
+## Testing control switch (all three apps)
+
+Each app EXE accepts:
+
+~~~powershell
+& "C:\Program Files\Xiaomi Revamp\AI Center\AI Center.exe" --disable   # stop it and block every start
+& "C:\Program Files\Xiaomi Revamp\AI Center\AI Center.exe" --status | Out-Host
+& "C:\Program Files\Xiaomi Revamp\AI Center\AI Center.exe" --enable    # allow starts again
+~~~
+
+While disabled, Windows startup, PC Manager's automatic `--tray` start, shortcuts and AI Center's restart loop all end silently; opening the app by hand shows a message with the enable command. `--status` exits with 0 when enabled and 3 when disabled. The state is one per-user file, `%LOCALAPPDATA%\XiaomiRevamp\control\<component>.off`.
+
+## Known limits
+
+- Local and Windows results are merged with equal weights; a late Windows answer can reorder visible rows.
+- A file whose exact name equals the query is listed above a program of the same name.
+- Sentence-length lexical queries take 0.5 to 0.7 s on a 731k-passage index.
+- Windows only returns what it has indexed, and its word breaking is fixed to English here.
+- PC Manager runs elevated, so `--disable` from a normal shell can ask it to quit but cannot force it.
+
 # PC Manager 0.2.0
+
 
 This cumulative update repairs connected shortcut launches and continuous AI Center indexing.
 The complete offline EXE installer includes PC Manager, optional AI Center and Screen Translator,

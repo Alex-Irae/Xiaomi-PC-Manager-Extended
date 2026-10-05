@@ -1,6 +1,12 @@
-# Xiaomi Revamp / PC Manager 0.2.0
+# Xiaomi Revamp 0.3.0 (PC Manager 0.2.1, AI Center 0.3.0, Screen Translator 0.2.1)
 
 Three independent Windows applications connected through PC Manager: **PC Manager**, **Screen Translator** and **AI Center** (semantic file search). PC Manager is required by the combined installer; either optional app can also be installed and run alone. All OCR, translation and search inference runs locally.
+
+## New in 0.3.0
+
+AI Center 0.3.0 stores its index on disk (EFS-encrypted by default) instead of in RAM, adds a Windows index channel with Windows semantic matches, a Programs category, and a faster meaning search. All three app EXEs gain `--disable`, `--enable` and `--status` for testing without start conflicts. Details, measurements and limits are in [RELEASE_NOTES.md](RELEASE_NOTES.md) and [source/file-search/README.md](source/file-search/README.md).
+
+Upgrading: run the setup over the existing installation. Settings, history and the index are kept; each replaced app folder is preserved as `.previous-<component>-<time>` in the application folder until removed. The 0.2 search index is converted on the first start of AI Center 0.3.0.
 
 ## Installation
 
