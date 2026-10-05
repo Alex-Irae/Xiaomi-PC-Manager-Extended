@@ -17,7 +17,7 @@ import zipfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_suite import public_source
+from build_suite import RELEASE, public_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,7 +134,7 @@ def main():
     assets = [{"name": name, "bytes": (release / name).stat().st_size, "sha256": digest(release / name)} for name in names]
     (release / "SHA256SUMS.txt").write_text("".join(item["sha256"] + "  " + item["name"] + "\n" for item in assets), encoding="utf-8")
     assets.append({"name": "SHA256SUMS.txt", "bytes": (release / "SHA256SUMS.txt").stat().st_size, "sha256": digest(release / "SHA256SUMS.txt")})
-    (release / "public-assets.json").write_text(json.dumps({"version": "0.2.0", "assets": assets}, indent=2), encoding="utf-8")
+    (release / "public-assets.json").write_text(json.dumps({"version": RELEASE, "assets": assets}, indent=2), encoding="utf-8")
     (release / "build-config.json").write_text(json.dumps({"previous": str(previous), "changes": str(args.changes.resolve()) if args.changes else None, "unique_files": len(written), "installed_paths_with_toolchain": paths, "pc_manager_unchanged": "pc-manager" not in replacements, "installer_bytes": installer.stat().st_size}, indent=2), encoding="utf-8")
     print("PASS: complete installer including development tools, " + str(round(installer.stat().st_size / 1024**2, 1)) + " MiB", flush=True)
 

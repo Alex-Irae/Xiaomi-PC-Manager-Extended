@@ -13,7 +13,7 @@ import zipfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_suite import public_source
+from build_suite import RELEASE, public_source
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -55,7 +55,7 @@ def main():
     (release / "SHA256SUMS.txt").write_text("".join(f"{a['sha256']}  {a['name']}\n" for a in assets), encoding="utf-8")
     assets.append({"name": "SHA256SUMS.txt", "bytes": (release/"SHA256SUMS.txt").stat().st_size,
                    "sha256": checksum(release/"SHA256SUMS.txt")})
-    (release / "public-assets.json").write_text(json.dumps({"version": "0.2.0", "assets": assets}, indent=2), encoding="utf-8")
+    (release / "public-assets.json").write_text(json.dumps({"version": RELEASE, "assets": assets}, indent=2), encoding="utf-8")
     print(f"PASS: {len(assets)} public release assets; combined installer {bundle.stat().st_size/1024**2:.1f} MiB", flush=True)
 
 
