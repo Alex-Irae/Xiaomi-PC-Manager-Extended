@@ -56,11 +56,14 @@ function commit() {
   if(JSON.stringify(config)===JSON.stringify(state.config)){dirty=false;return;}
   // Undo history lasts while this window is open; fifty steps is ample for a settings page.
   past.push(state.config);if(past.length>50)past.shift();future=[];
-  apply(config);
+  apply(config);Revamp.toast('Settings saved.');
 }
-function step(from,to) {if(!state||!from.length)return;clearTimeout(saveTimer);to.push(state.config);apply(from.pop());}
-$('settings-undo').addEventListener('click',() => step(past,future));
-$('settings-redo').addEventListener('click',() => step(future,past));
+function step(forward) {
+  const from=forward?future:past,to=forward?past:future;
+  if(!state||!from.length)return;
+  clearTimeout(saveTimer);to.push(state.config);apply(from.pop());Revamp.toast(forward?'Change restored.':'Change undone.');
+}
+Revamp.history($('settings-undo'),$('settings-redo'),step);
 $('shortcut').addEventListener('change',() => {
   if($('shortcut').value==='record'){setShortcut($('shortcut').dataset.selected||state.config.shortcut);send('record-shortcut');}
   else $('shortcut').dataset.selected=$('shortcut').value;

@@ -21,8 +21,8 @@ using System.Security.AccessControl;
 using System.Runtime.Versioning;
 
 [assembly: AssemblyTitle("Xiaomi Revamp Setup")]
-[assembly: AssemblyVersion("0.3.1.0")]
-[assembly: AssemblyFileVersion("0.3.1.0")]
+[assembly: AssemblyVersion("0.3.6.0")]
+[assembly: AssemblyFileVersion("0.3.6.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
 
 internal static class Setup
@@ -33,8 +33,8 @@ internal static class Setup
     static readonly Dictionary<string, string> Executables = new Dictionary<string, string> { { "pc-manager", "PCManager.exe" }, { "file-search", "AI Center.exe" }, { "screen-translator", "ScreenTranslator.exe" } };
     static string Sid { get { return WindowsIdentity.GetCurrent().User.Value; } }
     static bool Admin { get { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } }
-    const string Version = "0.3.1"; // suite release
-    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.2" }, { "file-search", "0.3.1" }, { "screen-translator", "0.2.2" } };
+    const string Version = "0.3.6"; // suite release; tools/build_suite.py refuses to build when these differ from its table
+    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.7" }, { "file-search", "0.3.4" }, { "screen-translator", "0.2.6" } };
     static string Uninstaller { get { return "Uninstall.exe"; } }
     static string Expand(string path) { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path).Replace("{sid}", Sid)); }
     static Dictionary<string, object> Marker(string root) { return Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(root, "suite-install.json")))); }
@@ -514,6 +514,13 @@ internal static class Setup
             var data = pathRow("Data folder (blank uses each user's Local AppData)", 133, "", !remove);
             var searchData = pathRow("AI Center data folder (blank uses the data folder above)", 201, "", !remove);
             var choices = new Dictionary<string, CheckBox>(); var starts = new Dictionary<string, CheckBox>(); int yRow = 276;
+            // A folder that holds only some component archives, such as one app's Installer folder, offers only those.
+            Func<string, bool> available = key => true;
+            if (!remove && !File.Exists(Path.Combine(Base, "payload.zip")))
+            {
+                var packaged = Object(Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(Base, "packages.json"))))["components"]);
+                available = key => packaged.ContainsKey(key) && File.Exists(Child(Base, (string)Object(packaged[key])["payload"]));
+            }
             foreach (var component in Folders)
             {
                 bool enabled = true, selected = true;
@@ -523,6 +530,7 @@ internal static class Setup
                 enabled = false; selected = component.Key == "screen-translator";
 #else
                 if (!remove && component.Key == "pc-manager") enabled = false;
+                if (!remove && component.Key != "pc-manager" && !available(component.Key)) { selected = false; enabled = false; }
                 if (remove && args.Contains("--component")) { enabled = false; selected = option("--component", "") == component.Key; }
                 if (remove && File.Exists(Path.Combine(target, "suite-owned.json")) && !Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(target, "suite-owned.json")))).ContainsKey(component.Key)) { selected = false; enabled = false; }
 #endif

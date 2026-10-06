@@ -127,6 +127,7 @@ assert.deepEqual(requests.filter(r=>r.method==='display.brightness').map(r=>r.ar
 assert.deepEqual(JSON.parse(evaluate('JSON.stringify(brightnessConfirmations)')), [55]);
 console.log('PASS slider coalescing: first/latest writes only, latest confirmation only.');
 vm.runInContext(source('suite.js'), context);
+vm.runInContext(source('revamp.js'), context);
 vm.runInContext(source('app.js'), context);
 await settle('!reading && snapshot != null');
 assert.equal(element('undo').title, 'Undo Performance mode (Ctrl+Z)');

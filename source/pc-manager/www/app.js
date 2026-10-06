@@ -4,7 +4,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const pages = { home: ["This PC", "home"], performance: ["Performance", "speed"], battery: ["Battery", "battery"], display: ["Display", "screen"], touchpad: ["Touch and input", "touchpad"], keyboard: ["Keyboard", "keyboard"], notifications: ["Notifications", "message"], monitor: ["Monitor", "cpu"], tools: ["Toolbox", "tools"], settings: ["Settings", "settings"] };
-let snapshot, settingState, customization, awake = false, sleepOff = false, busy = false, reading = false, dirty = false, pendingRefresh = false, toastTimer;
+let snapshot, settingState, customization, awake = false, sleepOff = false, busy = false, reading = false, dirty = false, pendingRefresh = false;
 let components;
 let cachedState = false, lastCacheWrite = 0;
 const cacheKey = "manager-last-known-state-v1";
@@ -151,7 +151,7 @@ function keyboardPage() {
   return heading("Keyboard", "Map keys to apps, manager pages or device actions. Mi opens quick controls; F9 opens Windows Settings; AI/F7 opens XiaoAI.") + shortcutEditor() + (prefs().developerMode ? card("Key diagnostics", `<p>${UI.escape(status)}</p><p class="inline-note">${UI.escape(k.error || "")}</p><div class="readout-grid">${readout("Last firmware event", k.lastEvent || "No event received yet")}</div>`, "keyboard") : "") + catalog("keyboard");
 }
 function notificationsPage() { return heading("Notifications", "One position setting for performance and other notifications.") + card("Preview", `<div class="actions">${button("Performance preview", "window.osdPreview", { number: 1 })}${button("Caps Lock preview", "window.lockPreview")}</div><p class="inline-note">Previewing a card does not change the hardware mode or lock state.</p>`, "message") + catalog("notifications"); }
-function monitorPage() { return heading("Hardware monitor", "The XiControl monitor, running inside this resident.") + card("Monitor views", `<div class="actions">${["small", "medium", "large"].map(size => button(size[0].toUpperCase()+size.slice(1), "window.monitor", { size })).join("")}</div><p class="inline-note">Visible views sample at 1 Hz. Large graphs show 30 seconds by default; click 30 sec to show three minutes. Log starts a CSV only when checked and turns off when the monitor closes. On AC, power shows CPU package only; full laptop draw is unavailable. NPU load and fan RPM are unavailable.</p>`, "cpu") + catalog("monitor"); }
+function monitorPage() { return heading("Hardware monitor", "The XiControl monitor, running inside this resident.") + card("Monitor views", `<div class="actions">${["small", "medium", "large"].map(size => button(size[0].toUpperCase()+size.slice(1), "window.monitor", { size })).join("")}</div><p class="inline-note">Visible views sample at 1 Hz. Large graphs show 30 seconds by default; click 30 sec to show three minutes. Log starts a CSV only when checked and turns off when the monitor closes. On AC, power shows CPU package only; full laptop draw is unavailable. NPU load is shown when the laptop has a neural processor. Fan RPM is unavailable.</p>`, "cpu") + catalog("monitor"); }
 function toolsPage() {
   const official = [["drivers", "Driver scan", "Open the supplied Xiaomi driver scanner."], ["tools", "Xiaomi Toolbox", "Cleanup, driver management and OEM tools."], ["home", "Original Xiaomi Manager", "Display color, content-aware brightness, meetings, repair and other proprietary settings."], ["store", "Xiaomi Store", "Open the standalone Xiaomi Store when available."]];
   return heading("Toolbox", "Local suite apps and explicit Xiaomi tools.") + suiteToolsCard() + official.map(([section, title, description]) => card(title, `<p class="inline-note">${UI.escape(description)}</p>${button("Open", "xiaomi.open", { section })}`, "tools")).join("") +
@@ -306,7 +306,7 @@ function openSearchHit(hit) {
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, 250);
 }
-function notice(message, error = false) { $("toast").textContent = message; $("toast").hidden = false; $("toast").classList.toggle("error", error); clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, 8000); }
+function notice(message, error = false) { Revamp.toast(message, {error}); }
 async function refresh(force = false) {
   if (!Native.connected || busy || BrightnessInput.pending || document.hidden) return false;
   if (reading) { if (force) pendingRefresh = true; return false; }
@@ -535,18 +535,18 @@ document.addEventListener("pointerdown", event => {
 });
 $("refresh").innerHTML = UI.icon("reload");
 $("store-shortcut").innerHTML = UI.icon("store");
+$("minimize").innerHTML = UI.icon("minimize");
+$("hide-manager").innerHTML = UI.icon("close");
 $("minimize").addEventListener("click", () => Native.call("window.minimize").catch(error => notice(error.message, true)));
 $("maximize").innerHTML = UI.icon("maximize");
 $("maximize").addEventListener("click", () => Native.call("window.maximize").catch(error => notice(error.message, true)));
-for (const action of ["undo", "redo"]) { $(action).innerHTML = UI.icon(action); $(action).addEventListener("click", () => change("settings." + action)); }
+for (const action of ["undo", "redo"]) $(action).innerHTML = UI.icon(action);
+Revamp.history($("undo"), $("redo"), forward => change("settings." + (forward ? "redo" : "undo")));
 document.addEventListener("keydown", event => {
   if (event.target.id === "palette-rename" && ["Enter", "Escape"].includes(event.key)) {
     event.preventDefault();
     return performAction(event.key === "Enter" ? "rename-palette" : "cancel-rename-palette");
   }
-  if (!event.ctrlKey || event.altKey || event.metaKey || event.target.matches("input,textarea,[contenteditable=true]")) return;
-  const action = event.key.toLowerCase() === "y" || event.shiftKey && event.key.toLowerCase() === "z" ? "redo" : event.key.toLowerCase() === "z" ? "undo" : null;
-  if (action && !$(action).disabled) { event.preventDefault(); change("settings." + action); }
 });
 $("hide-manager").addEventListener("click", () => Native.call("window.hide").catch(error => notice(error.message, true)));
 document.querySelector(".app-header")?.addEventListener("pointerdown", event => {

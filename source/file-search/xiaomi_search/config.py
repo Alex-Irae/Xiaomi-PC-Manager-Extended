@@ -64,6 +64,9 @@ def validate(config, path):
         raise ValueError('programs_enabled must be a boolean')
     if type(config['run_at_startup']) is not bool:
         raise ValueError('run_at_startup must be a boolean')
+    # Older settings files have no entry: AI Center's tray icon then stays off at sign-in.
+    if type(config.setdefault('center_at_startup', False)) is not bool:
+        raise ValueError('center_at_startup must be a boolean')
     for key in ("excluded_folders", "excluded_extensions"):
         if not isinstance(config[key], list) or any(not isinstance(v, str) or not v.strip() for v in config[key]):
             raise ValueError(f"{key} must be a list of nonempty strings")

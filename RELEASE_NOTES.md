@@ -1,3 +1,28 @@
+# Xiaomi Revamp 0.3.6
+
+PC Manager 0.2.7, AI Center 0.3.4, Screen Translator 0.2.6.
+
+- **AI Center: file search no longer needs AI Center.** They are one program with two faces. File search (the shortcut and the search bar) starts hidden with Windows, without a tray icon. AI Center is the launcher window and its tray icon, shown once AI Center is opened. "Quit AI Center" in the tray now removes the icon and the window and leaves the search shortcut working; before, it ended the program and the next shortcut press had to start everything again. Search settings has two startup options: "Start file search with Windows and keep it running without AI Center" (the existing option, on by default; when off, quitting AI Center also stops file search) and "Start AI Center with Windows (tray icon)" (new, off by default). PC Manager starts file search in the background only when one of the two is on.
+- **AI Center: one startup entry.** An installation older than the suite left a second "LocalAICenter" startup entry for the same program; it is removed when the app starts.
+- **Screen Translator: contour on the floating toolbar.** A two-pixel outline in the accent colour, so the toolbar stays visible on a background of its own colour.
+- **Screen Translator: starting with Windows is off unless chosen.** The option stays in Settings ("Start in the tray at sign-in"). The translation shortcut still works through PC Manager, which starts the app on demand.
+- **PC Manager: NPU in the monitor.** The full and medium monitor views gain an NPU row on laptops with a neural processor. The value is what Task Manager shows: the "Neural" engine type of Windows' GPU counters, summed over the processes using it. It is read only while the monitor is open. The single-metric view and the tray indicator have no NPU choice.
+- **PC Manager: Screen Translator icon centred** in the quick panel. Its drawing sat half a unit up and left of the centre of its box.
+- **AI Center: quieter logs.** The indexer wrote one line per file into two log files (393,000 lines in three days on a whole-drive index). It now reports every 250 files and when the queue empties.
+- **Setup: an app can travel with its own installer.** The suite setup now offers only the apps whose archive lies beside it, so a folder holding the setup, `packages.json` and one archive installs that one app. The setup and the launchers also report the current versions again; they had stayed at 0.3.1 and 0.2.2 in Windows' installed-apps list. The build refuses a mismatch from now on. Launchers and setup programs built before this change still carry the old numbers.
+- **Measurement tool.** `tools/measure_apps.py` samples CPU, memory, disk writes, GPU and NPU use of the running apps and FileSync into a numbered results folder.
+
+# Xiaomi Revamp 0.3.5
+
+PC Manager 0.2.6, AI Center 0.3.3, Screen Translator 0.2.5.
+
+- **One set of control behaviour for every app.** Button states, the top-bar icon buttons, the bottom notice and the undo/redo commands now come from two shared files, `source/shared/ui/revamp.css` and `revamp.js`, copied into each app by `tools/sync_ui.py` (the build refuses a stale copy). FileSync 1.3.3 uses the same two files. Each app's own versions of these rules were removed.
+- **Buttons.** Filled, soft and outlined buttons dim slightly on hover and darken with a ring while pressed; soft buttons gain a tinted fill and a thin ring on hover. Icon buttons in the top bar (undo, redo, minimize, maximize, close) get a tinted square on hover and close turns red. Disabled and keyboard-focus looks are the same everywhere. Before, only PC Manager had a pressed state.
+- **Notice at the bottom.** AI Center showed its messages as small text under the settings form and Screen Translator showed none on save; both now use the same bottom notice as PC Manager: "Applied." in AI Center, "Settings saved.", "Change undone." and "Change restored." in Screen Translator. A notice stays 5 seconds, an error 8.
+- **Undo and redo.** Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z now work in AI Center and Screen Translator as they did in PC Manager, and are left to the field while typing in a text box. PC Manager's undo, redo, minimize and close icons are the same drawings as in the other apps.
+
+Not changed: the page layouts (PC Manager and FileSync keep their sidebar, AI Center and Screen Translator their tabs), PC Manager's quick panel and AI Center's search bar, which do not load the shared files.
+
 # Xiaomi Revamp 0.3.4
 
 PC Manager 0.2.5, AI Center 0.3.2, Screen Translator 0.2.4.

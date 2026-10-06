@@ -1,4 +1,4 @@
-# Xiaomi Revamp 0.3.4 (PC Manager 0.2.5, AI Center 0.3.2, Screen Translator 0.2.4)
+# Xiaomi Revamp 0.3.6 (PC Manager 0.2.7, AI Center 0.3.4, Screen Translator 0.2.6)
 
 Three independent Windows applications connected through PC Manager: **PC Manager**, **Screen Translator** and **AI Center** (semantic file search). PC Manager is required by the combined installer; either optional app can also be installed and run alone. All OCR, translation and search inference runs locally.
 
@@ -89,7 +89,7 @@ GitHub branches share one history: `manager/main` is the parent integration bran
 
 ## Source, environment and build
 
-`source/pc-manager`, `source/screen-translator` and `source/file-search` contain copied app sources. `source/shared` contains the shortcut layer, recorder, launcher and installer. `tools/build_suite.py` compiles/stages/seals releases; `tools/launch_development.ps1` supports editable launches. `checks` holds focused validation. Generated outputs go to `build`, `install`, numbered `packages` and numbered `results`.
+`source/pc-manager`, `source/screen-translator` and `source/file-search` contain copied app sources. `source/shared` contains the shortcut layer, recorder, launcher and installer. `source/shared/ui` holds `revamp.css` and `revamp.js`: the button states, bottom notice and undo/redo commands every app uses. Edit them there and run `python tools/sync_ui.py`, which overwrites the copy in each app's frontend folder (pass FileSync's `frontend` folder as an argument to update that app too). `tools/build_suite.py` compiles/stages/seals releases and refuses a stale copy; `tools/launch_development.ps1` supports editable launches. `checks` holds focused validation. Generated outputs go to `build`, `install`, numbered `packages` and numbered `results`.
 
 Supported and tested: Windows 11 x64, .NET Desktop 8, Python 3.12, WebView2 and .NET Framework 4.8 for setup/wrappers. The copied runtime payloads supply .NET/Python. Build requires an existing .NET 8 SDK, offline NuGet cache, WebView2 reference folder, existing AI Center payload and translator `zh-en` models. Search/translator requirements remain separate because their OpenVINO integrations differ. SDK/environment installation and driver changes are user-managed.
 
@@ -116,7 +116,7 @@ This packager verifies prior component archives, seals explicitly selected app r
 
 ## Validation and known limits
 
-AI Center opens the launcher; File Search opens the compact search bar. The tray icon remains available while the application runs, including after minimizing or closing the launcher. Its menu offers AI Center, File Search and Quit AI Center.
+AI Center opens the launcher; File Search opens the compact search bar. File search and AI Center are one program with two faces. File search (the shortcut and the search bar) starts hidden with Windows and has no tray icon of its own. AI Center is the launcher window and its tray icon; the icon appears once AI Center is opened and its menu offers AI Center, File Search and Quit AI Center. Quit AI Center removes the icon and the window and leaves file search working. Two settings in Search settings control this: "Start file search with Windows and keep it running without AI Center" (on by default; when off, quitting AI Center also stops file search) and "Start AI Center with Windows (tray icon)" (off by default). `AI Center.exe --quit` always stops everything.
 
 Search settings shows the generated index location, saved checkpoint size/time and the separate pretrained embedding-model folder. Back up index chooses a destination and creates a new dated folder containing a consistent index checkpoint, configuration metadata, SHA256 manifest and recovery instructions. Backups retain file paths, change-tracking metadata, extracted text and vectors. They exclude original documents and model weights. Copying uses bounded buffers and leaves the live index available; capturing a fresh checkpoint still briefly needs the existing second SQLite snapshot in RAM. Wait for Backup complete before quitting. A folder without manifest.json is incomplete. Windows encryption requires the original Windows profile protection keys, so copying this backup to another laptop or a newly installed Windows profile is not a supported migration. For recovery, quit PC Manager and AI Center, preserve the current index, and follow RECOVERY.txt using the same file paths and compatible embedding model. Choose a backup destination outside application data so uninstalling the app does not remove it.
 

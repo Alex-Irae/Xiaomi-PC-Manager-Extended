@@ -139,7 +139,7 @@ internal sealed partial class MainWindow : Form
         ["models"]=Path.Combine(Program.Root,"models","zh-en"),["mode"]="Managed",
         ["devices"]=new JsonArray("NPU","GPU","GPU"),["benchmark"]="",["batch_size"]=8,
         ["cache"]=true,["incremental"]=true,["interval_ms"]=600,["model_idle_seconds"]=120,["font_scale"]=1.0,["debug"]=false,["toolbar_focus_only"]=false,["refresh_version"]=2,
-        ["follow_suite_appearance"]=true,["theme"]="system",["accent"]="#3482ff",["picture"]="",["shortcut"]="Copilot",["shortcut_version"]=2,["profile"]="Auto",["autostart"]=!XiaomiRevamp.Suite.SuiteEnvironment.Portable,
+        ["follow_suite_appearance"]=true,["theme"]="system",["accent"]="#3482ff",["picture"]="",["shortcut"]="Copilot",["shortcut_version"]=2,["profile"]="Auto",["autostart"]=false,
         ["font_family"]="Segoe UI",["font_fit"]=true,["display_style"]="underline",
         ["screenshot_folder"]=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Screen Translator")
     };
@@ -604,10 +604,12 @@ internal sealed partial class MainWindow : Form
             bool debugBefore=config["debug"]!.GetValue<bool>();
             await web.CoreWebView2.ExecuteScriptAsync("(()=>{const box=document.getElementById('debug');box.checked=!box.checked;box.dispatchEvent(new Event('change',{bubbles:true}));})()");
             await Task.Delay(400);bool saved=config["debug"]!.GetValue<bool>()!=debugBefore;
-            await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-undo').click()");await Task.Delay(400);bool undone=config["debug"]!.GetValue<bool>()==debugBefore;
-            await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-redo').click()");await Task.Delay(400);bool redone=config["debug"]!.GetValue<bool>()!=debugBefore;
+            bool noticed=(await web.CoreWebView2.ExecuteScriptAsync("(()=>{const box=document.getElementById('toast');return !box.hidden&&box.textContent==='Settings saved.';})()"))=="true";
+            // The keys go through the same shared wiring as the two arrows.
+            await web.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}))");await Task.Delay(400);bool undone=config["debug"]!.GetValue<bool>()==debugBefore;
+            await web.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'y',ctrlKey:true,bubbles:true}))");await Task.Delay(400);bool redone=config["debug"]!.GetValue<bool>()!=debugBefore;
             await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-undo').click()");await Task.Delay(400);
-            result["settingsSaveOnChangeWithUndoRedo"]=saved&&undone&&redone&&config["debug"]!.GetValue<bool>()==debugBefore;
+            result["settingsSaveOnChangeWithUndoRedo"]=saved&&noticed&&undone&&redone&&config["debug"]!.GetValue<bool>()==debugBefore;
             bool bindings=ShortcutBinding.Parse("Ctrl+Shift+T")==new ShortcutBinding((uint)Keys.T,6)&&
                 ShortcutBinding.Parse("A")==new ShortcutBinding((uint)Keys.A,0)&&ShortcutBinding.Parse("9").ToString()=="9"&&
                 ShortcutBinding.Parse("Copilot").IsCopilot&&ShortcutBinding.Parse("Win+C").IsCopilot&&ShortcutBinding.Parse("F8").ToString()=="F8";

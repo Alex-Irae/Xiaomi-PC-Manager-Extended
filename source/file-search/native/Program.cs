@@ -198,6 +198,13 @@ internal sealed partial class CenterContext : ApplicationContext
     string installedShortcut="";
     bool disposed;
     bool backendReady;
+    // AI Center's face is its tray icon and window. File search (this process, the shortcut and the search bar)
+    // runs with or without it: a background start shows the face only when a setting asks for it, and
+    // "Quit AI Center" then removes the face and leaves search working.
+    bool face;
+    bool SearchIndependent=>!settings.TryGetProperty("run_at_startup",out var value)||value.GetBoolean();
+    bool CenterAtStartup=>settings.TryGetProperty("center_at_startup",out var value)&&value.ValueKind==JsonValueKind.True;
+    internal static bool FaceAtStart(bool openedCenter,bool searchIndependent,bool centerAtStartup)=>openedCenter||centerAtStartup||!searchIndependent;
     int workerId;
     internal CenterContext(bool showCenter,bool paused,bool noShortcut,bool headless=false,bool startHidden=false)
     {
@@ -208,10 +215,11 @@ internal sealed partial class CenterContext : ApplicationContext
         settings=JsonSerializer.SerializeToElement(defaults);
         Search=new SearchWindow(this);_=Search.Handle;NativeInput.SetWindowText(Search.Handle,Program.InstanceTitle);
         if(!headless)ApplyStartup();
-        tray=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center",Visible=true,ContextMenuStrip=new ContextMenuStrip()};
+        face=headless||FaceAtStart(showCenter&&!startHidden,SearchIndependent,CenterAtStartup);
+        tray=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center",Visible=face,ContextMenuStrip=new ContextMenuStrip()};
         tray.ContextMenuStrip.Items.Add("AI Center",null,(_,_)=>ShowCenter());
         tray.ContextMenuStrip.Items.Add("File Search",null,(_,_)=>Search.ShowSearch());
-        tray.ContextMenuStrip.Items.Add("Quit AI Center",null,(_,_)=>Quit());tray.DoubleClick+=(_,_)=>ShowCenter();
+        tray.ContextMenuStrip.Items.Add("Quit AI Center",null,(_,_)=>QuitCenter());tray.DoubleClick+=(_,_)=>ShowCenter();
         idle.Tick+=(_,_)=>{if(!KeepSearchReady&&outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");};
         string schedule=Path.Combine(Program.Data,"schedule.txt");
         if(File.Exists(schedule)&&DateTime.TryParse(File.ReadAllText(schedule),out var time))lastScheduled=time.ToUniversalTime();
@@ -234,7 +242,7 @@ internal sealed partial class CenterContext : ApplicationContext
         installedShortcut=signature;
         Program.Log("Shortcut listener installed: "+shortcut);
     }
-    void ApplyStartup(){if(!Program.Development)Personalization.Startup(!settings.TryGetProperty("run_at_startup",out var value)||value.GetBoolean());}
+    void ApplyStartup(){if(!Program.Development)Personalization.Startup(SearchIndependent||CenterAtStartup);}
     void SessionChanged(object sender,SessionSwitchEventArgs eventArgs)
     {
         if(eventArgs.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon)Post(()=>{installedShortcut="";InstallShortcut();});
@@ -257,7 +265,7 @@ internal sealed partial class CenterContext : ApplicationContext
         }
         settings=JsonSerializer.SerializeToElement(current);
     }
-    internal void CenterVisibility()=>tray.Visible=!Program.Exiting;
+    internal void CenterVisibility()=>tray.Visible=face&&!Program.Exiting;
     bool ActiveWindow=>Search.Visible||(center?.Visible==true&&center.WindowState!=FormWindowState.Minimized);
     internal Color WindowColor
     {
@@ -381,7 +389,16 @@ internal sealed partial class CenterContext : ApplicationContext
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
         Search.ShowSearch();await Wait(()=>Search.PageReady);if(!tray.Visible)throw new InvalidOperationException("Recreated search lost tray icon");
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
-        return new {passed=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
+        // Quitting AI Center keeps file search when it is set to run on its own; opening AI Center brings the icon back.
+        if(FaceAtStart(false,true,false)||!FaceAtStart(true,true,false)||!FaceAtStart(false,false,false)||!FaceAtStart(false,true,true))throw new InvalidOperationException("A background start must show AI Center only when a setting asks for it");
+        // The packaged default leaves file search dependent on AI Center; this part needs it independent.
+        var independent=settings.Deserialize<Dictionary<string,JsonElement>>()!;independent["run_at_startup"]=JsonSerializer.SerializeToElement(true);settings=JsonSerializer.SerializeToElement(independent);
+        QuitCenter();if(tray.Visible||Program.Exiting)throw new InvalidOperationException("Quitting AI Center must keep file search running");
+        Search.ShowSearch();await Wait(()=>Search.PageReady);if(tray.Visible)throw new InvalidOperationException("Opening search brought AI Center back");
+        Search.Hide();await Wait(()=>!Search.BrowserLoaded);
+        ShowCenter();await Wait(()=>center!.PageReady);if(!tray.Visible)throw new InvalidOperationException("Opening AI Center did not restore its tray icon");
+        center!.Hide();await Wait(()=>!center.BrowserLoaded);
+        return new {passed=true,quitKeepsSearch=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
     }
     internal async Task<object> CheckUX()
     {
@@ -696,6 +713,7 @@ internal sealed partial class CenterContext : ApplicationContext
     }
     internal void ShowCenter()
     {
+        face=true;tray.Visible=true;
         Search.Hide();if(center is null||center.IsDisposed)center=new CenterWindow(this);
         center.Show();center.WindowState=FormWindowState.Normal;center.Activate();center.Script("window.dispatchEvent(new Event('local-center-focus'))");
     }
@@ -738,6 +756,12 @@ internal sealed partial class CenterContext : ApplicationContext
         if(!File.Exists(path))throw new FileNotFoundException("Intel AI Playground is not installed at "+path);
         Process.Start(new ProcessStartInfo(path){UseShellExecute=true});
     }
+    internal void QuitCenter()
+    {
+        if(!SearchIndependent){Quit();return;}
+        face=false;tray.Visible=false;center?.Hide();
+        Program.Log("AI Center closed; file search stays available");
+    }
     internal void Quit()
     {
         if(Program.Exiting)return;Program.Exiting=true;suite?.Dispose();keyboard?.Dispose();tray.Visible=false;StopBackend("quit");center?.Close();Search.Close();ExitThread();
@@ -774,8 +798,9 @@ internal class WebWindow : Form
     internal async Task SavePreview(string filename){await Task.Delay(100);using var stream=new FileStream(Path.Combine(Program.Data,filename),FileMode.CreateNew);await Web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,stream);}
     internal async Task<bool> CheckAccent(string[][] rules)
     {
-        // Check computed styles for two distinct colors, including the search body.
-        string script="(()=>{const root=document.documentElement,old=root.style.getPropertyValue('--accent'),rules="+JsonSerializer.Serialize(rules)+";const read=()=>rules.map(([selector,property])=>{const element=document.querySelector(selector);if(!element)throw Error(selector);return getComputedStyle(element)[property];});try{root.style.setProperty('--accent','#b547d8');const first=read();root.style.setProperty('--accent','#20aa73');const second=read();return first.every((value,index)=>value!==second[index]);}finally{root.style.setProperty('--accent',old);}})()";
+        // Check computed styles for two distinct colors, including the search body. Buttons ease between
+        // colours, so transitions are switched off while reading; an eased colour would read the same twice.
+        string script="(()=>{const root=document.documentElement,old=root.style.getPropertyValue('--accent'),rules="+JsonSerializer.Serialize(rules)+";const read=()=>rules.map(([selector,property])=>{const element=document.querySelector(selector);if(!element)throw Error(selector);return getComputedStyle(element)[property];});const still=document.createElement('style');still.textContent='*{transition:none!important}';document.head.append(still);try{root.style.setProperty('--accent','#b547d8');const first=read();root.style.setProperty('--accent','#20aa73');const second=read();return first.every((value,index)=>value!==second[index]);}finally{still.remove();root.style.setProperty('--accent',old);}})()";
         return await Web.ExecuteScriptAsync(script)=="true";
     }
     void ReleaseBrowser()

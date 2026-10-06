@@ -147,8 +147,10 @@ const UI = {
     const shapes = {
       settings: '<path d="m9 3 1-1h4l1 1 1 3 3 1 2 3v4l-2 3-3 1-1 3h-6l-1-3-3-1-2-3v-4l2-3 3-1z"/><circle cx="12" cy="12" r="3"/>',
       message: '<path d="M5 3h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V5a2 2 0 0 1 2-2z"/><path d="M7 8h10M7 12h7"/>',
-      undo: '<path d="m9 4-5 5 5 5M4 9h10a6 6 0 0 1 0 12"/>',
-      redo: '<path d="m15 4 5 5-5 5M20 9H10a6 6 0 0 0 0 12"/>',
+      undo: '<path d="m9 4-6 6 6 6M3 10h10a7 7 0 0 1 0 14"/>',
+      redo: '<path d="m15 4 6 6-6 6m6-6H11a7 7 0 0 0 0 14"/>',
+      minimize: '<path d="M5 12h14"/>',
+      close: '<path d="m6 6 12 12M18 6 6 18"/>',
       reload: '<path d="M4 9a8 8 0 0 1 15-3l2 3m0-5v5h-5M20 15a8 8 0 0 1-15 3l-2-3m0 5v-5h5"/>',
       screen: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="m8 21 4-4 4 4"/>',
       screenoff: '<path d="M7 4h12a2 2 0 0 1 2 2v9m-2 2H5a2 2 0 0 1-2-2V6M8 21h8m-4-4v4M2 2l20 20"/>',
@@ -172,7 +174,8 @@ const UI = {
       cpu: '<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M8 2v3m8-3v3M8 19v3m8-3v3M2 8h3m-3 8h3m14-8h3m-3 8h3"/>',
       search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
       store: '<path d="M4 9h16l-1 12H5L4 9zM8 9V7a4 4 0 0 1 8 0v2"/>',
-      translate: '<path d="M3 4h11M8 2v3m-3 3 7 7M12 5c-1 5-4 8-9 10m12-4-4 10m4-10 5 10m-7-3h5"/>',
+      // The drawing spans 3..20 by 2..21, half a unit up and left of the centre of its 24-unit box.
+      translate: '<path transform="translate(.5 .5)" d="M3 4h11M8 2v3m-3 3 7 7M12 5c-1 5-4 8-9 10m12-4-4 10m4-10 5 10m-7-3h5"/>',
       update: '<path d="M4 9a8 8 0 0 1 15-3l2 3m0-5v5h-5M20 15a8 8 0 0 1-15 3l-2-3m0 5v-5h5"/>',
       home: '<path d="m3 11 9-8 9 8M5 10v11h14V10m-10 11v-7h6v7"/>'
     };

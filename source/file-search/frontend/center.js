@@ -3,7 +3,7 @@
 (() => {
   const picture=document.getElementById('profile-image'),brand=document.getElementById('profile-picture'),reset=document.getElementById('reset-picture');
   function showPicture(value){picture.hidden=!value.image;brand.querySelector('span').hidden=Boolean(value.image);reset.hidden=!value.image;if(value.image)picture.src=value.image;else picture.removeAttribute('src');}
-  function profile(method){return localBridge.call(method).then(showPicture).catch(error=>{document.getElementById('message').textContent=error.message;});}
+  function profile(method){return localBridge.call(method).then(showPicture).catch(error=>{Revamp.toast(error.message,{error:true});});}
   brand.addEventListener('click',()=>profile('local_profile_choose'));
   reset.addEventListener('click',()=>profile('local_profile_reset'));
   profile('local_profile_get');window.addEventListener('local-center-focus',()=>profile('local_profile_get'));

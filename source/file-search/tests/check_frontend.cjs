@@ -15,7 +15,7 @@ class Element {
   contains(node){return node===this||this.children.some(child=>child.contains(node));}
 }
 function fixture(){
-  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','launch-xiaoai','xiaoai-card','xiaoai-icon','profile-picture','profile-image','reset-picture','message','home','preferences'].map(key=>[key,new Element()]));
+  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','launch-xiaoai','xiaoai-card','xiaoai-icon','profile-picture','profile-image','reset-picture','toast','home','preferences'].map(key=>[key,new Element()]));
   ids['search-form'].offsetHeight=76;
   const footer=new Element(),grip=new Element(),document=new Element(),window=new Element();document.body=new Element();document.documentElement=new Element();
   document.getElementById=id=>ids[id];document.createElement=tag=>new Element(tag);
@@ -101,12 +101,12 @@ async function main(){
   bridge.appearance({theme:'light'});assert.equal(b.context.document.documentElement.dataset.theme,'light');
   console.log('PASS: explicit light/dark and Windows color-scheme change');
   const c=fixture(),actions=[];c.context.localBridge={call:async()=>({image:null}),host:action=>actions.push(action)};
-  vm.runInContext(fs.readFileSync('frontend/center.js','utf8'),c.context);
+  vm.runInContext(fs.readFileSync('frontend/revamp.js','utf8'),c.context);vm.runInContext(fs.readFileSync('frontend/center.js','utf8'),c.context);
   c.ids['window-maximize'].emit('click');c.context.document.emit('keydown',{key:'F11'});c.window.emit('window-state-changed',{detail:{maximized:false,fullScreen:true}});c.context.document.emit('keydown',{key:'Escape'});
   assert.deepEqual(actions,['maximize','fullscreen','fullscreen']);assert(c.context.document.body.classes.has('expanded'));
   console.log('PASS: maximize command, F11 fullscreen, Escape restore');
   const d=fixture(),settingsCalls=[];
-  const fields=['excluded_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','message','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
+  const fields=['excluded_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','toast','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
   for(const key of fields)d.ids[key]=new Element();
   for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby','index-location','index-storage','embedding-model-location','index-folder','backup-index','index-backup-status'])d.ids[key]=new Element();
   for(const key of ['name_enabled','content_enabled','semantic_enabled'])d.ids[key].type='checkbox';
@@ -114,7 +114,7 @@ async function main(){
   let mode='paused',onStatus,backup={active:false,phase:''},cancelBackup=false;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null},backup});
   const previews=[];
   d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_index_info')return {path:'C:/Data/index.sqlite3.dpapi',bytes:2147483648,saved:'2026-10-04T00:00:00Z',model_path:'C:/Models/qwen'};if(method==='local_backup_index'){if(cancelBackup)return {cancelled:true};backup={active:true,phase:'Copying encrypted index'};return {accepted:true};}if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
-  vm.runInContext(fs.readFileSync('frontend/settings.js','utf8'),d.context);await flush();
+  vm.runInContext(fs.readFileSync('frontend/revamp.js','utf8'),d.context);vm.runInContext(fs.readFileSync('frontend/settings.js','utf8'),d.context);await flush();
   assert.equal(d.ids['paths-summary'].children.length,2);
   d.ids['paths-exclude'].emit('click');for(const path of ['C:/One','C:/Two','C:/Three','C:/Four','C:/Five']){d.ids['path-input'].value=path;d.ids['path-add'].emit('click');await flush();}
   assert.equal(d.ids['paths-summary'].children.filter(n=>n.className==='scope-path').length,4);
@@ -127,7 +127,7 @@ async function main(){
   d.ids['settings-undo'].emit('click');await flush();assert.equal(controls.theme,'system');d.ids['settings-redo'].emit('click');await flush();assert.equal(controls.theme,'dark');
   assert.equal(d.ids['pause-index'].textContent,'Resume');
   d.ids.content_enabled.checked=false;d.ids.content_enabled.emit('change');await flush();assert.equal(controls.content_enabled,false);
-  d.ids.name_enabled.checked=false;d.ids.name_enabled.emit('change');await flush();d.ids.semantic_enabled.checked=false;d.ids.semantic_enabled.emit('change');await flush();assert(d.ids.message.textContent.includes('at least one'));assert.equal(controls.semantic_enabled,true);
+  d.ids.name_enabled.checked=false;d.ids.name_enabled.emit('change');await flush();d.ids.semantic_enabled.checked=false;d.ids.semantic_enabled.emit('change');await flush();assert(d.ids.toast.textContent.includes('at least one'));assert.equal(controls.semantic_enabled,true);
   d.ids['paths-exclude'].emit('click');d.ids['path-input'].value='C:/Excluded';d.ids['path-add'].emit('click');await flush();assert.equal(controls.excluded_folders[0],'C:/Excluded');
   d.ids['path-manage'].emit('click');assert.equal(d.ids['paths-dialog'].open,true);d.ids['paths-rows'].children[0].children[1].emit('click');assert.equal(d.ids['paths-rows'].children.length,0);assert.equal(controls.excluded_folders.length,1);
   d.ids['paths-undo'].emit('click');assert.equal(d.ids['paths-rows'].children.length,1);d.ids['paths-redo'].emit('click');assert.equal(d.ids['paths-rows'].children.length,0);d.ids['paths-save'].emit('click');await flush();assert.equal(controls.excluded_folders.length,0);assert.equal(d.ids['paths-dialog'].open,false);

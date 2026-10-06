@@ -283,6 +283,16 @@ internal sealed class TranslationToolbar : Form
     protected override bool ShowWithoutActivation=>true;
     protected override CreateParams CreateParams
     {get{var value=base.CreateParams;value.ExStyle|=0x8|0x80;return value;}}
+    // A contour in the accent colour keeps the toolbar visible on a background of its own colour.
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        float scale=DeviceDpi/96f,width=2*scale,inset=width/2,d=28*scale-width,right=Width-inset-d,bottom=Height-inset-d;
+        e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
+        using var pen=new Pen(accent,width);using var contour=new GraphicsPath();
+        contour.AddArc(inset,inset,d,d,180,90);contour.AddArc(right,inset,d,d,270,90);contour.AddArc(right,bottom,d,d,0,90);contour.AddArc(inset,bottom,d,d,90,90);contour.CloseFigure();
+        e.Graphics.DrawPath(pen,contour);
+    }
     internal TranslationToolbar(Func<Task> toggleOriginal,Func<Task> toggleFilter,Action close,Func<Task> saveScreenshot)
     {
         AutoScaleMode=AutoScaleMode.None;FormBorderStyle=FormBorderStyle.None;
@@ -330,7 +340,7 @@ internal sealed class TranslationToolbar : Form
     internal void Appearance(Color colour,bool dark)
     {
         accent=colour;surface=dark?Color.FromArgb(37,41,47):Color.White;foreground=dark?Color.FromArgb(232,237,244):Color.FromArgb(47,64,87);
-        BackColor=dark?Color.FromArgb(23,26,31):Color.FromArgb(247,249,252);title.ForeColor=state.ForeColor=foreground;
+        BackColor=dark?Color.FromArgb(23,26,31):Color.FromArgb(247,249,252);title.ForeColor=state.ForeColor=foreground;Invalidate();
         foreach(var button in new[]{original,filter,screenshot,dismiss}){button.BackColor=surface;button.ForeColor=foreground;button.FlatAppearance.MouseOverBackColor=dark?Color.FromArgb(52,58,66):Color.FromArgb(231,238,248);}
     }
 }

@@ -42,6 +42,7 @@
   "double_ctrl_ms": 450,
   "shortcut": "double_ctrl",
   "run_at_startup": true,
+  "center_at_startup": false,
   "indexing_mode": "normal",
   "semantic_enabled": true,
   "semantic_threshold": 0.3,

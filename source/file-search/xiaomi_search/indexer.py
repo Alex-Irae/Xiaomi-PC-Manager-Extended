@@ -385,7 +385,9 @@ class Indexer:
                     self.current = f"Embedding file {fid}"
                     self._vectors(fid)
                 self.processed += 1
-                LOG.info("Processed %d | files queued %d | embedding queued %d", self.processed, len(self.jobs), len(self.vector_jobs))
+                # One line per file put hundreds of thousands of lines a day into two logs; the status call carries live progress.
+                if self.processed % 250 == 0 or not (self.jobs or self.vector_jobs):
+                    LOG.info("Processed %d | files queued %d | embedding queued %d", self.processed, len(self.jobs), len(self.vector_jobs))
             except IndexCapacityError as exc:
                 self.scan_error = str(exc)
                 self.set_mode('paused')

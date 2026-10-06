@@ -20,6 +20,7 @@ public sealed class MonitorForm : FlyoutForm
     private static readonly Color ChargeCol = FlyoutPalette.Green;         // заряд в батарею (вверх)
     private static readonly Color CpuCol = FlyoutPalette.Blue;
     private static readonly Color GpuCol = Color.FromArgb(255, 213, 79);   // Amber 300: соседи по рядам холодные (CPU, RAM), а тёплые — через ряд
+    private static readonly Color NpuCol = Color.FromArgb(77, 208, 225);   // cyan: distinct from the amber GPU row above it
     private static readonly Color RamCol = Color.FromArgb(179, 157, 219);  // сиреневый (зелёный ушёл под заряд)
     private static readonly Color TempCol = Color.FromArgb(255, 111, 97);     // коралловый — температура (норма)
     private static readonly Color TempHotCol = Color.FromArgb(206, 32, 62);   // вишнёвый — горячая/крит-зона (сочно на OLED)
@@ -39,6 +40,7 @@ public sealed class MonitorForm : FlyoutForm
     private readonly List<float> _power = new(); // Вт со знаком: + заряд в батарею, − разряд; NaN = от сети без заряда
     private readonly List<float> _cpu = new();   // 0..100
     private readonly List<float> _gpu = new();   // 0..100; NaN = нет данных
+    private readonly List<float> _npu = new();   // 0..100; NaN = no reading yet
     private readonly List<float> _ram = new();   // 0..100
     private readonly List<float> _temp = new();  // °C горячей точки (Intel DPTF); NaN = нет данных
 
@@ -49,6 +51,8 @@ public sealed class MonitorForm : FlyoutForm
     private readonly SystemIntegration.EnergyMeterPower _package = new();
     private float _packageWatts = float.NaN;
     private readonly SystemIntegration.GpuTelemetry _gpuTel = new(); // iGPU через Intel IGCL (ленивая инициализация)
+    private readonly SystemIntegration.NpuLoad _npuLoad = new();          // Windows "Neural" engine counters; opened on first read
+    private readonly bool _hasNpu = SystemIntegration.NpuLoad.Present;    // a neural processor is installed: reserve its row
     private readonly SystemIntegration.CpuLoad _cpuLoad = new();          // GetSystemTimes (общий с индикатором трея)
     private readonly SystemIntegration.TemperatureSource _tempSrc;        // DPTF, иначе ACPI-зона (общий с индикатором трея)
     private float _ramUsedGb, _ramTotalGb;
@@ -115,9 +119,10 @@ public sealed class MonitorForm : FlyoutForm
 
         StopLog(); _expandedHistory = false;
 
-        _power.Clear(); _cpu.Clear(); _gpu.Clear(); _ram.Clear(); _temp.Clear();
+        _power.Clear(); _cpu.Clear(); _gpu.Clear(); _npu.Clear(); _ram.Clear(); _temp.Clear();
         _cpuLoad.Reset(); // база времён CPU протухла, пока виджет был закрыт
         _gpuTel.Reset(); // иначе первая загрузка GPU размажется по времени, что виджет был закрыт
+        _npuLoad.Reset();
         Sample(full: true); // первая точка сразу (заодно определит наличие DPTF-температур и IGCL до ApplyView)
         // выбранной метрики на этой машине может не быть вовсе (GPU на не-Intel) — тогда
         // показываем потребление, а не вечный прочерк
@@ -147,7 +152,7 @@ public sealed class MonitorForm : FlyoutForm
         switch (_view)
         {
             case ViewKind.Mini: // Power | CPU | [GPU] | RAM + [развернуть]/[вид]/[крестик] справа
-                w = Sc(16) + Sc(104) + Sc(8) + Sc(72) + Sc(8) + (_hasGpu ? Sc(72) + Sc(8) : 0)
+                w = Sc(16) + Sc(104) + Sc(8) + Sc(72) + Sc(8) + (_hasGpu ? Sc(72) + Sc(8) : 0) + (_hasNpu ? Sc(72) + Sc(8) : 0)
                     + Sc(72) + Sc(8) + Sc(18) + Sc(6) + Sc(18) + Sc(6) + Sc(18) + Sc(10);
                 h = Sc(56);
                 _corner = Sc(14);
@@ -164,7 +169,7 @@ public sealed class MonitorForm : FlyoutForm
                 break;
             default:
                 // базовые три ряда (питание, CPU, RAM) + GPU, если есть IGCL, + температура, если есть DPTF
-                w = Sc(400); h = Sc(96) * (3 + (_hasGpu ? 1 : 0) + (_hasTemp ? 1 : 0)) + Sc(52);
+                w = Sc(400); h = Sc(96) * (3 + (_hasGpu ? 1 : 0) + (_hasNpu ? 1 : 0) + (_hasTemp ? 1 : 0)) + Sc(52);
                 _corner = Sc(18);
                 _close = new Rectangle(w - Sc(16) - Sc(22), Sc(14), Sc(22), Sc(22)); // как в панели
                 _viewBtn = new Rectangle(_close.X - Sc(28), _close.Y, Sc(22), Sc(22));
@@ -199,7 +204,7 @@ public sealed class MonitorForm : FlyoutForm
         _cfg.Save();
         if (fromCompact)
         {
-            _power.Clear(); _cpu.Clear(); _gpu.Clear(); _ram.Clear(); _temp.Clear();
+            _power.Clear(); _cpu.Clear(); _gpu.Clear(); _npu.Clear(); _ram.Clear(); _temp.Clear();
             _cpuLoad.Reset();
             _gpuTel.Reset();
             Sample(full: true);
@@ -378,6 +383,7 @@ public sealed class MonitorForm : FlyoutForm
         if (all || _compact == SystemIntegration.TrayMetric.Power) _packageWatts = -_package.ReadWatts();
         if (all || _compact == SystemIntegration.TrayMetric.Cpu) Push(_cpu, SampleCpu());
         if (all || _compact == SystemIntegration.TrayMetric.Gpu) Push(_gpu, SampleGpu());
+        if (all && _hasNpu) Push(_npu, _npuLoad.Read()); // full and mini views only; the single-metric view has no NPU choice
         if (all || _compact == SystemIntegration.TrayMetric.Ram) Push(_ram, SampleRam());
         if (all || _compact == SystemIntegration.TrayMetric.Power) Push(_power, SamplePowerWatts());
         if (all || _compact == SystemIntegration.TrayMetric.Temp) Push(_temp, SampleTempC());
@@ -543,6 +549,12 @@ public sealed class MonitorForm : FlyoutForm
                 _gpuMhz > 0 ? Loc.T("monitor.gpu.sub", _gpuMhz, _gpuWatts) : null); // «2450 МГц · 21 Вт»
         }
 
+        if (_hasNpu)
+        {
+            float nl = _npu.Count > 0 ? _npu[^1] : float.NaN;
+            DrawRow(g, Next(), "NPU", float.IsNaN(nl) ? "—" : $"{nl:0}%", NpuCol, _npu, 100f);
+        }
+
         DrawRow(g, Next(),
             "RAM", _ram.Count > 0 ? $"{_ram[^1]:0}%" : "—", RamCol, _ram, 100f,
             _ramTotalGb > 0 ? Loc.T("monitor.ram.of", _ramUsedGb, _ramTotalGb) : null);
@@ -569,6 +581,8 @@ public sealed class MonitorForm : FlyoutForm
         x = MiniCell(g, x, Sc(72), "CPU", _cpu.Count > 0 && !float.IsNaN(_cpu[^1]) ? $"{_cpu[^1]:0}%" : "—", CpuCol);
         if (_hasGpu) // в мини-виде у GPU только процент — частота и ватты живут в полном виде
             x = MiniCell(g, x, Sc(72), "GPU", _gpu.Count > 0 && !float.IsNaN(_gpu[^1]) ? $"{_gpu[^1]:0}%" : "—", GpuCol);
+        if (_hasNpu)
+            x = MiniCell(g, x, Sc(72), "NPU", _npu.Count > 0 && !float.IsNaN(_npu[^1]) ? $"{_npu[^1]:0}%" : "—", NpuCol);
         MiniCell(g, x, Sc(72), "RAM", _ram.Count > 0 ? $"{_ram[^1]:0}%" : "—", RamCol);
 
         Draw.ExpandButton(g, _expandBtn, _expandHover); // развернуть в полный
@@ -727,6 +741,7 @@ public sealed class MonitorForm : FlyoutForm
             _powerDraw.Dispose();
             _package.Dispose();
             _gpuTel.Dispose();
+            _npuLoad.Dispose();
         }
         base.Dispose(disposing);
     }

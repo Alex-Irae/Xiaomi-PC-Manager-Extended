@@ -62,7 +62,7 @@ The installed root launcher waits for its native child and restarts it after a n
 
 Click the AI tile beside the heading to select a PNG, JPEG, BMP or GIF, up to 10 MB and 32 megapixels. A centered 256-pixel PNG copy is saved as `%LOCALAPPDATA%\LocalAICenter\data\profile.png`; original images are untouched and nothing is uploaded. Reset picture restores the AI tile and retains the previous copy as `profile.previous.png`. The picture persists independently of search/index settings. Include these files in personal settings backups.
 
-Start with Windows is controlled in Search settings. It registers `LocalAICenter` under the current user's `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, launching `AI Center.exe --tray`. The app has no service and requests no administrator rights at login. Development previews and headless checks do not register startup. Uninstall removes this user's entry when it belongs to that installation.
+Start with Windows is controlled in Search settings by two options: file search (hidden, no tray icon) and AI Center (tray icon). Either one registers `LocalAICenter`, or `XiaomiRevampSuite.Search.<id>` inside the suite, under the current user's `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, launching `AI Center.exe --tray`. The app has no service and requests no administrator rights at login. Development previews and headless checks do not register startup. Uninstall removes this user's entry when it belongs to that installation.
 
 Version 0.1.1 suppresses classic nonclient frame painting, removing the white outer strip while retaining native taskbar/minimize/maximize and resize behavior. Drive roots such as `C:\` can now be selected: Windows' Hidden+System flags on the drive anchor no longer exclude its entire tree. The same flags on actual subfolders still exclude them.
 
@@ -417,7 +417,7 @@ Run focused checks with the existing Node runtime:
 
 ## Folder summaries, file actions and remembered choices
 
-The installed AI Center entry opens the main launcher. File Search opens only the compact bar. AI Center keeps a tray icon while resident; use its menu to reopen the launcher/search or quit the process.
+The installed AI Center entry opens the main launcher. File Search opens only the compact bar. AI Center shows a tray icon once it has been opened; use its menu to reopen the launcher/search or quit AI Center. With file search set to run on its own, quitting leaves the search shortcut working.
 
 Search settings includes Index and backup. It displays the generated `index.sqlite3.dpapi` location, saved size/time and the distinct pretrained model folder. Back up index creates a new dated folder in a location you choose outside application data. It preserves the complete metadata, extracted text, vectors and index-related settings, with a SHA256 manifest and RECOVERY.txt. The backup excludes original documents and model weights. Indexing can continue during copying; checkpoint capture uses the existing RAM snapshot. Wait for Backup complete before quitting. Folders without manifest.json are incomplete. DPAPI encryption requires the original Windows profile keys; another device or reinstalled Windows profile is not a supported recovery target. Stop PC Manager and AI Center before restoring, retain a copy of the existing index, and follow RECOVERY.txt with matching file paths and compatible model weights. Focused validation: `runtime/python/python.exe -B tests/check_backup.py --output results/NEW_RUN` and `node tests/check_frontend.cjs`, using the existing bundled runtimes.
 

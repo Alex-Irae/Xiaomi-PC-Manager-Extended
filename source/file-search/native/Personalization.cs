@@ -22,6 +22,8 @@ internal static class Personalization
         // Development previews and isolated checks must never take over login startup.
         if(!File.Exists(Path.Combine(Program.Root,"package-manifest.json")) || XiaomiRevamp.Suite.SuiteEnvironment.Portable)return;
         using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        // An installation that predates the suite left a second entry for this same program.
+        if(XiaomiRevamp.Suite.SuiteEnvironment.Enabled&&key.GetValue("LocalAICenter") is string legacy&&legacy==StartupCommand(Program.Root))key.DeleteValue("LocalAICenter",false);
         if(enabled)key.SetValue(XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? "XiaomiRevampSuite.Search." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "LocalAICenter",StartupCommand(Program.Root));
         else if(key.GetValue(XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? "XiaomiRevampSuite.Search." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "LocalAICenter") is string command&&command==StartupCommand(Program.Root))key.DeleteValue(XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? "XiaomiRevampSuite.Search." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "LocalAICenter",false);
     }

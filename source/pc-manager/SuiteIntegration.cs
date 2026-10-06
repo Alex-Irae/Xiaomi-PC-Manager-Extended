@@ -47,7 +47,9 @@ public sealed partial class ManagerApplication
             {
                 string config=Path.Combine(SuiteEnvironment.Data("file-search"),"config.json");
                 using var saved=File.Exists(config)?JsonDocument.Parse(File.ReadAllText(config)):null;
-                if(saved is null || saved.RootElement.TryGetProperty("model_standby",out var mode)&&mode.GetString()=="keep_loaded")
+                // File search is started in the background only when its own startup settings allow it.
+                bool Wanted(string key,bool fallback)=>saved is null||!saved.RootElement.TryGetProperty(key,out var value)?fallback:value.ValueKind==JsonValueKind.True;
+                if((saved is null || saved.RootElement.TryGetProperty("model_standby",out var mode)&&mode.GetString()=="keep_loaded")&&(Wanted("run_at_startup",true)||Wanted("center_at_startup",false)))
                     ProcessSearchResident();
             }
         }

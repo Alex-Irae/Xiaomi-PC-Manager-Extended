@@ -26,8 +26,8 @@ INSTALL = ROOT / 'install'
 SKIP = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', 'bin', 'obj', 'test-data', 'model_cache')
 PRIVATE = {'bin', 'obj', '__pycache__', 'model_cache', '.git', '.venv', 'data', 'results', '.test-environment'}
 PRIVATE_FILES = {'config.json', 'included-folders.txt', 'excluded-folders.txt'}
-RELEASE = '0.3.4'
-VERSIONS = {'pc-manager': '0.2.5', 'file-search': '0.3.2', 'screen-translator': '0.2.4'}
+RELEASE = '0.3.6'
+VERSIONS = {'pc-manager': '0.2.7', 'file-search': '0.3.4', 'screen-translator': '0.2.6'}
 
 
 def public_source(directory):
@@ -152,6 +152,14 @@ def main():
     parser.add_argument('--native-only', action='store_true', help='Recompile changed native code without recopying runtimes or sealing packages')
     parser.add_argument('--seal', action='store_true', help='Seal a new numbered release after --native-only; reuse the already-copied private runtimes')
     args = parser.parse_args()
+    # Every app ships its own copy of the shared interface files; a stale copy must not be sealed.
+    subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('sync_ui.py')), '--check'], check=True)
+    # The setup program and the launchers carry their versions as text; they went stale at 0.3.1 once.
+    setup_text, launcher_text = (SOURCE / 'shared' / 'Setup.cs').read_text(encoding='utf-8'), (SOURCE / 'shared' / 'Launcher.cs').read_text(encoding='utf-8')
+    wanted = [f'const string Version = "{RELEASE}"', f'AssemblyVersion("{RELEASE}.0")'] + [f'{{ "{name}", "{version}" }}' for name, version in VERSIONS.items()]
+    missing = [text for text in wanted if text not in setup_text] + [version for version in VERSIONS.values() if f'AssemblyVersion("{version}.0")' not in launcher_text]
+    if missing:
+        raise SystemExit('Update the versions in source/shared/Setup.cs and Launcher.cs to match RELEASE and VERSIONS: ' + ', '.join(missing))
     sdk = args.sdk.resolve()
     toolchain = ROOT / 'toolchain'
     webview = toolchain / 'webview'

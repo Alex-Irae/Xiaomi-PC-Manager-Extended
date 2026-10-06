@@ -1,0 +1,29 @@
+/* Purpose: control states and the bottom notice shared by PC Manager, AI Center, Screen Translator and FileSync.
+ * Dependencies: each app's own colour variables (--accent or --blue, --surface, --line, --text, --shadow).
+ * Outputs: none. Load after the app's own stylesheet. Edit only source/shared/ui and run
+ * tools/sync_ui.py; the copies inside each app's frontend folder are overwritten. */
+:is(.MiButton,.button,button.primary,button.secondary,button.quiet,.icon-button,.window-controls button,#toast){--ui-accent:var(--accent,var(--blue,#3482ff))}
+
+/* Keyboard focus and unavailable controls. */
+:is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid var(--accent,var(--blue,#3482ff));outline-offset:3px}
+button:disabled{cursor:not-allowed;opacity:.45}
+
+/* Filled, soft and outlined buttons: dim on hover, darken with a ring while pressed. */
+:is(.MiButton,.button,button.primary,button.secondary,button.quiet){transition:background-color .12s,color .12s,box-shadow .12s,filter .12s}
+:is(.MiButton,.button,button.primary,button.secondary,button.quiet):hover:not(:disabled){filter:brightness(.95)}
+:is(.MiButton.secondary,.button.secondary,.button.danger,button.secondary):hover:not(:disabled){filter:none;background:color-mix(in srgb,var(--ui-accent) 28%,var(--surface));box-shadow:inset 0 0 0 1px var(--ui-accent)}
+:is(.MiButton,.MiButton.secondary,.button,.button.secondary,.button.danger,button.primary,button.secondary,button.quiet):active:not(:disabled){filter:none;background:color-mix(in srgb,var(--ui-accent) 65%,#000);color:#fff;box-shadow:inset 0 0 0 2px var(--ui-accent)}
+
+/* Icon buttons in the top bar: undo, redo and the window buttons. */
+:is(.icon-button,.window-controls button){border-radius:8px;transition:background-color .12s,color .12s}
+:is(.icon-button,.window-controls button):disabled{opacity:.3}
+:is(.icon-button,.window-controls button):hover:not(:disabled){background:color-mix(in srgb,var(--ui-accent) 12%,transparent);color:var(--ui-accent)}
+:is(.icon-button,.window-controls button):active:not(:disabled){background:color-mix(in srgb,var(--ui-accent) 28%,transparent)}
+:is(#hide-manager,#window-close,.window-controls .close,.close-button):hover:not(:disabled){background:#ff615e22;color:#ff615e}
+
+/* The notice at the bottom of the window: what was saved, undone or refused. */
+#toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:16px;width:max-content;max-width:min(650px,calc(100vw - 40px));padding:13px 18px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:var(--shadow,0 8px 28px #20345124);font-size:13px;line-height:1.6;white-space:pre-line}
+#toast[hidden]{display:none}
+#toast.error{border-color:#e5484d99}
+#toast button{border:0;background:none;padding:0;font:inherit;color:var(--ui-accent);white-space:nowrap;cursor:pointer}
+@media(prefers-reduced-motion:reduce){:is(.MiButton,.button,button.primary,button.secondary,button.quiet,.icon-button,.window-controls button){transition:none}}

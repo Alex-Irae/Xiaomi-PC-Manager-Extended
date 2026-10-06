@@ -3,11 +3,11 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};
-  const error=e=>{$('message').textContent=e.message;$('message').className='error';};
+  const say=(text,failed=false)=>Revamp.toast(text,{error:failed}),error=e=>say(e.message,true);
   let lastIndexRead=0,lastBackupPath='',backupPending=false;
   const size=bytes=>{const units=['B','KiB','MiB','GiB','TiB'];let unit=0;while(bytes>=1024&&unit<units.length-1){bytes/=1024;unit++;}return bytes.toFixed(unit?2:0)+' '+units[unit];};
   async function indexInfo(){try{const value=await call('local_index_info');$('index-location').textContent=value.path;$('embedding-model-location').textContent=value.model_path;$('index-storage').textContent=value.saved?size(value.bytes)+' on disk · checkpoint saved '+new Date(value.saved).toLocaleString():'No checkpoint saved yet.';lastIndexRead=Date.now();}catch(e){$('index-storage').textContent=e.message;}}
@@ -34,12 +34,12 @@
     settings=target;
     if(record){history=[...history.slice(0,position+1),copy(target)].slice(-30);position=history.length-1;}
     remember();
-    render();const ticket=++revision;$('message').className='';$('message').textContent='Applying…';
+    render();const ticket=++revision;say('Applying…');
     // Send now rather than retaining unsent edits in a WebView that can close.
     // The backend serializes preference writes in receipt order.
     const pending=call('local_save_config',changes).then(result=>({result}),failure=>({failure}));
     chain=chain.then(async()=>{
-      try{const {result,failure}=await pending;if(failure)throw failure;committed=copy(result.settings||{...committed,...changes});if(ticket===revision){settings=copy(committed);history[position]=copy(settings);remember();render();$('message').textContent=result.restart_required?'Applied. Model or protection changes need a relaunch.':'Applied.';}return true;}
+      try{const {result,failure}=await pending;if(failure)throw failure;committed=copy(result.settings||{...committed,...changes});if(ticket===revision){settings=copy(committed);history[position]=copy(settings);remember();render();say(result.restart_required?'Applied. Model or protection changes need a relaunch.':'Applied.');}return true;}
       catch(e){if(ticket===revision){settings=copy(committed);history=[copy(committed)];position=0;remember();render();}error(e);return false;}
     });return chain;
   }
@@ -52,7 +52,7 @@
   $('accent_color').addEventListener('input',()=>{localBridge.appearance({...settings,accent_color:$('accent_color').value});clearTimeout(colorTimer);const value=$('accent_color').value;colorTimer=setTimeout(()=>apply({...settings,accent_color:value}),250);});
   $('settings-form').addEventListener('submit',event=>event.preventDefault());
   function step(delta){const next=position+delta;if(next<0||next>=history.length)return;position=next;apply(copy(history[position]),false);remember();buttons();}
-  $('settings-undo').addEventListener('click',()=>step(-1));$('settings-redo').addEventListener('click',()=>step(1));
+  Revamp.history($('settings-undo'),$('settings-redo'),forward=>step(forward?1:-1));
   for(const [id,key] of [['paths-include','roots'],['paths-exclude','excluded_folders']])$(id).addEventListener('click',()=>{selected=key;render();});
   $('path-add').addEventListener('click',async()=>{const path=$('path-input').value.trim();if(!path){error(new Error('Enter an absolute folder path.'));return;}if(await apply({...settings,[selected]:[...new Set([...settings[selected],path])]}))$('path-input').value='';});
   function draftRender(){
@@ -64,14 +64,14 @@
   $('paths-new').addEventListener('click',()=>{draftChange([...draft,'']);$('paths-rows').lastElementChild?.querySelector('input')?.focus();});
   for(const [id,delta] of [['paths-undo',-1],['paths-redo',1]])$(id).addEventListener('click',()=>{const next=draftPosition+delta;if(next<0||next>=draftHistory.length)return;draftPosition=next;draft=[...draftHistory[next]];draftRender();});
   $('paths-cancel').addEventListener('click',()=>$('paths-dialog').close());
-  $('paths-save').addEventListener('click',async()=>{$('paths-save').disabled=true;try{const paths=[...new Set(draft.map(path=>path.trim()).filter(Boolean))];if(await apply({...settings,[selected]:paths}))$('paths-dialog').close();else $('paths-error').textContent=$('message').textContent;}finally{$('paths-save').disabled=false;}});
+  $('paths-save').addEventListener('click',async()=>{$('paths-save').disabled=true;try{const paths=[...new Set(draft.map(path=>path.trim()).filter(Boolean))];if(await apply({...settings,[selected]:paths}))$('paths-dialog').close();else $('paths-error').textContent=$('toast').textContent;}finally{$('paths-save').disabled=false;}});
   $('scan-pc').addEventListener('click',async()=>{try{const {roots}=await call('local_drives');if(!roots.length)throw new Error('No accessible local drives.');await apply({...settings,roots});}catch(e){error(e);}});
   function status(value){window.IndexProgress?.update(value);backupStatus(value.backup);if(Date.now()-lastIndexRead>15000)indexInfo();$('pause-index').textContent=value.indexer.mode==='paused'?'Resume':'Pause';$('status').textContent=`${value.counts.files} files · ${value.counts.folders} folders · ${value.counts.vectors} semantic passages\n${value.indexer.busy?(value.indexer.phase||'Indexing')+' · '+value.indexer.queued_files+' queued files · '+value.indexer.queued_embedding_files+' embedding jobs':value.indexer.mode} · model: ${value.model.device||'unloaded'}${value.indexer.current?'\n'+value.indexer.current:''}${value.model.error?'\n'+value.model.error:''}${value.indexer.scan_error?'\nSkipped an inaccessible folder: '+value.indexer.scan_error:''}${value.indexer.semantic_error?'\nSemantic indexing paused: '+value.indexer.semantic_error:''}`;}
   localBridge.subscribe('register_local_status',status);
   localBridge.native.addEventListener('message',event=>{if(event.data.kind==='backend_stopped'){window.IndexProgress?.stopped();$('status').textContent=$('status').textContent.split('\n')[0]+'\nSearch worker is idle · opens when needed.';}});
-  async function indexNow(method){$('scan').disabled=true;$('reset-index').disabled=true;try{await chain;const value=await call(method,{force:true,wait:false});status(value);$('message').textContent='Indexing in the background. Progress appears below.';}catch(e){error(e);}finally{$('scan').disabled=false;$('reset-index').disabled=false;}}
+  async function indexNow(method){$('scan').disabled=true;$('reset-index').disabled=true;try{await chain;const value=await call(method,{force:true,wait:false});status(value);say('Indexing in the background. Progress appears below.');}catch(e){error(e);}finally{$('scan').disabled=false;$('reset-index').disabled=false;}}
   $('scan').addEventListener('click',()=>indexNow('local_index_now'));
   $('pause-index').addEventListener('click',async()=>{const mode=$('pause-index').textContent==='Resume'?'normal':'paused';try{await apply({...settings,indexing_mode:mode});status(await call('local_mode',{mode}));}catch(e){error(e);}});
   $('reset-index').addEventListener('click',()=>$('reset-dialog').showModal());$('cancel-reset').addEventListener('click',()=>$('reset-dialog').close());$('confirm-reset').addEventListener('click',()=>{$('reset-dialog').close();indexNow('local_reset_index');});
-  $('clear-search-history')?.addEventListener('click',async()=>{try{await call('local_history_clear');$('message').textContent='Search history and remembered file choices cleared.';}catch(e){error(e);}});
+  $('clear-search-history')?.addEventListener('click',async()=>{try{await call('local_history_clear');say('Search history and remembered file choices cleared.');}catch(e){error(e);}});
 })();
