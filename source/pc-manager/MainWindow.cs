@@ -53,7 +53,7 @@ public sealed class MainWindow : Form
     {
         this.app = app;
         this.compact = compact;
-        Text = compact ? Program.PopupTitle : "PC Manager" + (Program.TestMode ? " · Test" : "");
+        Text = compact ? Program.PopupTitle : "PC Manager" + (Program.TestMode ? " -test" : "");
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96, 96);
         ClientSize = compact ? new Size(420, 680) : new Size(1080, 740);
@@ -703,6 +703,8 @@ public sealed class MainWindow : Form
                 case "settings.recordShortcut": result = app.RecordShortcut(this,args); break;
                 case "suite.shortcut": result = app.SuiteSave(args); break;
                 case "suite.appearance": result = app.SuiteAppearance(args); break;
+                case "suite.startup": result = app.SuiteStartup(args); break;
+                case "suite.quit": result = app.SuiteQuit(args); break;
                 case "suite.open": app.SuiteOpen(args.GetProperty("action").GetString() ?? ""); result = new { message = "Opened suite application." }; break;
                 case "settings.appearance":
                     Services.AppearanceOptions.Save(app.Preferences, args); app.PublishSuiteAppearance(); app.ApplyAppearance(); result = new { message = "Appearance saved." }; break;

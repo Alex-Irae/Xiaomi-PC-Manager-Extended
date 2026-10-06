@@ -16,7 +16,11 @@ internal sealed partial class CenterContext
         keyboard?.Dispose(); keyboard = null;
         if (suite is not null) { SyncSuite(SuiteStore.Read()); return; }
         suite = new("file-search", new() { ["file-search.open"] = settings.GetProperty("shortcut").GetString() ?? "double_ctrl" },
-            action => Post(() => { if (action == "file-search.open") Search.ShowSearch(); }), SyncSuite,
+            action => Post(() =>
+            {
+                if (action == "file-search.open") Search.ShowSearch();
+                else if (action.StartsWith("file-search.startup-")) ApplyExternal(new() { ["run_at_startup"] = action.EndsWith("-on") });
+            }), SyncSuite,
             () => IndexingActive ? "Indexing" : backend is null ? "Idle" : backendReady ? "Search ready" : "Starting search");
     }
     void SyncSuite(SuiteDocument document)
@@ -25,21 +29,29 @@ internal sealed partial class CenterContext
         if (document.Bindings.TryGetValue("file-search.open", out var chord)) updates["shortcut"] = chord == "Alt+Space" ? "alt_space" : chord;
         bool follow = !settings.TryGetProperty("follow_suite_appearance", out var setting) || setting.GetBoolean();
         if (document.SharedAppearance && follow) { updates["theme"] = document.Theme; updates["accent_color"] = document.Accent; }
-        var current = settings.Deserialize<Dictionary<string, JsonElement>>()!;
-        var changed = updates.Where(item => !current.TryGetValue(item.Key, out var previous) || previous.GetString() != (string)item.Value).ToDictionary(item => item.Key, item => item.Value);
-        foreach (var item in updates) current[item.Key] = JsonSerializer.SerializeToElement(item.Value);
-        settings = JsonSerializer.SerializeToElement(current);
-        if (changed.Count > 0)
-        {
-            var saved = File.Exists(Program.Config) ? JsonNode.Parse(SuiteStore.ReadText(Program.Config))!.AsObject() : JsonSerializer.SerializeToNode(current)!.AsObject();
-            foreach (var item in updates) saved[item.Key] = JsonSerializer.SerializeToNode(item.Value);
-            SuiteStore.AtomicWrite(Program.Config, saved);
-            if (backend is not null && !backend.HasExited) Write(new { owner = "suite", mode = 0, data = new { id = 2147483645, persistent = false, request = new { method = "local_save_config", @params = changed } } });
-            center?.Script("window.dispatchEvent(new CustomEvent('suite-settings',{detail:" + JsonSerializer.Serialize(updates) + "}))");
-            Search.Script("window.dispatchEvent(new CustomEvent('settings-changed',{detail:" + settings.GetRawText() + "}))");
-        }
+        // The palette's window and card colours are not settings of this app: they are passed to the pages as they are.
+        (suiteBackground, suiteSurface) = document.SharedAppearance && follow ? (document.Background ?? "", document.Surface ?? "") : ("", "");
+        ApplyExternal(updates);
         center?.Script("window.dispatchEvent(new CustomEvent('suite-owner',{detail:" + JsonSerializer.Serialize(SuiteClient.HubRunning() ? "PC Manager manages shortcuts" : "Standalone shortcut handling") + "}))");
         BroadcastTheme();
+    }
+    string suiteBackground = "", suiteSurface = "";
+    // Applies settings decided outside this app (the shared appearance and shortcuts, PC Manager's app list):
+    // memory, settings file, search worker and open pages.
+    void ApplyExternal(Dictionary<string, object> updates)
+    {
+        var current = settings.Deserialize<Dictionary<string, JsonElement>>()!;
+        var changed = updates.Where(item => !current.TryGetValue(item.Key, out var previous) || previous.GetRawText() != JsonSerializer.Serialize(item.Value)).ToDictionary(item => item.Key, item => item.Value);
+        foreach (var item in updates) current[item.Key] = JsonSerializer.SerializeToElement(item.Value);
+        settings = JsonSerializer.SerializeToElement(current);
+        if (changed.Count == 0) return;
+        var saved = File.Exists(Program.Config) ? JsonNode.Parse(SuiteStore.ReadText(Program.Config))!.AsObject() : JsonSerializer.SerializeToNode(current)!.AsObject();
+        foreach (var item in updates) saved[item.Key] = JsonSerializer.SerializeToNode(item.Value);
+        SuiteStore.AtomicWrite(Program.Config, saved);
+        if (backend is not null && !backend.HasExited) Write(new { owner = "suite", mode = 0, data = new { id = 2147483645, persistent = false, request = new { method = "local_save_config", @params = changed } } });
+        center?.Script("window.dispatchEvent(new CustomEvent('suite-settings',{detail:" + JsonSerializer.Serialize(updates) + "}))");
+        Search.Script("window.dispatchEvent(new CustomEvent('settings-changed',{detail:" + settings.GetRawText() + "}))");
+        ApplyStartup();
     }
     void SaveSuiteShortcut(JsonElement parameters)
     {

@@ -1,0 +1,99 @@
+# Unreleased PC Manager experiment from 5 October 2026: a setting "Keep display on during Stay awake"
+# (OwlIgnoreDisplay, a one-time migration, and a fallback that also keeps the display awake).
+# It lived only in the old Development\PC Manager test copy, which was removed on 6 October 2026.
+# This is a diff from the released 0.3.6 source to that copy. Lines it removes are newer released work:
+# apply the added lines by hand, do not apply the file as a whole.
+
+--- a/source/pc-manager/ManagerApplication.cs
++++ b/source/pc-manager/ManagerApplication.cs
+@@ -385,8 +385,9 @@
+         // Turning Stay awake on cancels a Screen off request that has not darkened the display yet.
+         if (enabled) ManualDisplay.RestoreIdleLogged();
+         if (Advanced is not null) return Advanced.SetAwake(enabled);
+-        // Keep this call on the persistent UI thread. It never changes lid or display policy.
+-        if (SetThreadExecutionState(enabled ? 0x80000001u : 0x80000000u) == 0)
++        // Keep this call on the persistent UI thread. The fallback must keep
++        // both the system and display awake, like the XiControl control.
++        if (SetThreadExecutionState(enabled ? 0x80000003u : 0x80000000u) == 0)
+             throw new InvalidOperationException("Windows did not accept the stay-awake request.");
+         fallbackAwake = enabled;
+         return new { message = enabled ? "Stay awake is on while the manager runs." : "Stay awake is off.", awake = Awake };
+--- a/source/pc-manager/Services/AdvancedControls.cs
++++ b/source/pc-manager/Services/AdvancedControls.cs
+@@ -526,6 +526,13 @@
+                 preferences.ResidentSetupVersion = 3;
+             }
+             MigrateF7Default(preferences, config);
++            if (!preferences.StayAwakeDisplayMigrationDone)
++            {
++                // Earlier PC Manager builds inverted this option and defaulted to
++                // allowing display-off. Restore XiControl's screen-awake default once.
++                config.OwlIgnoreDisplay = false;
++                preferences.StayAwakeDisplayMigrationDone = true;
++            }
+             if (preferences.ResidentSetupVersion < 5)
+             {
+                 if (config.AiKeyAction is "none" or "panel") config.AiKeyAction = "xiaoai";
+--- a/source/pc-manager/Services/ManagerSettings.cs
++++ b/source/pc-manager/Services/ManagerSettings.cs
+@@ -37,6 +37,7 @@
+         return key switch
+         {
+             "StartupStrategy" => "Profiles", "SlideStrength" => "60",
++            "OwlIgnoreDisplay" => true,
+             "AutoBrightnessPointsAc" or "AutoBrightnessPointsBattery" => BrightnessCurve.DefaultPoints(),
+             "CycleRefreshRates" => Array.Empty<int>(), "KeyCodes" => new Dictionary<string, string>(),
+             _ => typeof(AppConfig).GetProperty(key)!.GetValue(Defaults()) ?? ""
+@@ -171,7 +172,7 @@
+     {
+         // Execution-state requests belong to their calling thread; monitor palette callbacks
+         // also touch native windows. All transport, disk and startup-task work uses a worker.
+-        if (key is "OwlMode" or "FlyoutTheme") WriteSetting(key, value);
++        if (key is "OwlMode" or "OwlIgnoreDisplay" or "FlyoutTheme") WriteSetting(key, value);
+         else await Task.Run(() => WriteSetting(key, value));
+         if (key == "FlyoutTheme")
+         {
+@@ -349,7 +350,10 @@
+         Choice("TouchpadHeavyPressAction", "touchpad", "Firm-press action", actions, controller.SetTouchpadHeavyPress);
+         Add("TouchpadHeavyPressCommand", "touchpad", "Firm-press custom command", "text", apply: v => controller.SetTouchpadHeavyPressCommand(v.GetString()));
+         Bool("OwlMode", "settings", "Enable Stay awake controls", controller.ToggleOwlFeature);
+-        Add("OwlIgnoreDisplay", "settings", "Stay awake also keeps the display on");
++        Add("OwlIgnoreDisplay", "settings", "Keep display on during Stay awake",
++            apply: v => { cfg.OwlIgnoreDisplay = !v.GetBoolean(); cfg.Save(); },
++            description: "On: request that Windows keep the display lit while Stay awake is active.\nOff: allow the normal display-off timer while keeping the PC awake. Prevent sleep is better for this use.",
++            read: () => !cfg.OwlIgnoreDisplay);
+         Add("AwakeOverrideLid", "settings", "Stay awake overrides AC lid sleep", description: "The previous AC lid action is saved and restored when Stay awake ends.");
+ 
+         Add("KeyboardRoutingEnabled", "keyboard", "Handle Xiaomi firmware keys without the OEM manager");
+--- a/source/pc-manager/Services/Preferences.cs
++++ b/source/pc-manager/Services/Preferences.cs
+@@ -40,6 +40,7 @@
+     public string? AcMode { get; set; }
+     public string? BatteryMode { get; set; }
+     public bool PowerModeMigrationDone { get; set; }
++    public bool StayAwakeDisplayMigrationDone { get; set; }
+     public int ModeLayoutVersion { get; set; }
+     public int ResidentSetupVersion { get; set; }
+     public global::XiControl.Ui.OsdPosition PopupPosition { get; set; } = global::XiControl.Ui.OsdPosition.BottomRight;
+--- a/source/pc-manager/Vendor/XiControl/Config/AppConfig.cs
++++ b/source/pc-manager/Vendor/XiControl/Config/AppConfig.cs
+@@ -414,7 +414,7 @@
+     /// закрытая крышка на сети всё так же не усыпляет. Медиаплееры просят `ES_DISPLAY_REQUIRED`
+     /// сами, поэтому фильмы не прерываются и с true. Применяется при следующем включении совы.
+     /// </summary>
+-    public bool OwlIgnoreDisplay { get; set; } = true;
++    public bool OwlIgnoreDisplay { get; set; } = false;
+ 
+     /// <summary>Исходное действие крышки (AC) до включения «Не спать» — для восстановления, в т.ч. после сбоя.</summary>
+     public int? AwakeSavedLidAc { get; set; }
+--- a/source/pc-manager/www/app.js
++++ b/source/pc-manager/www/app.js
+@@ -234,7 +234,7 @@
+     row("Developer mode", "Show routine request messages and diagnostic details.", toggle("developer-mode", p.developerMode))+
+     row("Also open the original Xiaomi popup", "Optional OEM session. Our popup moves left; cleanup follows when the original closes.", toggle("original-popup", p.originalPopupEnabled))+
+     `<p class="inline-note">All three colors preview and save immediately. Editing a color switches to Custom; Save preset stores it as a named palette.</p>`, "settings")+
+-    card("Background behavior", row("Prevent sleep", "On AC, request continued background work while the display can turn off. On battery Modern Standby, Windows can end this request about five minutes after the sleep timeout. Lid close and explicit Sleep still work.", toggle("sleepoff", sleepOff)) + row("Stay awake", "XiControl wake control. Depending on its display setting, this can also keep the screen on; use Prevent sleep to let the OLED turn off.", toggle("awake", awake)) + row("Minimize to tray", "Also hide the large manager when minimized from its button or the taskbar. Off keeps it on the taskbar.", toggle("minimize-tray", p.minimizeToTray)) + `<p class="inline-note">Closing either window keeps the app in the tray. Startup at sign-in: ${settingState?.startupRegistered ? "registered" : "not confirmed"}.</p>`)+
++    card("Background behavior", row("Prevent sleep", "On AC, request continued background work while the display can turn off. On battery Modern Standby, Windows can end this request about five minutes after the sleep timeout. Lid close and explicit Sleep still work.", toggle("sleepoff", sleepOff)) + row("Stay awake", "Keep the PC and display awake while this control is on. The display behavior can be changed below; use Prevent sleep to let the OLED turn off.", toggle("awake", awake)) + row("Minimize to tray", "Also hide the large manager when minimized from its button or the taskbar. Off keeps it on the taskbar.", toggle("minimize-tray", p.minimizeToTray)) + `<p class="inline-note">Closing either window keeps the app in the tray. Startup at sign-in: ${settingState?.startupRegistered ? "registered" : "not confirmed"}.</p>`)+
+     card("Settings backup", `<p class="inline-note">Export a ZIP with settings, profile picture and custom icons or artwork to a location you choose. Keep it outside app data so it survives uninstall. Import replaces current settings and restarts PC Manager. The file may contain personal app paths, so keep it private.</p><div class="actions">${button("Export backup…", "settings.backupExport", {}, settingState != null)}${button("Import backup…", "settings.backupImport", {}, settingState != null)}${button("Save local snapshot", "settings.snapshot", {}, settingState != null)}</div>`, "settings")+
+     customizationPage() + card("Optional Xiaomi apps", [["manager", "Xiaomi PC Manager", "Driver scan and original manager"], ["store", "Xiaomi Store", "Standalone app store"], ["ai", "XiaoAI", "AI/F7 key action"]].map(([kind, label, use]) =>
+       row(label, `${use}. ${components?.[kind] ? "Installed path found." : "Component not installed or not found."}`,

@@ -275,7 +275,7 @@ internal sealed partial class MainWindow : Form
     {
         if(!navigated||exiting)return;
         web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {kind="state",version=typeof(Program).Assembly.GetName().Version?.ToString(3)+Program.TestSuffix,status,lastError,ready,busy,original,filter,
-            config,models,timing=lastTiming,monitor,suiteOwner=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?SuiteClientHubOwner():"",suiteBindings=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteStore.Read().Bindings:null,hotkeyErrors=suite?.Error is string suiteError?hotkeyErrors.Concat(new[]{suiteError}).ToArray():hotkeyErrors.ToArray(),hasTranslation=overlay.Blocks>0,effectiveProfile=EffectiveProfile(),packaged=Program.Packaged,fonts=DesktopOptions.FontNames,
+            config,models,palette=new {background=suiteBackground,surface=suiteSurface},timing=lastTiming,monitor,suiteOwner=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?SuiteClientHubOwner():"",suiteBindings=XiaomiRevamp.Suite.SuiteEnvironment.Enabled?XiaomiRevamp.Suite.SuiteStore.Read().Bindings:null,hotkeyErrors=suite?.Error is string suiteError?hotkeyErrors.Concat(new[]{suiteError}).ToArray():hotkeyErrors.ToArray(),hasTranslation=overlay.Blocks>0,effectiveProfile=EffectiveProfile(),packaged=Program.Packaged,fonts=DesktopOptions.FontNames,
             pictureVersion=File.GetLastWriteTimeUtc(Path.Combine(Program.Data,"appearance","picture.png")).Ticks,
             monitors=Screen.AllScreens.Select((s,i)=>new {id=i,name=s.DeviceName,width=s.Bounds.Width,height=s.Bounds.Height,primary=s.Primary})}));
     }
@@ -610,6 +610,12 @@ internal sealed partial class MainWindow : Form
             await web.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'y',ctrlKey:true,bubbles:true}))");await Task.Delay(400);bool redone=config["debug"]!.GetValue<bool>()!=debugBefore;
             await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-undo').click()");await Task.Delay(400);
             result["settingsSaveOnChangeWithUndoRedo"]=saved&&noticed&&undone&&redone&&config["debug"]!.GetValue<bool>()==debugBefore;
+            // The message PC Manager's app list sends to switch start with Windows while this app runs.
+            bool autostartBefore=config["autostart"]!.GetValue<bool>();
+            await SuiteAction("screen-translator.startup-on");bool switchedOn=config["autostart"]!.GetValue<bool>();
+            await SuiteAction("screen-translator.startup-off");bool switchedOff=!config["autostart"]!.GetValue<bool>();
+            config["autostart"]=autostartBefore;SaveConfig();
+            result["startupSwitchFromOutside"]=switchedOn&&switchedOff;
             bool bindings=ShortcutBinding.Parse("Ctrl+Shift+T")==new ShortcutBinding((uint)Keys.T,6)&&
                 ShortcutBinding.Parse("A")==new ShortcutBinding((uint)Keys.A,0)&&ShortcutBinding.Parse("9").ToString()=="9"&&
                 ShortcutBinding.Parse("Copilot").IsCopilot&&ShortcutBinding.Parse("Win+C").IsCopilot&&ShortcutBinding.Parse("F8").ToString()=="F8";

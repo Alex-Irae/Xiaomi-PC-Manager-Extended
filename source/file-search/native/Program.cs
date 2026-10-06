@@ -187,6 +187,8 @@ internal sealed partial class CenterContext : ApplicationContext
     readonly HashSet<string> outstanding=new();
     readonly bool paused,noShortcut;
     readonly bool residentEnabled;
+    // Headless checks run from a build folder and must never register that copy with Windows startup.
+    readonly bool registersStartup;
     JsonElement? readinessStatus;
     internal bool KeepSearchReady => residentEnabled && settings.GetProperty("model_standby").GetString()=="keep_loaded";
     CenterWindow? center;
@@ -209,12 +211,12 @@ internal sealed partial class CenterContext : ApplicationContext
     internal CenterContext(bool showCenter,bool paused,bool noShortcut,bool headless=false,bool startHidden=false)
     {
         this.paused=paused;this.noShortcut=noShortcut;
-        residentEnabled=!headless||Program.CheckReadySearch;
+        residentEnabled=!headless||Program.CheckReadySearch;registersStartup=!headless;
         var defaults=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(File.ReadAllText(Path.Combine(Program.Root,"config.example.json")))!;
         if(File.Exists(Program.Config))foreach(var entry in JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(File.ReadAllText(Program.Config))!)defaults[entry.Key]=entry.Value;
         settings=JsonSerializer.SerializeToElement(defaults);
         Search=new SearchWindow(this);_=Search.Handle;NativeInput.SetWindowText(Search.Handle,Program.InstanceTitle);
-        if(!headless)ApplyStartup();
+        ApplyStartup();
         face=headless||FaceAtStart(showCenter&&!startHidden,SearchIndependent,CenterAtStartup);
         tray=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center",Visible=face,ContextMenuStrip=new ContextMenuStrip()};
         tray.ContextMenuStrip.Items.Add("AI Center",null,(_,_)=>ShowCenter());
@@ -242,14 +244,14 @@ internal sealed partial class CenterContext : ApplicationContext
         installedShortcut=signature;
         Program.Log("Shortcut listener installed: "+shortcut);
     }
-    void ApplyStartup(){if(!Program.Development)Personalization.Startup(SearchIndependent||CenterAtStartup);}
+    void ApplyStartup(){if(registersStartup&&!Program.Development)Personalization.Startup(SearchIndependent||CenterAtStartup);}
     void SessionChanged(object sender,SessionSwitchEventArgs eventArgs)
     {
         if(eventArgs.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon)Post(()=>{installedShortcut="";InstallShortcut();});
     }
     bool WindowsDark=>Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","AppsUseLightTheme",1))==0;
     void WindowsThemeChanged(object sender,UserPreferenceChangedEventArgs args)=>Post(BroadcastTheme);
-    void BroadcastTheme(){var message=JsonSerializer.SerializeToElement(new {kind="windows_theme",dark=WindowsDark});Search.Receive(message);center?.Receive(message);}
+    void BroadcastTheme(){var message=JsonSerializer.SerializeToElement(new {kind="windows_theme",dark=WindowsDark,background=suiteBackground,surface=suiteSurface});Search.Receive(message);center?.Receive(message);}
     void ReadScope()
     {
         var current=settings.Deserialize<Dictionary<string,JsonElement>>()!;
@@ -392,13 +394,15 @@ internal sealed partial class CenterContext : ApplicationContext
         // Quitting AI Center keeps file search when it is set to run on its own; opening AI Center brings the icon back.
         if(FaceAtStart(false,true,false)||!FaceAtStart(true,true,false)||!FaceAtStart(false,false,false)||!FaceAtStart(false,true,true))throw new InvalidOperationException("A background start must show AI Center only when a setting asks for it");
         // The packaged default leaves file search dependent on AI Center; this part needs it independent.
-        var independent=settings.Deserialize<Dictionary<string,JsonElement>>()!;independent["run_at_startup"]=JsonSerializer.SerializeToElement(true);settings=JsonSerializer.SerializeToElement(independent);
+        // The same path PC Manager's app list uses to switch start with Windows while this app runs.
+        ApplyExternal(new(){["run_at_startup"]=false});if(SearchIndependent)throw new InvalidOperationException("A start-with-Windows change from outside was not applied");
+        ApplyExternal(new(){["run_at_startup"]=true});if(!SearchIndependent)throw new InvalidOperationException("A start-with-Windows change from outside was not applied");
         QuitCenter();if(tray.Visible||Program.Exiting)throw new InvalidOperationException("Quitting AI Center must keep file search running");
         Search.ShowSearch();await Wait(()=>Search.PageReady);if(tray.Visible)throw new InvalidOperationException("Opening search brought AI Center back");
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
         ShowCenter();await Wait(()=>center!.PageReady);if(!tray.Visible)throw new InvalidOperationException("Opening AI Center did not restore its tray icon");
         center!.Hide();await Wait(()=>!center.BrowserLoaded);
-        return new {passed=true,quitKeepsSearch=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
+        return new {passed=true,quitKeepsSearch=true,outsideStartupChangeApplied=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
     }
     internal async Task<object> CheckUX()
     {

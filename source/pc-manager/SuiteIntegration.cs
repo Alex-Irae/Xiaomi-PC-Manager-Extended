@@ -32,6 +32,7 @@ public sealed partial class ManagerApplication
                 Post(RefreshWindows);
             }, () => "Shortcut hub running");
             XiControl.Log.Write($"Shortcuts.Start root={SuiteEnvironment.Root} data={SuiteEnvironment.DataRoot} error={suite.Error}");
+            PublishSuiteAppearance();
             foreach (var (component, label, arguments, icon) in new[]
             {
                 ("file-search", "File Search", "--search", "search"),
@@ -105,11 +106,97 @@ public sealed partial class ManagerApplication
             bindings = document.Bindings.Where(item => SuiteEnvironment.Installed(item.Key.Split('.')[0])).Select(item => new { action = item.Key, chord = item.Value }),
             components = new[] { "file-search", "screen-translator" }.Select(component =>
             {
-                var status = SuiteStore.Status(component);
-                bool running = status is not null && SuiteStore.Alive(status.Pid) && DateTime.UtcNow.Ticks - status.Updated < TimeSpan.FromSeconds(5).Ticks;
-                return new { component, installed = SuiteEnvironment.Installed(component), running, state = running ? status!.State : "Stopped", error = running ? status!.Error : null, owner = SuiteClient.HubRunning() ? "PC Manager" : "Standalone" };
-            })
+                var status = SuiteRunning(component);
+                bool running = status is not null;
+                return new { component, title = component == "file-search" ? "File Search (AI Center)" : "Screen Translator", installed = SuiteEnvironment.Installed(component), running, state = running ? status!.State : "Not running", error = running ? status!.Error : null, owner = SuiteClient.HubRunning() ? "PC Manager" : "Standalone", startup = StartsWithWindows(component) };
+            }).Append(FileSyncRow())
         };
+    }
+    // --- Companion apps on the Toolbox page ---------------------------------------------------------------
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    static SuiteStatus? SuiteRunning(string component)
+    {
+        var status = SuiteStore.Status(component);
+        return status is not null && SuiteStore.Alive(status.Pid) && DateTime.UtcNow.Ticks - status.Updated < TimeSpan.FromSeconds(5).Ticks ? status : null;
+    }
+    // FileSync is its own product with its own installer; it is listed when its uninstall entry points to a real program.
+    static string? FileSyncExecutable()
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\XiaomiRevamp.FileSync");
+        string? path = key?.GetValue("InstallLocation") is string root ? Path.Combine(root, "FileSync.exe") : null;
+        return path is not null && File.Exists(path) ? path : null;
+    }
+    static bool ProcessRunning(string executable)
+    {
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)))
+            using (process)
+                try { if (string.Equals(process.MainModule?.FileName, executable, StringComparison.OrdinalIgnoreCase)) return true; }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        return false;
+    }
+    static object FileSyncRow()
+    {
+        string? executable = FileSyncExecutable();
+        bool running = executable is not null && ProcessRunning(executable);
+        return new { component = "filesync", title = "FileSync", installed = executable is not null, running, state = running ? "Running" : "Not running", error = (string?)null, owner = "", startup = executable is not null && StartsWithWindows("filesync") };
+    }
+    static string StartupName(string component) => component == "filesync" ? "FileSync" : "XiaomiRevampSuite." + (component == "file-search" ? "Search." : "Translator.") + SuiteEnvironment.Identity;
+    static bool AppSetting(string component, string key, bool fallback)
+    {
+        string path = Path.Combine(SuiteEnvironment.Data(component), "config.json");
+        try
+        {
+            if (!File.Exists(path)) return fallback;
+            using var saved = JsonDocument.Parse(SuiteStore.ReadText(path));
+            return saved.RootElement.TryGetProperty(key, out var value) ? value.ValueKind == JsonValueKind.True : fallback;
+        }
+        catch (Exception error) when (error is IOException or JsonException) { return fallback; }
+    }
+    // File search has two startup choices of its own; the switch here is the one for search itself.
+    static bool StartsWithWindows(string component)
+    {
+        if (component == "file-search") return AppSetting(component, "run_at_startup", true);
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey);
+        return key?.GetValue(StartupName(component)) is string;
+    }
+    static void RunQuietly(string executable, string arguments, bool wait)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable, arguments) { WorkingDirectory = Path.GetDirectoryName(executable)!, UseShellExecute = false, CreateNoWindow = true })
+            ?? throw new InvalidOperationException("Windows could not start " + Path.GetFileName(executable) + ".");
+        if (wait && !process.WaitForExit(15000)) throw new TimeoutException(Path.GetFileName(executable) + " did not answer.");
+    }
+    internal object SuiteStartup(JsonElement args)
+    {
+        string component = args.GetProperty("component").GetString() ?? ""; bool on = args.GetProperty("on").GetBoolean();
+        if (component == "filesync")
+        {
+            // FileSync owns its setting and its Windows entry, running or not.
+            RunQuietly(FileSyncExecutable() ?? throw new InvalidOperationException("FileSync is not installed."), "--startup " + (on ? "on" : "off"), true);
+        }
+        else
+        {
+            if (component is not ("file-search" or "screen-translator") || !SuiteEnvironment.Installed(component)) throw new ArgumentException("Unknown suite application.");
+            if (SuiteRunning(component) is not null) SuiteStore.Send(component + (on ? ".startup-on" : ".startup-off"));
+            else
+            {
+                // The app is closed: write what it would have written itself, its setting and its Windows entry.
+                string setting = component == "file-search" ? "run_at_startup" : "autostart", path = Path.Combine(SuiteEnvironment.Data(component), "config.json");
+                if (File.Exists(path)) { var saved = System.Text.Json.Nodes.JsonNode.Parse(SuiteStore.ReadText(path))!.AsObject(); saved[setting] = on; SuiteStore.AtomicWrite(path, saved); }
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
+                if (on || component == "file-search" && AppSetting(component, "center_at_startup", false)) key.SetValue(StartupName(component), "\"" + SuiteEnvironment.Executable(component) + "\" --tray");
+                else key.DeleteValue(StartupName(component), false);
+            }
+        }
+        string name = component == "file-search" ? "File Search" : component == "screen-translator" ? "Screen Translator" : "FileSync";
+        return new { message = name + (on ? " starts with Windows." : " no longer starts with Windows.") };
+    }
+    internal object SuiteQuit(JsonElement args)
+    {
+        string component = args.GetProperty("component").GetString() ?? "";
+        if (component == "filesync") RunQuietly(FileSyncExecutable() ?? throw new InvalidOperationException("FileSync is not installed."), "--exit", false);
+        else if (component is "file-search" or "screen-translator" && SuiteEnvironment.Installed(component)) RunQuietly(SuiteEnvironment.Executable(component), "--quit", false);
+        else throw new ArgumentException("Unknown suite application.");
+        return new { message = "Asked " + (component == "file-search" ? "File Search" : component == "screen-translator" ? "Screen Translator" : "FileSync") + " to close." };
     }
     internal object SuiteSave(JsonElement args)
     {
@@ -123,16 +210,23 @@ public sealed partial class ManagerApplication
     }
     internal object SuiteAppearance(JsonElement args)
     {
-        SuiteStore.Edit(value => { value.SharedAppearance = args.GetProperty("on").GetBoolean(); value.Theme = Preferences.Appearance; value.Accent = Preferences.ThemeAccent; });
+        SuiteStore.Edit(value => { value.SharedAppearance = args.GetProperty("on").GetBoolean(); value.Theme = Preferences.Appearance; value.Accent = Preferences.ThemeAccent; (value.Background, value.Surface) = SharedColours(); });
         suite?.Poll(); return new { message = "Suite appearance updated." };
     }
     internal void PublishSuiteAppearance()
     {
-        if (SuiteEnvironment.Enabled && SuiteStore.Read().SharedAppearance)
-            SuiteStore.Edit(value => { value.Theme = Preferences.Appearance; value.Accent = Preferences.ThemeAccent; });
+        if (!SuiteEnvironment.Enabled) return;
+        // Also run at start, so a palette chosen before the window colours were shared reaches the other apps
+        // without pressing Apply. Nothing is written when the shared values are already these.
+        var shared = SuiteStore.Read(); var (background, surface) = SharedColours();
+        if (!shared.SharedAppearance || shared.Theme == Preferences.Appearance && shared.Accent == Preferences.ThemeAccent && shared.Background == background && shared.Surface == surface) return;
+        SuiteStore.Edit(value => { value.Theme = Preferences.Appearance; value.Accent = Preferences.ThemeAccent; (value.Background, value.Surface) = (background, surface); });
     }
+    // The four built-in presets keep each theme's own window colours; a custom or saved palette brings its own.
+    (string, string) SharedColours() => Preferences.ThemePreset is "blue" or "red" or "pink" or "green" ? ("", "") : (Preferences.ThemeBackground, Preferences.ThemeSurface);
     internal void SuiteOpen(string action)
     {
+        if (action == "filesync.open") { RunQuietly(FileSyncExecutable() ?? throw new InvalidOperationException("FileSync is not installed."), "", false); return; }
         XiControl.Log.Write("Shortcuts.Invoke action="+action);
         if (!SuiteEnvironment.Enabled) throw new InvalidOperationException("Suite integration is unavailable.");
         if(action.StartsWith("pc-manager.custom.")) { int index=int.Parse(action["pc-manager.custom.".Length..])-1; if(index>=0&&index<Preferences.Shortcuts.Count)Advanced?.RunCustomAction(Preferences.Shortcuts[index]); return; }

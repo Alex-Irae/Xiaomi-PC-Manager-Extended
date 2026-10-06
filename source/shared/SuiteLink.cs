@@ -94,6 +94,9 @@ internal sealed class SuiteDocument
     public Dictionary<string, List<SuiteCommand>> Commands { get; set; } = new();
     public string Theme { get; set; } = "system";
     public string Accent { get; set; } = "#3482ff";
+    // Window and card colours of a custom PC Manager palette; empty means each theme's own colours.
+    public string Background { get; set; } = "";
+    public string Surface { get; set; } = "";
     public bool SharedAppearance { get; set; }
 }
 internal sealed class SuiteCommand
@@ -112,6 +115,11 @@ internal static class SuiteStore
         ["file-search.open"] = "double_ctrl", ["screen-translator.toggle"] = "Copilot",
         ["screen-translator.screen"] = "Ctrl+Alt+F", ["screen-translator.region"] = "Ctrl+Alt+T",
         ["screen-translator.original"] = "Ctrl+Alt+O", ["screen-translator.filter"] = "Ctrl+Alt+D"
+    };
+    // One-way messages to a running app that are not shortcuts: PC Manager's app list switching start with Windows.
+    internal static readonly HashSet<string> Signals = new()
+    {
+        "file-search.startup-on", "file-search.startup-off", "screen-translator.startup-on", "screen-translator.startup-off"
     };
     static string Folder => SuiteEnvironment.Data("shared");
     internal static string FilePath(string name) { Directory.CreateDirectory(Folder); return Path.Combine(Folder, name); }
@@ -214,10 +222,12 @@ internal static class SuiteStore
             occupied[chord] = item.Key;
         }
         if (value.Theme is not ("system" or "light" or "dark") || !System.Text.RegularExpressions.Regex.IsMatch(value.Accent, "^#[0-9a-fA-F]{6}$")) throw new ArgumentException("Invalid suite appearance.");
+        foreach (string colour in new[] { value.Background ?? "", value.Surface ?? "" })
+            if (colour.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(colour, "^#[0-9a-fA-F]{6}$")) throw new ArgumentException("Invalid suite colours.");
     }
     internal static void Send(string action) => Edit(value =>
     {
-        if (!Defaults.ContainsKey(action)) throw new ArgumentException("Unknown suite action.");
+        if (!Defaults.ContainsKey(action) && !Signals.Contains(action)) throw new ArgumentException("Unknown suite action.");
         string component = action.Split('.')[0];
         if (!value.Commands.TryGetValue(component, out var queue)) value.Commands[component] = queue = new();
         queue.RemoveAll(command => DateTime.UtcNow.Ticks - command.Created > TimeSpan.FromMinutes(2).Ticks);

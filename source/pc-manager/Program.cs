@@ -13,7 +13,7 @@ namespace XiaomiAIManager;
 internal static class Program
 {
     internal static bool TestMode { get; private set; }
-    internal static string PopupTitle => (TestMode ? "PC Manager · Test" : "PC Manager") + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
+    internal static string PopupTitle => (TestMode ? "PC Manager -test" : "PC Manager") + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
     internal static string InstanceName => "XiaomiAIManager." + WindowsIdentity.GetCurrent().User!.Value + (TestMode ? ".Test" : "") + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? ".Suite." + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
 
     [STAThread]
@@ -60,7 +60,7 @@ internal static class Program
         }
         // Service recovery only notifies an existing resident, never starts another hardware owner.
         if (command == "reapply-policies" && FindWindowW(null, PopupTitle) == IntPtr.Zero) return;
-        string otherTitle = (TestMode ? "PC Manager" : "PC Manager · Test") + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
+        string otherTitle = (TestMode ? "PC Manager" : "PC Manager -test") + (XiaomiRevamp.Suite.SuiteEnvironment.Enabled ? " · " + XiaomiRevamp.Suite.SuiteEnvironment.Identity : "");
         if (FindWindowW(null, otherTitle) != IntPtr.Zero)
         {
             MessageBox.Show("The other daily/test resident is already controlling this laptop. Exit it from its tray before starting this instance, so charging and display policies cannot compete.", "PC Manager");

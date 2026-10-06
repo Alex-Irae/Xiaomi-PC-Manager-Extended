@@ -1,3 +1,19 @@
+# After 0.3.7 (in the source, not in a build yet)
+
+- **PC Manager: shared colours are published at start.** A palette chosen before 0.3.7 reached the other apps only after pressing Apply on the Shared appearance card or changing the appearance. PC Manager now writes its theme, accent and window colours to the shared settings when it starts, and only when they differ.
+
+# Xiaomi Revamp 0.3.7
+
+PC Manager 0.2.8, AI Center 0.3.5, Screen Translator 0.2.7. FileSync 1.3.5 belongs with this release.
+
+- **PC Manager: an Apps card on the Toolbox page.** One row per installed companion app (File Search, Screen Translator, FileSync): what it is doing, a Start with Windows switch, Open and Quit. It replaces the separate File Search and Screen Translator cards. The switch works whether the app is running or closed: a running app is told and applies it itself; for a closed suite app PC Manager writes that app's setting and its Windows startup entry; FileSync is asked through its own command line. For File Search the switch is the "start file search with Windows" setting; AI Center's tray icon keeps its own option.
+- **Shared appearance carries the window colours too.** With "Share theme, accent and window colours" on, a custom or saved PC Manager palette also gives its background and card colours to File Search, AI Center, Screen Translator and FileSync. The four built-in presets share theme and accent as before and leave each theme's own colours. Every app can still opt out.
+- **FileSync follows the shared appearance** when it is installed inside the Xiaomi Revamp folder (see FileSync 1.3.5). Installed anywhere else, or with PC Manager's sharing off, it keeps its own theme and accents.
+- **Setup: an app can travel with its own installer.** The suite setup offers only the apps whose archive lies beside it, and the setup and launchers report the current versions (see 0.3.6).
+- **Test copies say "-test".** PC Manager's test mode titles read "-test" instead of "· Test"; test copies are built from this source with `tools/test`.
+
+Not changed: Screen Translator's floating toolbar keeps its own two background colours.
+
 # Xiaomi Revamp 0.3.6
 
 PC Manager 0.2.7, AI Center 0.3.4, Screen Translator 0.2.6.

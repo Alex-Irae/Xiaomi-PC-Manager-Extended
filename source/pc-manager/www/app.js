@@ -346,7 +346,7 @@ function change(method, args = {}) {
   busy = true; pendingWrites++;
   const task = writeTail.then(async () => {
   let result, failed = false;
-  try { result = await Native.call(method, args); failed=result?.complete===false; if (result?.message && (method === "suite.shortcut" || method === "settings.shortcuts" || method === "settings.snapshot" || method === "settings.backupExport" || method === "settings.backupImport" || prefs().developerMode || result.complete === false)) notice(result.message,failed); }
+  try { result = await Native.call(method, args); failed=result?.complete===false; if (result?.message && (method === "suite.shortcut" || method === "suite.startup" || method === "suite.quit" || method === "settings.shortcuts" || method === "settings.snapshot" || method === "settings.backupExport" || method === "settings.backupImport" || prefs().developerMode || result.complete === false)) notice(result.message,failed); }
   catch (error) { failed = true; notice(error.message, true); }
   finally { if (--pendingWrites === 0) { busy = false; dirty = failed&&!result?.saved; if (!failed||result?.saved) await refresh(true); } }
   if (result?.token && $("api-token")) { $("api-token").textContent = result.token; dirty = true; }
@@ -359,6 +359,7 @@ function performAction(action, args = {}) {
   if (action === "suite-shortcut") return change("suite.shortcut",{action:args.action,chord:$("suite-"+args.action.replaceAll(".","-")).value});
   if (action === "suite-appearance-save") return change("suite.appearance", { on: $("suite-appearance").checked });
   if (action === "suite.open") return change("suite.open", args);
+  if (action === "suite.quit") return change("suite.quit", args);
   if (action === "page") return showPage(args.page);
   if (action === "save-display") return change("display.automatic", { on: $("auto-refresh").checked, ac: Number($("ac-refresh").value), battery: Number($("battery-refresh").value) });
   if (action === "save-profiles") return change("performance.profiles", { ac: $("ac-mode").value || null, battery: $("battery-mode").value || null });
@@ -467,6 +468,7 @@ async function chooseShortcutApp(select, saveAction) {
 document.addEventListener("change", event => {
   const node = event.target, { id, value, checked } = node;
   if(node.hasAttribute?.('data-chord')) return chooseShortcut(node);
+  if (node.dataset.appStartup) return change("suite.startup", { component: node.dataset.appStartup, on: checked });
   if (node.dataset.quickAction && checked && document.querySelectorAll("[data-quick-action]:checked").length > 8) { node.checked = false; return notice("Choose at most eight system controls.", true); }
   if (node.hasAttribute?.("data-link-visible") && checked && document.querySelectorAll("[data-link-visible]:checked").length > 4) { node.checked = false; return notice("Show at most four app or file links.", true); }
   if (node.dataset.quickAction || node.dataset.panelIcon || node.hasAttribute?.("data-link-visible") || node.hasAttribute?.("data-link-label") || node.hasAttribute?.("data-link-icon") || id?.startsWith("panel-")) return performAction("save-panel");

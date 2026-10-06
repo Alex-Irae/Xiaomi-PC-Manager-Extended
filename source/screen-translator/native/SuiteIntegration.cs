@@ -10,6 +10,8 @@ namespace LocalScreenTranslator;
 internal sealed partial class MainWindow
 {
     SuiteClient? suite;
+    // Window and card colours of the shared appearance, passed to the page with every state update.
+    string suiteBackground = "", suiteSurface = "";
     string SuiteClientHubOwner()=>SuiteClient.HubRunning()?"PC Manager":"Standalone";
     void StartSuite()
     {
@@ -25,6 +27,7 @@ internal sealed partial class MainWindow
                 changed |= config["theme"]!.GetValue<string>() != document.Theme || config["accent"]!.GetValue<string>() != document.Accent;
                 config["theme"] = document.Theme; config["accent"] = document.Accent; ApplyAppearance(config);
             }
+            (suiteBackground, suiteSurface) = document.SharedAppearance && config["follow_suite_appearance"]!.GetValue<bool>() ? (document.Background ?? "", document.Surface ?? "") : ("", "");
             if (changed)
             {
                 SaveConfig();
@@ -42,6 +45,11 @@ internal sealed partial class MainWindow
             else if (action == "screen-translator.region") await Hotkey(2);
             else if (action == "screen-translator.original") await Hotkey(3);
             else if (action == "screen-translator.filter") await Hotkey(4);
+            else if (action.StartsWith("screen-translator.startup-"))
+            {
+                // PC Manager's app list switched start with Windows while this app runs.
+                config["autostart"] = action.EndsWith("-on"); SaveConfig(); DesktopOptions.Startup(config["autostart"]!.GetValue<bool>()); Publish();
+            }
         }
         catch (Exception error) { Fail(error.Message, false); }
     }

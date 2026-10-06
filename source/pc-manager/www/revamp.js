@@ -1,5 +1,5 @@
 /* Purpose: the bottom notice and the undo/redo commands shared by PC Manager, AI Center, Screen Translator
- * and FileSync. Dependencies: a #toast element in the page and revamp.css. Outputs: none.
+ * and FileSync, and the shared window colours. Dependencies: a #toast element in the page and revamp.css. Outputs: none.
  * Edit only source/shared/ui and run tools/sync_ui.py; the copies inside each app's frontend folder are overwritten. */
 'use strict';
 const Revamp = (() => {
@@ -31,5 +31,14 @@ const Revamp = (() => {
       if (!(forward ? redo : undo).disabled) step(forward);
     });
   }
-  return {toast, history};
+  // Window and card colours of the shared appearance. `names` says which CSS variables an app uses for them;
+  // a missing or invalid colour returns that variable to the theme's own value.
+  function palette(colours, names) {
+    for (const key of ['background', 'surface']) {
+      const value = colours?.[key] || '';
+      if (/^#[0-9a-f]{6}$/i.test(value)) document.documentElement.style.setProperty(names[key], value);
+      else document.documentElement.style.removeProperty(names[key]);
+    }
+  }
+  return {toast, history, palette};
 })();

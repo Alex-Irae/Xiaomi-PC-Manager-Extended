@@ -253,4 +253,22 @@ evaluate('change("settings.apply",{key:"OsdPosition",value:"Top"}); change("sett
 await settle('!busy && !reading');
 assert.equal(settingRows[0].value, 'Bottom');
 console.log('PASS true preset colors, instant custom edits, named palette save/rename/delete and serialized rapid edits.');
+// The Toolbox lists each installed companion app with its state, start-with-Windows switch, Open and Quit.
+evaluate(`suiteState={enabled:true,sharedAppearance:true,bindings:[],components:[
+  {component:'file-search',title:'File Search (AI Center)',installed:true,running:true,state:'Search ready',owner:'PC Manager',startup:true},
+  {component:'screen-translator',title:'Screen Translator',installed:false,running:false,state:'Not running',owner:'PC Manager',startup:false},
+  {component:'filesync',title:'FileSync',installed:true,running:false,state:'Not running',owner:'',startup:false}]}`);
+const apps = evaluate('suiteToolsCard()');
+assert(apps.includes('data-app-startup="file-search"') && apps.includes('data-app-startup="filesync"') && !apps.includes('data-app-startup="screen-translator"'), 'one row per installed app');
+assert(/data-app-startup="file-search"[^>]* checked/.test(apps) && !/data-app-startup="filesync"[^>]* checked/.test(apps), 'the switch shows the choice of each app');
+assert(apps.includes('filesync.open') && apps.includes('file-search.settings') && (apps.match(/data-action="suite.quit"/g) || []).length === 2, 'Open and Quit for every row');
+assert(/data-action="suite.quit"[^>]*filesync[^>]* disabled/.test(apps) && !/data-action="suite.quit"[^>]*file-search[^>]* disabled/.test(apps), 'Quit is offered only for a running app');
+const before = requests.length;
+listeners.get('change')({target:{dataset:{appStartup:'filesync'},checked:true,hasAttribute:()=>false}});
+await settle('!busy && !reading');
+assert.equal(JSON.stringify(requests.slice(before).find(r=>r.method==='suite.startup')?.args), JSON.stringify({component:'filesync',on:true}));
+evaluate('performAction("suite.quit",{component:"file-search"})');
+await settle('!busy && !reading');
+assert.equal(JSON.stringify(requests.slice(before).find(r=>r.method==='suite.quit')?.args), JSON.stringify({component:'file-search'}));
+console.log('PASS app list: rows for installed apps, start-with-Windows switch, Open and Quit requests.');
 console.log('Fixture tests passed. No native device behavior or optical timing is inferred.');

@@ -45,7 +45,7 @@ function update() {
   }
   document.querySelectorAll("[data-icon]").forEach(element => { element.innerHTML = UI.icon(element.dataset.icon); });
   $("device-name").textContent = h.deviceName || "This PC";
-  $("panel-title").textContent = h.testMode ? "Quick controls · Test" : "Quick controls";
+  $("panel-title").textContent = h.testMode ? "Quick controls -test" : "Quick controls";
   $("current-mode").textContent = h.mode == null ? "Unavailable" : UI.mode(h.mode, h.powerSource);
   const ac = h.powerSource === "Online";
   const knownSource = ac || h.powerSource === "Offline";

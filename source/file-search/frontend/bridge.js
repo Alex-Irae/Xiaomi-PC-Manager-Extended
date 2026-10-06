@@ -11,7 +11,7 @@
   let navigated = false;
   const ready = new Promise(resolve => { readyResolve = resolve; });
   const receive = message => {
-    if(message.kind==='windows_theme'){windowsDark=message.dark;appearance(currentAppearance);return;}
+    if(message.kind==='windows_theme'){windowsDark=message.dark;suitePalette={background:message.background,surface:message.surface};appearance(currentAppearance);return;}
     if(message.kind==='ready')for(const envelope of subscriptions.values())send(envelope);
     if(message.kind==='backend_stopped'){
       for(const callback of listeners)callback({data:message});
@@ -76,6 +76,7 @@
   const host = (action, params={}) => desktopTransport ? desktopTransport.postMessage({host:action,...params}) : call('local_'+action);
   let currentAppearance={theme:'system'};
   let windowsDark;
+  let suitePalette=null;
   const colorScheme=window.matchMedia?.('(prefers-color-scheme: dark)');
   function appearance(settings){
     currentAppearance=settings;
@@ -83,6 +84,8 @@
     document.documentElement.dataset.theme=dark?'dark':'light';
     document.documentElement.style.setProperty('--accent',settings.accent_color||'#3482ff');
     document.documentElement.style.setProperty('--font',settings.font_family||'MiSans');
+    // In these pages --surface is the window colour and --subtle the cards.
+    if(typeof Revamp!=='undefined')Revamp.palette(suitePalette,{background:'--surface',surface:'--subtle'});
     host('theme',{dark});
   }
   colorScheme?.addEventListener('change',()=>appearance(currentAppearance));

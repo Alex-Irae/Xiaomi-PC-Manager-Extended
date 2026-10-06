@@ -79,7 +79,7 @@ public sealed partial class ManagerApplication : ApplicationContext
         foreach (string size in new[] { "small", "medium", "large" })
             monitorMenu.DropDownItems.Add(char.ToUpperInvariant(size[0]) + size[1..], null, (_, _) => OpenMonitor(size));
         menu.Items.Add(monitorMenu);
-        tray.Text = Program.TestMode ? "PC Manager · Test" : "PC Manager";
+        tray.Text = Program.TestMode ? "PC Manager -test" : "PC Manager";
         menu.Items.Add("Exit", null, async (_, _) => await QuitAsync("tray Exit"));
         tray.ContextMenuStrip = menu;
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left && Environment.TickCount64 - popup.LastDismissStartedMs > 350) TogglePopup(); };

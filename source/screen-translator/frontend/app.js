@@ -74,6 +74,8 @@ function render(value) {
   if(!$('font_family').options.length) $('font_family').replaceChildren(...(value.fonts || ['Segoe UI']).map(name=>{const option=document.createElement('option');option.value=option.textContent=name;return option;}));
   document.documentElement.dataset.theme=value.config.theme;
   document.documentElement.style.setProperty('--accent',value.config.accent);
+  // In this page --surface is the window colour and --subtle the cards.
+  Revamp.palette(value.palette,{background:'--surface',surface:'--subtle'});
   $('brand-picture').hidden=!value.config.picture;$('brand-glyph').hidden=Boolean(value.config.picture);
   if(value.config.picture)$('brand-picture').src=`https://screen-translator-images.local/picture.png?v=${value.pictureVersion}`;
   document.querySelector('.dev-tag').textContent=value.version ? 'Version '+value.version : 'Development';
