@@ -99,17 +99,20 @@ internal static class ForegroundLaunch
         var windows = new List<nint>();
         EnumWindows((window, _) =>
         {
-            // A program that sits in the tray keeps helper windows (Clash Verge: a visible 13 by 13 tool
-            // window). Taking one for the program's window would leave the user looking at nothing.
-            if (!IsWindowVisible(window) || (GetWindowLongPtr(window, -20) & 0x80) != 0) return true;
+            if (!Showable(window)) return true;
             GetWindowThreadProcessId(window, out uint owner);
             if (owner == (uint)pid || HasChildFrom(window, [(uint)pid]))
                 if (!windows.Contains(window)) windows.Add(window);
             return true;
         }, 0);
-        if (main != 0 && IsWindowVisible(main) && !windows.Contains(main)) windows.Add(main);
+        if (main != 0 && Showable(main) && !windows.Contains(main)) windows.Add(main);
         return windows;
     }
+
+    // A program that sits in the tray keeps helper windows (Clash Verge: a visible 13 by 13 tool window, which
+    // Windows also reports as the process's main window). Taking one for the program's window would leave the
+    // user looking at nothing, so tool windows never count.
+    private static bool Showable(nint window) => IsWindowVisible(window) && (GetWindowLongPtr(window, -20) & 0x80) == 0;
 
     private static bool HasChildFrom(nint window, HashSet<uint> pids)
     {

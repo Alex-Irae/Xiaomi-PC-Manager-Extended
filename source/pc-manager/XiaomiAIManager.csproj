@@ -12,7 +12,7 @@
     <Product>PC Manager</Product>
     <Description>PC Manager quick controls and hardware settings</Description>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>0.2.11</Version>
+    <Version>0.2.12</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);.test-environment\**;app\**;results\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>

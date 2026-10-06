@@ -1,3 +1,9 @@
+# Xiaomi Revamp 0.3.11
+
+PC Manager 0.2.12. AI Center stays at 0.3.7 and Screen Translator at 0.2.7.
+
+- **PC Manager: the tray fix of 0.3.10 completed.** An app link still did nothing for Clash Verge in the tray: Windows reports its 13 by 13 helper window as the process's main window, and that window was added back after the filter. The same test now covers both ways a window is found. Checked on the installed program: with Clash Verge in the tray no window is offered for focusing, so the link starts it and its dashboard opens.
+
 # Xiaomi Revamp 0.3.10
 
 PC Manager 0.2.11, AI Center 0.3.7. Screen Translator stays at 0.2.7.
