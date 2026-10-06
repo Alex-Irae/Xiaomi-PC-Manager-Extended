@@ -19,7 +19,7 @@ public sealed partial class AdvancedControls
     private sealed record Setting(string Key, string Group, string Label, string Kind, Func<object?> Read,
         Action<JsonElement> Write, double Min = 0, double Max = 0, string[]? Options = null, string Description = "");
     private List<Setting>? definitions;
-    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey"];
+    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey", "ShotKey"];
     private static readonly JsonSerializerOptions SettingJson = new()
     { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
     private List<Setting> Definitions => definitions ??= BuildSettings();
@@ -27,7 +27,7 @@ public sealed partial class AdvancedControls
     {
         Language = "en", FlyoutTheme = "light", CheckUpdates = false, AutoStart = true,
         MiClickAction = "panel", MiDoubleAction = "page.home", MiHoldAction = "panel",
-        SettingsKeyAction = "windowssettings", AiKeyAction = "xiaoai", ProjKeyAction = "projection",
+        SettingsKeyAction = "windowssettings", AiKeyAction = "xiaoai", ProjKeyAction = "projection", ShotKeyAction = "xiaoai",
         OsdPosition = OsdPosition.Bottom, MonitorView = "", MonitorCompactMetric = "power", TrayMetricKind = "power"
     };
     private static object DefaultValue(string key)
@@ -251,10 +251,10 @@ public sealed partial class AdvancedControls
     {
         var rows = new List<Setting>();
         void Add(string key, string group, string label, string kind = "toggle", double min = 0, double max = 0,
-            string[]? options = null, Action<JsonElement>? apply = null, string description = "")
+            string[]? options = null, Action<JsonElement>? apply = null, string description = "", Func<object?>? read = null)
         {
             var property = typeof(AppConfig).GetProperty(key) ?? throw new InvalidOperationException("Missing setting " + key);
-            rows.Add(new(key, group, label, kind, () => property.GetValue(cfg), apply ?? (v =>
+            rows.Add(new(key, group, label, kind, read ?? (() => property.GetValue(cfg)), apply ?? (v =>
             {
                 property.SetValue(cfg, v.Deserialize(property.PropertyType, SettingJson));
                 cfg.Save();
@@ -353,7 +353,9 @@ public sealed partial class AdvancedControls
         Add("AwakeOverrideLid", "settings", "Stay awake overrides AC lid sleep", description: "The previous AC lid action is saved and restored when Stay awake ends.");
 
         Add("KeyboardRoutingEnabled", "keyboard", "Handle Xiaomi firmware keys without the OEM manager");
-        Add("HandleScreenshotKey", "keyboard", "Use F7 for screenshots instead of XiaoAI", description: "On opens Windows Snipping Tool. Off opens the latest installed XiaoAI. The dedicated Mi key opens the popup.");
+        // F7 is a full action slot. Until one is chosen it reports what the older switch would do.
+        Add("ShotKeyAction", "keyboard", "F7 key action", "choice", options: [.. actions, "app"], read: () => cfg.ShotKeyAction ?? (cfg.HandleScreenshotKey ? "screenshot" : "xiaoai"));
+        Text("ShotKeyCommand", "keyboard", "F7 key custom command");
         Int("MiHoldMs", "keyboard", "Mi key hold time (ms)", 150, 2000);
         Int("MiDoubleClickMs", "keyboard", "Mi key double-click interval (ms)", 100, 1000);
         foreach (var (id, label) in new[] { ("MiClick", "Mi key press"), ("MiDouble", "Mi key double press"), ("MiHold", "Mi key hold"), ("SettingsKey", "Settings key"), ("AiKey", "AI key"), ("ProjKey", "Projection key") })
@@ -488,6 +490,9 @@ public sealed partial class AdvancedControls
         if (screenshot || !aiLaunched) throw new InvalidOperationException("F7 did not reserve itself for XiaoAI.");
         keyboard.HandleScreenshotKey = true; screenshotRouter.Handle(screenshotCode, 0);
         if (!screenshot) throw new InvalidOperationException("Custom screenshot opt-in did not route.");
+        bool panel = false; screenshotRouter.TogglePanel = () => panel = true;
+        screenshot = false; keyboard.ShotKeyAction = "panel"; screenshotRouter.Handle(screenshotCode, 0);
+        if (screenshot || !panel) throw new InvalidOperationException("A chosen F7 action did not replace the older switch.");
         try { AppLinks.OpenKey(new Preferences(), "invalid"); throw new InvalidOperationException("Unknown app slot accepted."); }
         catch (ArgumentException) { }
         try { AppLinks.OpenKey(new Preferences(), "AiKey"); throw new InvalidOperationException("Unassigned app slot accepted."); }

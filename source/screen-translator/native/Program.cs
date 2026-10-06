@@ -161,7 +161,10 @@ internal sealed partial class MainWindow : Form
         if(initializing)return;initializing=true;
         try
         {
-            controlsEnvironment??=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"webview"));
+            // The page is served from disk under a made-up host name. Chromium still tried to resolve it and waited
+            // about two seconds for the lookup to fail before loading scripts and styles. Nothing here uses the
+            // network, so every lookup fails at once instead.
+            controlsEnvironment??=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"webview"),new CoreWebView2EnvironmentOptions("--host-resolver-rules=\"MAP * ~NOTFOUND\""));
             await web.EnsureCoreWebView2Async(controlsEnvironment);
             var core=web.CoreWebView2;
             if(frontendConfigured){core.Navigate(Origin+"/index.html");return;}
@@ -187,7 +190,6 @@ internal sealed partial class MainWindow : Form
             {
                 if(!e.IsSuccess){FrontendFailed(new InvalidOperationException("Local frontend navigation failed: "+e.WebErrorStatus));return;}
                 navigated=true;Publish();
-                if(Program.TrayStart)Hide();
                 if(Program.CheckLifecycle||Program.CheckShortcuts)return;
                 if(Program.CheckSuiteUi){await CheckSuiteUi();return;}
                 if(Program.CheckUi){await CheckUi();return;}
@@ -571,7 +573,7 @@ internal sealed partial class MainWindow : Form
             await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('shortcut').focus();setShortcut('Ctrl+Alt+Z');");
             Update("Ctrl+Shift+F20");await Task.Delay(150);
             string preserved=await web.CoreWebView2.ExecuteScriptAsync("Boolean(state.config.shortcut==='Ctrl+Shift+F20'&&document.getElementById('shortcut').value==='Ctrl+Alt+Z')");
-            string reset=await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('shortcut').blur();document.getElementById('reset-settings').click();document.getElementById('shortcut').value==='Ctrl+Shift+F20'");
+            string reset=await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('shortcut').blur();fill(state.config);document.getElementById('shortcut').value==='Ctrl+Shift+F20'");
             string directory=Path.Combine(Program.Data,"results","suite-ui",DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ"));Directory.CreateDirectory(directory);
             string controls=await web.CoreWebView2.ExecuteScriptAsync("window.checkDevelopmentUi()");
             bool controlsPassed=JsonNode.Parse(controls)?["ok"]?.GetValue<bool>()==true;
@@ -598,6 +600,14 @@ internal sealed partial class MainWindow : Form
             string report=JsonSerializer.Deserialize<string>(json)!;var result=JsonNode.Parse(report)!;
             result["nativeAppearanceApplied"]=appearanceApplied;
             result["continuousUseDefault"]=continuousDefault;
+            // Settings save on change, and the arrows step back and forward through those saves.
+            bool debugBefore=config["debug"]!.GetValue<bool>();
+            await web.CoreWebView2.ExecuteScriptAsync("(()=>{const box=document.getElementById('debug');box.checked=!box.checked;box.dispatchEvent(new Event('change',{bubbles:true}));})()");
+            await Task.Delay(400);bool saved=config["debug"]!.GetValue<bool>()!=debugBefore;
+            await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-undo').click()");await Task.Delay(400);bool undone=config["debug"]!.GetValue<bool>()==debugBefore;
+            await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-redo').click()");await Task.Delay(400);bool redone=config["debug"]!.GetValue<bool>()!=debugBefore;
+            await web.CoreWebView2.ExecuteScriptAsync("document.getElementById('settings-undo').click()");await Task.Delay(400);
+            result["settingsSaveOnChangeWithUndoRedo"]=saved&&undone&&redone&&config["debug"]!.GetValue<bool>()==debugBefore;
             bool bindings=ShortcutBinding.Parse("Ctrl+Shift+T")==new ShortcutBinding((uint)Keys.T,6)&&
                 ShortcutBinding.Parse("A")==new ShortcutBinding((uint)Keys.A,0)&&ShortcutBinding.Parse("9").ToString()=="9"&&
                 ShortcutBinding.Parse("Copilot").IsCopilot&&ShortcutBinding.Parse("Win+C").IsCopilot&&ShortcutBinding.Parse("F8").ToString()=="F8";

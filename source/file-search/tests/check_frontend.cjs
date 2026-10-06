@@ -15,7 +15,7 @@ class Element {
   contains(node){return node===this||this.children.some(child=>child.contains(node));}
 }
 function fixture(){
-  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','profile-picture','profile-image','reset-picture','message','home','preferences'].map(key=>[key,new Element()]));
+  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','launch-xiaoai','xiaoai-card','xiaoai-icon','profile-picture','profile-image','reset-picture','message','home','preferences'].map(key=>[key,new Element()]));
   ids['search-form'].offsetHeight=76;
   const footer=new Element(),grip=new Element(),document=new Element(),window=new Element();document.body=new Element();document.documentElement=new Element();
   document.getElementById=id=>ids[id];document.createElement=tag=>new Element(tag);

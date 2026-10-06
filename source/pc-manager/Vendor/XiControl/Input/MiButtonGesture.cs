@@ -33,6 +33,12 @@ public sealed class MiButtonGesture : IDisposable
     /// «съело» бы и себя, и клик — кнопка выглядела бы сломанной.</summary>
     public Func<bool> HoldEnabled = () => true;
 
+    /// <summary>The single-press action is a harmless toggle (the quick panel): run it on the first release
+    /// instead of waiting out the double-press window, and run it once more to undo it if a second press
+    /// does arrive before the double action.</summary>
+    public Func<bool> Eager = () => false;
+    private bool _eager;
+
     // holdMs/doubleClickMs настраиваются из config.json (AppConfig.MiHoldMs/MiDoubleClickMs);
     // клэмп снизу — чтобы кривое значение не сломало жест (мгновенное удержание / нулевое окно).
     public MiButtonGesture(IAppTimer? hold = null, IAppTimer? click = null,
@@ -73,10 +79,13 @@ public sealed class MiButtonGesture : IDisposable
         if (_clicks >= 2)
         {
             _clicks = 0;
+            if (_eager) Click?.Invoke(); // undo the press that already acted
             DoubleClick?.Invoke();
         }
         else
         {
+            _eager = Eager();
+            if (_eager) Click?.Invoke();
             _click.Start(); // ждём: не начало ли это двойного
         }
     }
@@ -84,7 +93,7 @@ public sealed class MiButtonGesture : IDisposable
     private void OnClickTimeout()
     {
         _click.Stop();
-        if (_clicks == 1)
+        if (_clicks == 1 && !_eager)
             Click?.Invoke();
         _clicks = 0;
     }

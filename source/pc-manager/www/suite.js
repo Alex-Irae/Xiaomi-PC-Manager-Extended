@@ -34,12 +34,16 @@ async function chooseShortcut(node) {
     node.dataset.committed=node.value;
     return performAction('shortcut-save');
   }
-  const save=node.closest('.MiSettingRow').querySelector('[data-action="suite-shortcut"]');
-  if(save){save.textContent='Save';save.removeAttribute('data-saved');}
+  // A connected app's shortcut saves like every other row, as soon as a key is chosen.
+  node.dataset.committed=node.value;
+  return performAction('suite-shortcut',{action:node.dataset.suiteAction});
 }
-function suiteKeyboardCard() {
-  if (!suiteState?.enabled) return '';
-  return card('Connected app shortcuts', `<p class="inline-note shortcut-intro">Choose a shortcut or select Press a shortcut to record your keys. Saving an assigned shortcut swaps the two actions' keys automatically. Each app handles its shortcuts when PC Manager is closed.</p><div class="suite-shortcut-list">${(suiteState.bindings || []).map(item => row(suiteLabel(item.action), item.action.startsWith('file-search') ? 'Semantic File Search' : 'Screen Translator', `${shortcutPicker(item.chord,'suite-'+item.action.replaceAll('.','-'),item.action)}${button('Save', 'suite-shortcut', { action: item.action })}`)).join('')}</div>${suiteState.error ? `<p class="error" role="status">${UI.escape(suiteState.error)}</p>` : ''}`, 'keyboard');
+// Connected apps' shortcuts sit in the same list as PC Manager's own. The accent frame marks the rows
+// those apps read too; a row exists only while its app is installed.
+function suiteShortcutRows() {
+  const items = suiteState?.enabled ? suiteState.bindings || [] : [];
+  if (!items.length) return '';
+  return `<div class="suite-rows suite-shortcut-list"><p class="suite-caption shortcut-intro">Connected apps. These shortcuts also show in Screen Translator and File Search, and keep working when PC Manager is closed.</p>${items.map(item => `<div class="fixed-key-row">${shortcutPicker(item.chord,'suite-'+item.action.replaceAll('.','-'),item.action)}<span class="field-input copilot-chord">${UI.escape(suiteLabel(item.action))} · ${item.action.startsWith('file-search') ? 'File Search' : 'Screen Translator'}</span><span class="neutral-link fixed-key-spacer" aria-hidden="true">Remove</span></div>`).join('')}${suiteState.error ? `<p class="error" role="status">${UI.escape(suiteState.error)}</p>` : ''}</div>`;
 }
 function suiteToolsCard() {
   if (!suiteState?.enabled) return '';

@@ -85,7 +85,11 @@ public sealed class KeyRouter
             case KeyKind.Projection when value == 0:
                 Run(_cfg.ProjKeyAction, _cfg.ProjKeyCommand); break;
             case KeyKind.Projection: ProjectionWarningKey?.Invoke(value); break;
-            case KeyKind.Screenshot: if (_cfg.HandleScreenshotKey) Screenshot?.Invoke(); else XiaoAi?.Invoke(); break;
+            case KeyKind.Screenshot:
+                // A chosen action wins; without one the older screenshot/XiaoAI switch still decides.
+                if (_cfg.ShotKeyAction is { } shot) Run(shot, _cfg.ShotKeyCommand);
+                else if (_cfg.HandleScreenshotKey) Screenshot?.Invoke(); else XiaoAi?.Invoke();
+                break;
             case KeyKind.TaskView: TaskView?.Invoke(); break;
             case KeyKind.Settings: OnSettingsKey(); break; // одиночное событие, удержание не ловится
             case KeyKind.Ai:

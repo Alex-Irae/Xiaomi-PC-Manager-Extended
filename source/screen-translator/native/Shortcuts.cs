@@ -152,6 +152,6 @@ internal sealed class ShortcutDialog : Form
                 catch(ArgumentException error){hint.Text=error.Message;}
             }));
     }
-    void SelectBinding(string shortcut){Selected=shortcut;value.Text=shortcut;recording=false;use.Enabled=true;hint.Text="Save settings to activate this shortcut. Esc still dismisses translation.";}
+    void SelectBinding(string shortcut){Selected=shortcut;value.Text=shortcut;recording=false;use.Enabled=true;hint.Text="Choose Use to activate this shortcut. Esc still dismisses translation.";}
     protected override void Dispose(bool disposing){if(disposing)hook?.Dispose();base.Dispose(disposing);}
 }

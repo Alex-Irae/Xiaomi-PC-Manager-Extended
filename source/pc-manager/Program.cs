@@ -43,7 +43,7 @@ internal static class Program
         } : "invalid";
         // Testing control switch ("PCManager.exe" --disable, see shared/Launcher.cs). The startup task
         // runs this native EXE directly every minute, so the automatic start is refused here as well.
-        if (command == "tray" && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XiaomiRevamp", "control", "pc-manager.off"))) return;
+        if (!TestMode && command == "tray" && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XiaomiRevamp", "control", "pc-manager.off"))) return; // the test copy is what the switch makes room for
         if (commands.SequenceEqual(new[] { "--validate-ui" })) command = "validate-ui";
         if (commands.SequenceEqual(new[] { "--validate-suite" })) command = "validate-suite";
         if (commands.SequenceEqual(new[] { "--validate-screenoff" })) command = "validate-screenoff";

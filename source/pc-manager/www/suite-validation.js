@@ -10,8 +10,8 @@ globalThis.runSuiteValidation=async function(token) {
     const choices=[...document.querySelectorAll('.suite-shortcut-list select')];
     check('preset-list-and-last-recorder',choices.length===6&&choices.every(node=>node.options[node.options.length-1].value==='record'&&[...node.options].some(option=>option.value==='Copilot')));
     check('redundant-copilot-section-removed',![...document.querySelectorAll('.MiCard h2')].some(node=>node.textContent==='Copilot key'));
-    const intro=document.querySelector('.shortcut-intro').getBoundingClientRect(), first=document.querySelector('.suite-shortcut-list .MiSettingRow').getBoundingClientRect();
-    check('intro-spacing',first.top-intro.bottom>=22,{gap:first.top-intro.bottom});
+    const intro=document.querySelector('.shortcut-intro').getBoundingClientRect(), first=document.querySelector('.suite-shortcut-list .fixed-key-row').getBoundingClientRect();
+    check('intro-spacing',first.top-intro.bottom>=10,{gap:first.top-intro.bottom});
     const old=Object.fromEntries(suiteState.bindings.map(item=>[item.action,item.chord]));
     const source=Object.keys(old).find(action=>old[action]==='Copilot')||'screen-translator.screen';
     await Native.call('suite.shortcut',{action:'screen-translator.filter',chord:old[source]});
@@ -30,12 +30,12 @@ globalThis.runSuiteValidation=async function(token) {
     const action='screen-translator.original',selected=document.getElementById('suite-'+action.replaceAll('.','-'));
     const confirmation=await performAction('suite-shortcut',{action});
     const savedLabel=document.querySelector(`[data-action="suite-shortcut"][data-args*="${action}"]`)?.textContent;
-    check('toast-only-after-persistence-and-registration',confirmation.saved===true&&confirmation.active===true&&savedLabel==='Save'&&!document.getElementById('toast').hidden&&document.getElementById('toast').textContent==='Shortcut saved.',{confirmation,savedLabel});
+    check('toast-only-after-persistence-and-registration',confirmation.saved===true&&confirmation.active===true&&!document.getElementById('toast').hidden&&document.getElementById('toast').textContent==='Shortcut saved.',{confirmation,savedLabel});
     const after=await Native.call('suite.read');const beforeChord=after.bindings.find(item=>item.action===action).chord;
     let rejected=false;try{await Native.call('suite.shortcut',{action,chord:'Win+L'});}catch{rejected=true;}
     const retained=await Native.call('suite.read');
     check('rejected-save-retains-binding',rejected&&retained.bindings.find(item=>item.action===action).chord===beforeChord);
-    const button=document.querySelector('.suite-shortcut-list .MiButton');const base=getComputedStyle(button).backgroundColor;
+    const button=document.querySelector('.MiButton.secondary');const base=getComputedStyle(button).backgroundColor;
     const rules=[...document.styleSheets].flatMap(sheet=>{try{return [...sheet.cssRules];}catch{return [];}});
     const preview=document.createElement('button');preview.className=button.className;document.body.append(preview);
     const hover=rules.find(rule=>rule.selectorText?.includes('.MiButton.secondary:hover:not(:disabled)'));

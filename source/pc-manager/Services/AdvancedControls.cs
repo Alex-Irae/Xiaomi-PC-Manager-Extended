@@ -304,6 +304,7 @@ public sealed partial class AdvancedControls : IDisposable
         gesture.DoubleClick = () => keys.Run(cfg.MiDoubleAction, cfg.MiDoubleCommand);
         gesture.Hold = () => keys.Run(cfg.MiHoldAction, cfg.MiHoldCommand);
         gesture.DoubleEnabled = () => cfg.MiDoubleAction != "none";
+        gesture.Eager = () => cfg.MiClickAction == "panel";
         gesture.HoldEnabled = () => cfg.MiHoldAction != "none";
         if (Program.TestMode || !cfg.KeyboardRoutingEnabled) return;
         keyEvents = new MifsEventWatcher();
@@ -538,6 +539,10 @@ public sealed partial class AdvancedControls : IDisposable
                 config.OsdPosition = OsdPosition.Bottom;
                 preferences.ResidentSetupVersion = 6;
             }
+            // Stay awake is a choice for the current session and starts off whenever the manager
+            // starts; the controller then restores any lid action it had changed. Prevent sleep
+            // is saved separately and comes back.
+            config.Awake = false;
             config.Store = this;
             preferences.XiControl = config;
             Save(config);

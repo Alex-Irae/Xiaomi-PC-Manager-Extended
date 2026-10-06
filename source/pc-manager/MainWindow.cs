@@ -430,7 +430,10 @@ public sealed class MainWindow : Form
             string assets = Path.Combine(AppContext.BaseDirectory, "www");
             if (!File.Exists(Path.Combine(assets, DocumentPath.TrimStart('/'))))
                 throw new FileNotFoundException("The www UI folder is missing beside the application.");
-            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Services.Preferences.DataDirectory, "WebView2"));
+            // The pages are served from disk under made-up host names. Chromium still tried to resolve those
+            // names for every window and waited about two seconds for the lookup to fail before loading
+            // scripts and styles. Nothing here uses the network, so every lookup fails at once instead.
+            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Services.Preferences.DataDirectory, "WebView2"), new CoreWebView2EnvironmentOptions("--host-resolver-rules=\"MAP * ~NOTFOUND\""));
             await web.EnsureCoreWebView2Async(environment);
             web.CoreWebView2.SetVirtualHostNameToFolderMapping("xiaomi-ai.local", assets, CoreWebView2HostResourceAccessKind.DenyCors);
             Directory.CreateDirectory(Services.AppLinks.IconDirectory);

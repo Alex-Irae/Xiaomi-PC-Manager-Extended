@@ -1,3 +1,29 @@
+# Xiaomi Revamp 0.3.4
+
+PC Manager 0.2.5, AI Center 0.3.2, Screen Translator 0.2.4.
+
+- **All apps: windows load about two seconds sooner.** Each window is served from disk under a made-up host name. Chromium still tried to resolve that name for every window and waited about two seconds for the lookup to fail before loading scripts and styles. Lookups now fail at once (`--host-resolver-rules="MAP * ~NOTFOUND"`); nothing in these pages uses the network. Measured on PC Manager's main window: page load 2,120 ms before, 131 ms after, with no extra memory or background work.
+- **PC Manager: the Xiaomi key opens the quick panel on release.** With a double-press action set, a single press used to wait out the double-press window (300 ms by default) before opening the panel. The panel now opens at once; a second press inside the window closes it again and runs the double-press action. Other single-press actions still wait, since they cannot be undone.
+- **AI Center: version and XiaoAI.** The version was always shown as unknown because the native window answered the settings request without it; it now shows, at the bottom of Search settings instead of the Overview. The Overview gains a XiaoAI card, shown when XiaoAI is installed, with the logo read from the app's own Assets folder.
+- **Screen Translator: opening from the tray.** After a tray start, the first time the window was opened it hid itself again as soon as its page had loaded. It now stays open.
+- **Screen Translator: top bar.** Same bar as AI Center: undo and redo on the left, the title as the drag area, drawn minimize, maximize and close buttons.
+
+# Xiaomi Revamp 0.3.3
+
+PC Manager 0.2.4. AI Center stays at 0.3.1 and Screen Translator at 0.2.3.
+
+- **PC Manager: one shortcut list.** The Keyboard page has a single Shortcuts card. Custom shortcuts, the laptop keys and the connected apps' shortcuts are rows of the same list: the key on the left, what it does on the right. Connected-app rows sit in an accent frame, because the same shortcut also shows in that app and keeps working when PC Manager is closed; they appear only for installed apps and save as soon as a key is chosen, without a Save button. Choosing a key another row already uses swaps the two, which is how the Copilot key or Double Ctrl moves to any other action.
+
+# Xiaomi Revamp 0.3.2
+
+PC Manager 0.2.3, Screen Translator 0.2.3. AI Center stays at 0.3.1.
+
+- **PC Manager: laptop keys in the shortcut list.** The Custom shortcuts list on the Keyboard page gains four fixed rows: XiaoAI key (F7), Project key (F8), Settings key (F9) and Xiaomi key. Their defaults are unchanged (XiaoAI, Windows projection, Windows Settings, quick panel) and each can be pointed at any listed action, an app or a command. The same four settings no longer appear a second time under Preferences. Custom shortcuts and the Copilot key are untouched.
+- **PC Manager: Screen off and Stay awake no longer fight.** Screen off turns Stay awake off first, and turning Stay awake on cancels a Screen off that has not darkened the display yet. Stay awake starts off whenever PC Manager starts. Prevent sleep is not touched by either and stays saved.
+- **PC Manager: test copies.** The `--disable` switch of the installed app no longer stops a `--test` copy from starting in the tray.
+- **Screen Translator: settings save as you change them.** The Save and Discard buttons are replaced by undo and redo arrows. Numbers and colours save after a short pause, text paths when the field is left.
+- **Screen Translator: version label.** The version is shown in the header tag; the 0.2.2 footer line was overwritten by status text.
+
 # Xiaomi Revamp 0.3.1
 
 PC Manager 0.2.2, AI Center 0.3.1, Screen Translator 0.2.2.

@@ -35,7 +35,7 @@ globalThis.runControlValidation = async function (token, phase) {
     rows.push({ name: "custom-shortcut-persisted", status: (await Native.call("settings.read")).shortcuts?.some(item => item.chord === "Ctrl+Alt+F24" && item.action === "page.battery") ? "pass" : "fail" });
     await check("reset-keyboard", "settings.reset", { group: "keyboard" }, (_, r) => r.complete === true);
     const reset = await Native.call("settings.read");
-    rows.push({ name: "reset-key-defaults", status: reset.rows.find(s => s.key === "SettingsKeyAction").value === "windowssettings" && reset.rows.find(s => s.key === "AiKeyAction").value === "xiaoai" && !reset.rows.find(s => s.key === "HandleScreenshotKey").value ? "pass" : "fail" });
+    rows.push({ name: "reset-key-defaults", status: reset.rows.find(s => s.key === "SettingsKeyAction").value === "windowssettings" && reset.rows.find(s => s.key === "AiKeyAction").value === "xiaoai" && reset.rows.find(s => s.key === "ShotKeyAction").value === "xiaoai" ? "pass" : "fail" });
     rows.push({ name: "reset-custom-shortcuts", status: reset.shortcuts?.length === 0 ? "pass" : "fail" });
     const ai = settings.rows.find(s => s.key === "AiKeyAction");
     rows.push({ name: "key-remap-options", status: ai?.options.includes("app") && ai.options.includes("page.battery") && ai.options.includes("page.display") ? "pass" : "fail" });

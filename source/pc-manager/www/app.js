@@ -28,7 +28,6 @@ function settingHelp(s) {
     RefreshRateFeature: "On: show and allow manual rate selection, automatic AC/battery switching, and rate cycling.\nOff: hide those controls, stop automatic switching, and restore the saved AC rate.",
     TouchpadKeepOff: "On: leave a disabled touchpad off after restart.\nOff: restore it when this app starts again.",
     TouchscreenKeepOff: "On: leave a disabled touchscreen off after restart.\nOff: restore it when this app starts again.",
-    HandleScreenshotKey: "On: F7 opens Windows Snipping Tool.\nOff: F7 opens the installed XiaoAI app; the Mi key still opens quick controls.",
     FlyoutTheme: "Choose one theme for the manager, hardware monitor, and notifications. System follows Windows app appearance.",
     AutoBrightnessRevert: "Choose when automatic brightness may return to its learned curve after you move the slider: always, only on battery, or never.",
     AutoBrightnessPointsAc: "Maps measured ambient light to target brightness while plugged in. The horizontal scale is logarithmic so dim-room values remain visible.",
@@ -122,7 +121,7 @@ function touchpadPage() {
 function shortcutActions() { return ["panel", ...Object.keys(pages).map(name => "page." + name), "windowssettings", "modes", "hz", "screenoff", "travel", "touchpad", "touchscreen", "monitor", "owl", "projection", "screenshot", "calc", "xiaoai", ...(suiteState?.enabled ? ["suite.file-search.open", "suite.screen-translator.toggle", "suite.screen-translator.region"] : []), ...(h().customization?.quickLinks || []).map(link => "app:" + link.id)]; }
 function shortcutEditor() {
   const actions = shortcutActions();
-  return card("Custom shortcuts", `<p class="inline-note">Firmware mode and display keys work only if this laptop emits their events. Windows does not expose Fn as a shortcut modifier. You can assign Cycle modes or Cycle display rate to Ctrl+Alt+K / Ctrl+Alt+S instead. Choose an application directly in its shortcut row. Selected apps also appear in quick controls. Completed shortcuts apply automatically; unfinished chords remain drafts. Screen off uses your normal Windows lock and sleep rules.</p><div id="shortcut-list">${(settingState?.shortcuts || []).map(item => shortcutRow(item, actions)).join("")}</div><div class="actions">${button("Add shortcut", "shortcut-add")}</div>${settingState?.shortcutError ? `<p class="error">${UI.escape(settingState.shortcutError)}</p>` : ""}`, "keyboard");
+  return card("Shortcuts", `<p class="inline-note">Every shortcut in one list: the key on the left, what it does on the right. Choosing a key that another row already uses swaps the two. The Copilot key and Double Ctrl are in the same key list. Firmware mode and display keys work only if this laptop emits their events. Windows does not expose Fn as a shortcut modifier. You can assign Cycle modes or Cycle display rate to Ctrl+Alt+K / Ctrl+Alt+S instead. Choose an application directly in its shortcut row. Selected apps also appear in quick controls. Completed shortcuts apply automatically; unfinished chords remain drafts. Screen off uses your normal Windows lock and sleep rules.</p><div id="shortcut-list">${(settingState?.shortcuts || []).map(item => shortcutRow(item, actions)).join("")}</div><div class="actions shortcut-add">${button("Add shortcut", "shortcut-add")}</div>${fixedKeyRows()}${suiteShortcutRows()}${settingState?.shortcutError ? `<p class="error">${UI.escape(settingState.shortcutError)}</p>` : ""}`, "keyboard");
 }
 function shortcutRow(item, actions) { const selected = item.action === "app" ? "app:" + item.appId : item.action; return `<div class="shortcut-row">${shortcutPicker(item.chord || '')}<select class="field-select" data-shortcut-action data-committed="${UI.escape(selected)}" aria-label="Shortcut action">${options([...actions.map(n => [n, n.startsWith("app:") ? "Open " + (h().customization?.quickLinks || []).find(l => l.id === n.slice(4))?.label : friendly(n)]), ["pick-app", "Choose an application…"]], selected)}</select><button class="neutral-link" data-shortcut-remove>Remove</button></div>`; }
 function copilotEditor() {
@@ -133,10 +132,23 @@ function copilotEditor() {
   if (owner && ["none", "system"].includes(current.action)) return card("Copilot key", `<p class="inline-note">Assigned to ${UI.escape(suiteLabel(owner.action))}. Change its binding in Suite shortcuts above. PC Manager delegates this key to the shared shortcut hub.</p>`, "keyboard");
   return card("Copilot key (optional)", `<p class="inline-note">If this keyboard sends Win+Shift+F23, this resident intercepts it before Windows opens its default action. The mapping is reversible and only works while PC Manager runs. Choose Windows default to give control back to Windows. Other keyboard implementations may not emit this chord.</p><div class="copilot-editor"><span class="field-input copilot-chord">Win + Shift + F23</span><select class="field-select" id="copilot-action" data-committed="${UI.escape(selected)}" aria-label="Copilot key action">${options([...actions, ["pick-app", "Choose an application…"]], selected)}</select></div><p class="inline-note">Detected ${Number(settingState?.copilotInterceptCount || 0)} matching key press(es) this session.</p>${settingState?.copilotError ? `<p class="error">${UI.escape(settingState.copilotError)}</p>` : ""}`, "keyboard");
 }
+// Laptop keys with a fixed position in the shortcut list. Each row is an ordinary setting, so it
+// saves, undoes and redoes like the rest; the Preferences list below leaves these out.
+const FixedKeys = [["ShotKey", "XiaoAI key (F7)"], ["ProjKey", "Project key (F8)"], ["SettingsKey", "Settings key (F9)"], ["MiClick", "Xiaomi key"]];
+const FixedKeySettings = new Set(FixedKeys.flatMap(([slot]) => [slot + "Action", slot + "Command"]));
+function fixedKeyRows() {
+  const find = key => settingState?.rows.find(s => s.key === key), spacer = `<span class="neutral-link fixed-key-spacer" aria-hidden="true">Remove</span>`;
+  return FixedKeys.map(([slot, label]) => {
+    const action = find(slot + "Action"), command = find(slot + "Command");
+    if (!action) return "";
+    const extra = command && ["launch", "app"].includes(action.value) ? `<div class="fixed-key-row"><span class="field-input copilot-chord">${action.value === "app" ? "Selected app" : "Command to run"}</span>${settingControl(command)}${spacer}</div>` : "";
+    return `<div class="fixed-key-row"><span class="field-input copilot-chord">${UI.escape(label)}</span>${settingControl(action)}${spacer}</div>${extra}`;
+  }).join("");
+}
 function keyboardPage() {
   const k = settingState?.keys || {};
   const status = !k.enabled ? "Firmware key handling is disabled." : k.running ? "Subscribed directly to Xiaomi firmware events." : "Firmware event subscription is not running.";
-  return heading("Keyboard", "Map keys to apps, manager pages or device actions. Mi opens quick controls; F9 opens Windows Settings; AI/F7 opens XiaoAI.") + suiteKeyboardCard() + shortcutEditor() + (prefs().developerMode ? card("Key diagnostics", `<p>${UI.escape(status)}</p><p class="inline-note">${UI.escape(k.error || "")}</p><div class="readout-grid">${readout("Last firmware event", k.lastEvent || "No event received yet")}</div>`, "keyboard") : "") + catalog("keyboard");
+  return heading("Keyboard", "Map keys to apps, manager pages or device actions. Mi opens quick controls; F9 opens Windows Settings; AI/F7 opens XiaoAI.") + shortcutEditor() + (prefs().developerMode ? card("Key diagnostics", `<p>${UI.escape(status)}</p><p class="inline-note">${UI.escape(k.error || "")}</p><div class="readout-grid">${readout("Last firmware event", k.lastEvent || "No event received yet")}</div>`, "keyboard") : "") + catalog("keyboard");
 }
 function notificationsPage() { return heading("Notifications", "One position setting for performance and other notifications.") + card("Preview", `<div class="actions">${button("Performance preview", "window.osdPreview", { number: 1 })}${button("Caps Lock preview", "window.lockPreview")}</div><p class="inline-note">Previewing a card does not change the hardware mode or lock state.</p>`, "message") + catalog("notifications"); }
 function monitorPage() { return heading("Hardware monitor", "The XiControl monitor, running inside this resident.") + card("Monitor views", `<div class="actions">${["small", "medium", "large"].map(size => button(size[0].toUpperCase()+size.slice(1), "window.monitor", { size })).join("")}</div><p class="inline-note">Visible views sample at 1 Hz. Large graphs show 30 seconds by default; click 30 sec to show three minutes. Log starts a CSV only when checked and turns off when the monitor closes. On AC, power shows CPU package only; full laptop draw is unavailable. NPU load and fan RPM are unavailable.</p>`, "cpu") + catalog("monitor"); }
@@ -178,7 +190,7 @@ function renderCurvePreview(editor) {
 }
 function catalog(group) {
   if (!settingState) return `<p class="inline-note">${UI.escape(settingsError || "Loading settings backend…")}</p>`;
-  const fields = settingState.rows.filter(s => s.group === group && (prefs().developerMode || !s.key.startsWith("Api."))), advanced = fields.filter(s => /Ramp|Converge|Backoff|Divisor|Snap|Deadband|Settle|LearnMs|Hysteresis|LearnBlend|FineStep|RevertMs/.test(s.key));
+  const fields = settingState.rows.filter(s => s.group === group && !FixedKeySettings.has(s.key) && (prefs().developerMode || !s.key.startsWith("Api."))), advanced = fields.filter(s => /Ramp|Converge|Backoff|Divisor|Snap|Deadband|Settle|LearnMs|Hysteresis|LearnBlend|FineStep|RevertMs/.test(s.key));
   const ordinary = fields.filter(s => !advanced.includes(s) && (!s.key.endsWith("Command") || ["launch", "app"].includes(fields.find(r => r.key === s.key.slice(0, -7) + "Action")?.value)));
   const content = values => values.map(s => row(s.key.endsWith("Command") && fields.find(r => r.key === s.key.slice(0, -7) + "Action")?.value === "app" ? "Selected app" : s.label, "", settingControl(s), settingHelp(s), s.key)).join("");
   return card("Preferences", content(ordinary), pages[group]?.[1] || "settings") + (group === "settings" && appVersion ? `<p class="inline-note">PC Manager version ${UI.escape(appVersion)}</p>` : "") + (advanced.length ? `<details data-persist="tuning"><summary>Brightness response tuning</summary>${card("Response tuning", content(advanced), "screen")}</details>` : "");
@@ -344,11 +356,7 @@ function change(method, args = {}) {
   writeTail = task.catch(error => notice(error.message, true)); return task;
 }
 function performAction(action, args = {}) {
-  if (action === "suite-shortcut") {
-    const selector=$("suite-"+args.action.replaceAll(".","-")),save=selector.closest('.MiSettingRow').querySelector('[data-action="suite-shortcut"]');
-    if(save){save.textContent='Saving…';save.setAttribute('aria-busy','true');save.disabled=true;}
-    return change("suite.shortcut",{action:args.action,chord:selector.value}).finally(()=>{if(save?.isConnected){save.removeAttribute('aria-busy');save.disabled=false;save.textContent='Save';}});
-  }
+  if (action === "suite-shortcut") return change("suite.shortcut",{action:args.action,chord:$("suite-"+args.action.replaceAll(".","-")).value});
   if (action === "suite-appearance-save") return change("suite.appearance", { on: $("suite-appearance").checked });
   if (action === "suite.open") return change("suite.open", args);
   if (action === "page") return showPage(args.page);

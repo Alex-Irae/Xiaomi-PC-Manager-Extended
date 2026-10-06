@@ -6,7 +6,7 @@
     <UseAppHost>false</UseAppHost>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>0.2.2</Version>
+    <Version>0.2.4</Version>
     <WebViewReferenceDir Condition="'$(WebViewReferenceDir)' == ''">$(WEBVIEW2_REFERENCE_DIR)</WebViewReferenceDir>
   </PropertyGroup>
   <!-- User-supplied local SDK assemblies only. No package installation or NuGet feed. -->

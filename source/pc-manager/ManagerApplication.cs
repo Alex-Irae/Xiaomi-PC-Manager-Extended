@@ -225,7 +225,11 @@ public sealed partial class ManagerApplication : ApplicationContext
         {
             await popup.DismissPopupAsync();
             await Task.Delay(350); // Let the initiating mouse/key release finish before power-off.
-            if (!Exiting) ManualDisplay.RequestIdleDisplayOff();
+            if (Exiting) return;
+            // Stay awake holds the display on, so the two cannot both apply: Screen off ends it.
+            // Prevent sleep is left alone; it keeps the PC working behind the dark screen.
+            if (Awake) SetAwake(false);
+            ManualDisplay.RequestIdleDisplayOff();
         }
         catch (Exception ex) { XiControl.Log.Ex("ScreenOff", ex); Notify("The display-off request failed."); }
     }
@@ -378,6 +382,8 @@ public sealed partial class ManagerApplication : ApplicationContext
 
     internal object SetAwake(bool enabled)
     {
+        // Turning Stay awake on cancels a Screen off request that has not darkened the display yet.
+        if (enabled) ManualDisplay.RestoreIdleLogged();
         if (Advanced is not null) return Advanced.SetAwake(enabled);
         // Keep this call on the persistent UI thread. It never changes lid or display policy.
         if (SetThreadExecutionState(enabled ? 0x80000001u : 0x80000000u) == 0)

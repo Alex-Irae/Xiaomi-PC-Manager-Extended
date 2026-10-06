@@ -518,7 +518,8 @@ internal sealed partial class CenterContext : ApplicationContext
         // Window mechanics never need Python and cannot restart it after dismissal.
         if(method=="local_suite_manager"){try{OpenSuiteManager();Reply(new {opened=true});}catch(Exception error){Reply(null,1,error.Message);}return;}
         if(method=="local_save_config"){try{SaveSuiteShortcut(request.GetProperty("params"));}catch(Exception error){Reply(null,1,error.Message);return;}}
-        if(method=="local_config"){try{ReadScope();BroadcastTheme();Reply(new {settings,path=Program.Config});}catch(Exception error){Reply(null,1,error.Message);}return;}
+        if(method=="local_config"){try{ReadScope();BroadcastTheme();Reply(new {settings,path=Program.Config,version=typeof(Program).Assembly.GetName().Version?.ToString(3)});}catch(Exception error){Reply(null,1,error.Message);}return;}
+        if(method=="local_xiaoai"){Reply(new {installed=XiaoAi() is not null,icon=XiaoAiIcon()});return;}
         if(method is "local_index_info" or "local_index_folder")
         {
             if(owner!="manager"){Reply(null,1,"Index backups belong to AI Center search settings");return;}
@@ -699,6 +700,38 @@ internal sealed partial class CenterContext : ApplicationContext
         center.Show();center.WindowState=FormWindowState.Normal;center.Activate();center.Script("window.dispatchEvent(new Event('local-center-focus'))");
     }
     internal void HideCenterForSearch()=>center?.Hide();
+    // XiaoAI is looked for where PC Manager looks by default: the newest version folder under Program Files\MI\XiaoaiAgent.
+    // ponytail: no registry search or custom location; add them if XiaoAI is ever installed elsewhere.
+    internal static string? XiaoAi()
+    {
+        foreach(var folder in new[]{Environment.SpecialFolder.ProgramFiles,Environment.SpecialFolder.ProgramFilesX86})
+        {
+            string root=Path.Combine(Environment.GetFolderPath(folder),"MI","XiaoaiAgent");
+            if(!Directory.Exists(root))continue;
+            string? found=Directory.EnumerateDirectories(root).Select(path=>(path,version:Version.TryParse(Path.GetFileName(path),out var parsed)?parsed:null)).Where(item=>item.version is not null).OrderByDescending(item=>item.version).Select(item=>Path.Combine(item.path,"XiaoaiAgent.exe")).FirstOrDefault(File.Exists);
+            if(found is not null)return found;
+        }
+        return null;
+    }
+    // The card shows XiaoAI's own logo from its Assets folder, never a bundled copy.
+    internal static string? XiaoAiIcon()
+    {
+        string? app=XiaoAi();if(app is null)return null;
+        string logo=Path.Combine(Path.GetDirectoryName(app)!,"Assets","Logo.ico");
+        try
+        {
+            using var icon=File.Exists(logo)?new Icon(logo,64,64):Icon.ExtractAssociatedIcon(app)!;
+            using var bitmap=icon.ToBitmap();using var stream=new MemoryStream();
+            bitmap.Save(stream,System.Drawing.Imaging.ImageFormat.Png);
+            return "data:image/png;base64,"+Convert.ToBase64String(stream.ToArray());
+        }
+        catch(Exception error){Program.Log("XiaoAI icon: "+error.Message);return null;}
+    }
+    internal void LaunchXiaoAi()
+    {
+        string path=XiaoAi()??throw new FileNotFoundException("XiaoAI is not installed on this laptop.");
+        Process.Start(new ProcessStartInfo(path){UseShellExecute=true});
+    }
     internal void LaunchPlayground()
     {
         const string path=@"C:\Program Files\AI Playground\AI Playground.exe";
@@ -761,7 +794,10 @@ internal class WebWindow : Form
         if(Program.CheckLaunchRouting||loading || Ready||(!prepare&&!Visible)||WindowState==FormWindowState.Minimized)return;loading=true;var web=Web;
         try
         {
-            var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"native-webview"));
+            // The pages are served from disk under a made-up host name. Chromium still tried to resolve it and
+            // waited about two seconds for the lookup to fail before loading scripts and styles. Nothing here
+            // uses the network, so every lookup fails at once instead.
+            var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.Data,"native-webview"),new CoreWebView2EnvironmentOptions("--host-resolver-rules=\"MAP * ~NOTFOUND\""));
             if(web!=Web||web.IsDisposed)return;
             await web.EnsureCoreWebView2Async(environment);
             if(web!=Web||web.IsDisposed)return;
@@ -796,6 +832,7 @@ internal class WebWindow : Form
         {
             case "search":App.Search.ShowSearch();break;
             case "playground":App.LaunchPlayground();break;
+            case "xiaoai":App.LaunchXiaoAi();break;
             case "hide":Hide();break;
             case "minimize":WindowState=FormWindowState.Minimized;break;
             case "close":Hide();break;

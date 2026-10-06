@@ -18,3 +18,7 @@ article{border:1px solid var(--line);border-radius:14px;padding:22px;margin-bott
 .brand{background:#000;color:#fff}
 #text-preview{margin-top:16px;padding:22px;background:var(--subtle);border:1px solid var(--line);border-radius:10px;overflow:auto}#preview-text{padding:3px;white-space:nowrap}#preview-text[data-style=underline]{border-bottom:2px solid var(--accent)}#preview-text[data-style=contrast]{background:#181a1e;color:#fff}#copilot-shortcut{padding-inline:8px}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color 120ms ease,color 120ms ease,opacity 120ms ease}main>section:not([hidden]){animation:page-in 140ms ease-out}@keyframes page-in{from{opacity:.75;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}}
+/* Top bar shared with AI Center: undo and redo on the left, the title as the drag area, drawn window buttons on the right. */
+.window-bar{height:34px;min-height:34px}.window-controls{gap:6px;padding-right:0;margin-right:12px}.window-controls.history-controls{margin:0 8px 0 0}
+.window-controls button{width:32px;padding:4px 6px;border-radius:8px;color:var(--muted)}.window-controls svg{display:block;width:20px;height:20px;margin:auto;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.window-controls button:disabled{opacity:.3;cursor:default}

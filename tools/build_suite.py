@@ -26,8 +26,8 @@ INSTALL = ROOT / 'install'
 SKIP = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', 'bin', 'obj', 'test-data', 'model_cache')
 PRIVATE = {'bin', 'obj', '__pycache__', 'model_cache', '.git', '.venv', 'data', 'results', '.test-environment'}
 PRIVATE_FILES = {'config.json', 'included-folders.txt', 'excluded-folders.txt'}
-RELEASE = '0.3.1'
-VERSIONS = {'pc-manager': '0.2.2', 'file-search': '0.3.1', 'screen-translator': '0.2.2'}
+RELEASE = '0.3.4'
+VERSIONS = {'pc-manager': '0.2.5', 'file-search': '0.3.2', 'screen-translator': '0.2.4'}
 
 
 def public_source(directory):

@@ -533,6 +533,9 @@ public sealed class AppConfig
     public string? SettingsKeyCommand { get; set; }
     public string? AiKeyCommand { get; set; }
     public string? ProjKeyCommand { get; set; }
+    /// <summary>F7 (XiaoAI/screenshot key). null keeps the older HandleScreenshotKey choice.</summary>
+    public string? ShotKeyAction { get; set; }
+    public string? ShotKeyCommand { get; set; }
 
     /// <summary>
     /// «Управление тачпадом» как фича: ячейка в панели и действие для клавиш.

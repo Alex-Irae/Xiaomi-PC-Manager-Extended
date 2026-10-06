@@ -24,4 +24,10 @@
   }));
   document.getElementById('launch-search').addEventListener('click',()=>localBridge.host('search'));
   document.getElementById('launch-playground').addEventListener('click',()=>localBridge.host('playground'));
+  // The XiaoAI card appears only when the app is installed, with the logo read from its own folder.
+  const xiaoai=document.getElementById('xiaoai-card');
+  if(xiaoai){
+    document.getElementById('launch-xiaoai').addEventListener('click',()=>localBridge.host('xiaoai'));
+    localBridge.call('local_xiaoai').then(value=>{xiaoai.hidden=!value.installed;if(value.icon)document.getElementById('xiaoai-icon').src=value.icon;}).catch(()=>{});
+  }
 })();

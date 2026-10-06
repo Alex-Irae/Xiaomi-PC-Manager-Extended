@@ -47,6 +47,7 @@ const hardware = { deviceName: 'Fixture PC', model: 'Fixture laptop', powerSourc
 const settingRows = [{ key: 'OsdPosition', group: 'notifications', label: 'Position', kind: 'choice', options: ['Top','Bottom'], value: 'Top' },
   { key: 'KeyboardRoutingEnabled', group: 'keyboard', label: 'Handle keys', kind: 'toggle', value: true },
   { key: 'AiKeyAction', group: 'keyboard', label: 'AI action', kind: 'choice', options: ['none','panel','app','page.battery'], value: 'panel' },
+  { key: 'ShotKeyAction', group: 'keyboard', label: 'F7 key action', kind: 'choice', options: ['none','xiaoai','screenshot','app'], value: 'xiaoai' },
   { key: 'AiKeyCommand', group: 'keyboard', label: 'AI custom command', kind: 'text', value: '' }];
 const keyApps = {};
 let hostMessage;
@@ -158,6 +159,14 @@ hardware.preferences.developerMode = true; evaluate('refresh(true)'); await sett
 assert(element('page').innerHTML.includes('Subscribed directly to Xiaomi firmware events.'), 'Developer mode must expose key diagnostics.');
 assert(element('page').innerHTML.includes('Open Battery'));
 assert(!element('page').innerHTML.includes('AI custom command'));
+// The fixed laptop keys sit in the shortcut list and are not repeated in the general list.
+assert(element('page').innerHTML.includes('XiaoAI key (F7)') && !element('page').innerHTML.includes('Special keys'), 'The shortcut list must offer the XiaoAI key.');
+assert.equal(element('page').innerHTML.split('data-setting="ShotKeyAction"').length, 2, 'A special key must appear once.');
+// Connected apps' shortcuts are rows of the same card, shown only for installed apps, with no Save button.
+assert(!element('page').innerHTML.includes('suite-rows'), 'No connected-app rows without the suite.');
+evaluate("suiteState = { enabled: true, bindings: [{ action: 'screen-translator.screen', chord: 'Copilot' }] }; render()");
+assert(element('page').innerHTML.includes('suite-rows') && element('page').innerHTML.includes('Translate screen · Screen Translator') && !element('page').innerHTML.includes('Connected app shortcuts') && !element('page').innerHTML.includes('data-action="suite-shortcut"'), 'Connected-app shortcuts must be rows of the one shortcut list.');
+evaluate("suiteState = { enabled: false }; render()");
 listeners.get('change')({target:{dataset:{setting:'AiKeyAction'},value:'app'}});
 await settle('!busy && !reading');
 assert.equal(requests.find(r=>r.method==='settings.keyApp').args.slot, 'AiKey');
