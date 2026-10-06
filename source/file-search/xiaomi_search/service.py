@@ -34,6 +34,7 @@ class Service:
         self.store.roots = config['roots']
         self.store.excluded_folders = config["excluded_folders"]
         self.store.excluded_extensions = config["excluded_extensions"]
+        self.store.type_weights = config["type_weights"]
         self._cache = OrderedDict()
         self._cache_lock = threading.Lock()
         self.embedder = Embedder(config, self.data)

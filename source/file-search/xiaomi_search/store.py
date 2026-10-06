@@ -143,6 +143,7 @@ class Store:
                     db.execute(f"CREATE TRIGGER IF NOT EXISTS revision_{table}_{operation} AFTER {operation} ON {table} BEGIN UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'; END")
         self.excluded_folders = []
         self.excluded_extensions = []
+        self.type_weights = {}  # extension -> ranking multiplier, 'default' for the rest; empty means no preference
         self.roots = None  # Standalone Store callers have no configured scope.
         if self.protected:
             self.protected.finish_migration()
@@ -392,6 +393,10 @@ class Store:
         rows.sort(key=lambda r: sum(token.casefold() in r["text"].casefold() for token in tokens), reverse=True)
         return [{"position": r["location"], "file_content_hightlight": highlighted(r["text"], tokens)} for r in rows[:20]]
 
+    def type_weight(self, extension, kind):
+        """Ranking multiplier for one file. A folder has no type to judge and keeps 1."""
+        return 1.0 if kind == 2 else self.type_weights.get(extension, self.type_weights.get('default', 1.0))
+
     def _where(self, filters, requested_type):
         clauses, params = ["f.active=1"], []
         if self.roots is not None:
@@ -559,6 +564,12 @@ class Store:
                     if row and Path(row['path']).exists():
                         fid=row['id'];preferences[fid]=len(preferred_paths)-priority
                         scores.setdefault(fid,0);reasons.setdefault(fid,set()).add('Previously opened')
+        if text and scores and self.type_weights:
+            # The file types the user works with come first among comparable matches. Files opened
+            # before and exact names keep their place: they are sorted ahead of the score below.
+            with self.connect() as db:
+                for row in db.execute(f"SELECT id,extension,file_type FROM files WHERE id IN ({','.join('?' * len(scores))})", list(scores)):
+                    scores[row['id']] *= self.type_weight(row['extension'], row['file_type'])
         ordered_ids = sorted(scores, key=lambda fid: (preferences.get(fid,0),fid in exact, scores[fid]), reverse=True)[:limit]
         results = []
         with self.connect() as db:

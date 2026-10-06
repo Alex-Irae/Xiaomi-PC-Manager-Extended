@@ -19,6 +19,28 @@ internal static class ForegroundLaunch
         FocusSoon(processName, candidate => string.Equals(ProcessImage.PathFor(candidate.Id), target, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Brings forward a visible window of the program at this path. False when it is not running or shows none.</summary>
+    internal static bool FocusRunning(string path)
+    {
+        if (!File.Exists(path) || !Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase)) return false;
+        string target = Path.GetFullPath(path);
+        bool altSent = false;
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(target)))
+            using (process)
+                try
+                {
+                    if (!string.Equals(ProcessImage.PathFor(process.Id), target, StringComparison.OrdinalIgnoreCase)) continue;
+                    foreach (nint window in CandidateWindows(process.Id, process.MainWindowHandle))
+                    {
+                        if (IsIconic(window)) ShowWindowAsync(window, 9); // Restore; a maximized window stays maximized.
+                        if (Activate(window, ref altSent)) return true;
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                { /* The program exited while its windows were listed. */ }
+        return false;
+    }
+
     internal static void FocusWindowsSettingsSoon() => FocusSoon("SystemSettings", _ => true);
 
     private static void FocusSoon(string processName, Func<Process, bool> accepted)
@@ -77,7 +99,9 @@ internal static class ForegroundLaunch
         var windows = new List<nint>();
         EnumWindows((window, _) =>
         {
-            if (!IsWindowVisible(window)) return true;
+            // A program that sits in the tray keeps helper windows (Clash Verge: a visible 13 by 13 tool
+            // window). Taking one for the program's window would leave the user looking at nothing.
+            if (!IsWindowVisible(window) || (GetWindowLongPtr(window, -20) & 0x80) != 0) return true;
             GetWindowThreadProcessId(window, out uint owner);
             if (owner == (uint)pid || HasChildFrom(window, [(uint)pid]))
                 if (!windows.Contains(window)) windows.Add(window);
@@ -152,6 +176,7 @@ internal static class ForegroundLaunch
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowProc callback, nint parameter);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(nint parent, EnumWindowProc callback, nint parameter);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern nint GetWindowLongPtr(nint window, int index);
     [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, nint extra);
 }
 

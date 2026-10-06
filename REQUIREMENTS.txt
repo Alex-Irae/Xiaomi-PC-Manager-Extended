@@ -1,0 +1,84 @@
+XIAOMI REVAMP: WHAT EACH APP NEEDS
+Suite 0.3.10 (PC Manager 0.2.11, AI Center 0.3.7, Screen Translator 0.2.7) and FileSync 1.3.5.
+The versions named "tested with" are the ones on the laptop this was built on (October 2026).
+
+
+1. NEEDED ON THE PC (not included, install or enable these yourself)
+
+All four apps
+  - Windows 11, 64-bit (x64). FileSync also runs on Windows 10.
+  - Microsoft Edge WebView2 Runtime. It comes with Windows 11. Tested with 154.0.4258.53.
+  - .NET Framework 4.8 (4.7.2 is enough for FileSync). It comes with Windows 11.
+    The setup programs, each app's small launcher and FileSync itself run on it.
+
+PC Manager
+  - A Xiaomi laptop for the hardware controls (performance modes, battery care, special keys).
+    Tested on a Xiaomi Book Pro 14 2026. On another PC the window opens but those controls do nothing.
+  - Administrator approval once, at install, for its start-with-Windows task.
+  - Optional: Xiaomi's own PC Manager (driver scan, Xiaomi Toolbox, the original manager), XiaoAI,
+    Xiaomi Store. Their buttons only appear or work when these are installed.
+
+AI Center (file search)
+  - An Intel processor supported by OpenVINO 2026.4. The search model runs on the Intel GPU,
+    the NPU or the CPU, in that order of preference; a current Intel graphics driver is needed for
+    the GPU (tested with 32.0.101.8359) and Intel's NPU driver for the NPU.
+  - Disk space for the index: about 10 GB for a whole-drive index here.
+  - Optional: the Windows Search service, only for the "Windows" results; Intel AI Playground and
+    XiaoAI, only for their two cards on the Overview.
+
+Screen Translator
+  - The same Intel hardware and drivers as AI Center, for text recognition and translation.
+
+FileSync (on both laptops)
+  - Tailscale, signed in to the same tailnet on both. Tested with 1.102.4.
+  - Windows OpenSSH, client and server (the "sshd" service running), with the two laptops' keys
+    exchanged. Tested with OpenSSH for Windows 9.5.
+  - Unison 2.54.0, the same version on both laptops (tested build: OCaml 4.14.3). Here it is in
+    C:\Utils\Unison.
+
+
+2. INCLUDED WITH THE APPS (nothing to install)
+
+PC Manager, AI Center and Screen Translator each carry their own copy of
+  - the .NET 8.0.7 runtime (Microsoft.NETCore.App and Microsoft.WindowsDesktop.App), in runtime\dotnet
+  - the WebView2 SDK 1.0.4191.47 files that connect the window to the WebView2 Runtime
+PC Manager also carries Svg 3.4.7 and System.Management 8.0.0.
+
+AI Center and Screen Translator each carry Python 3.12.10, in runtime\python, with
+  - openvino 2026.4.0 and openvino-tokenizers 2026.4.0; AI Center also openvino-genai 2026.4.0
+  - numpy, sentencepiece 0.2.1, onnxruntime 1.30.0, rapidocr-onnxruntime 1.4.4, opencv-python,
+    Pillow, torch 2.14.0, transformers 5.5.4, optimum-intel 2.2.0, psutil 7.2.2
+  - AI Center, to read documents: pypdf 6.19.0, python-docx 1.2.0, python-pptx 1.0.2,
+    openpyxl 3.1.5, striprtf 0.0.33, and watchdog 6.0.0 to notice changed files
+
+Models (all run on this laptop, nothing is sent anywhere)
+  - AI Center: Qwen3-Embedding-0.6B (OpenVINO INT8), 595 MB; BGE-small-en-v1.5 (OpenVINO INT8), 34 MB
+  - Screen Translator: PP-OCRv4 Chinese detector and recognizer (RapidOCR), and
+    Helsinki-NLP opus-mt-zh-en for the translation
+
+FileSync carries the WebView2 SDK files and the MiSans font notice. It does not include Tailscale,
+OpenSSH or Unison.
+
+Fonts: MiSans, inside the apps.
+
+
+3. NEEDED ONLY TO CHANGE THE APPS (Documents\Development)
+
+  - The "toolchain" folder beside the source: .NET SDK 8.0.425, an offline NuGet package cache and
+    the WebView2 reference files. Nothing is downloaded during a build.
+  - The C# compiler of .NET Framework 4.8 (part of Windows), for the setup programs, the launchers
+    and FileSync.
+  - The installed AI Center and Screen Translator, whose Python runtimes and models a build copies.
+  - Node.js, for the interface checks (used: 24.19).
+  - A Python 3.12 with psutil, for tools\measure_apps.py.
+  - Git and the GitHub CLI, to publish.
+
+
+4. TO INSTALL ON ANOTHER PC
+
+Each app folder here has an Installer folder. Copy it to the other PC and run the setup inside:
+  PC Manager\Installer\Xiaomi-Revamp-Setup.exe
+  AI Center\Installer\AI-Center-Setup.exe
+  Screen Translator\Installer\Screen-Translator-Setup.exe
+  SyncFile\Installer\FileSync-Setup.exe
+Settings, the search index and FileSync's pairing are not copied; section 1 still applies there.

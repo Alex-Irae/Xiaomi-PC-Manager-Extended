@@ -103,6 +103,11 @@ internal static class AppLinks
     internal static void OpenLink(QuickLink link)
     {
         if (!Path.IsPathFullyQualified(link.Path) || (!File.Exists(link.Path) && !Directory.Exists(link.Path))) throw new InvalidOperationException("The selected app, file or folder no longer exists. Choose it again in Settings.");
+        // A program that is already showing a window is brought forward instead of being started again.
+        // A link with arguments asks for something specific, and a program that only sits in the tray has no
+        // window to show: both are started, which lets the program open its own window (a second start of
+        // Clash Verge or FileSync hands over to the running one, which then shows itself).
+        if (string.IsNullOrWhiteSpace(link.Arguments)) { ForegroundLaunch.Prepare(); if (ForegroundLaunch.FocusRunning(link.Path)) return; }
         object? windows = null, desktop = null, document = null, shell = null;
         try
         {
@@ -121,12 +126,15 @@ internal static class AppLinks
         catch (Exception ex) { XiControl.Log.Ex("App link", ex); throw new InvalidOperationException("Windows Explorer could not open this app link. No administrator launch was attempted."); }
         finally { foreach (object? value in new[] { shell, document, desktop, windows }) if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
     }
+    private static bool UacEnabled() => Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableLUA", 1) is not int value || value != 0;
     private static bool UnelevatedShell(uint pid)
     {
         using var process = Process.GetProcessById((int)pid);
         if (process.SessionId != Process.GetCurrentProcess().SessionId || process.ProcessName != "explorer") return false;
         nint handle = OpenProcess(0x1000, false, pid), token = 0;
-        try { return handle != 0 && OpenProcessToken(handle, 8, out token) && GetTokenInformation(token, 20, out int elevated, sizeof(int), out _) && elevated == 0; }
+        // With User Account Control switched off, every program of an administrator account is elevated,
+        // Explorer included: the desktop's own Explorer is then the normal level, not a raised one.
+        try { return handle != 0 && OpenProcessToken(handle, 8, out token) && GetTokenInformation(token, 20, out int elevated, sizeof(int), out _) && (elevated == 0 || !UacEnabled()); }
         finally { if (token != 0) CloseHandle(token); if (handle != 0) CloseHandle(handle); }
     }
     private static QuickLink Known(Preferences p, string id)

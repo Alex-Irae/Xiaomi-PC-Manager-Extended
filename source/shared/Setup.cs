@@ -21,8 +21,8 @@ using System.Security.AccessControl;
 using System.Runtime.Versioning;
 
 [assembly: AssemblyTitle("Xiaomi Revamp Setup")]
-[assembly: AssemblyVersion("0.3.7.0")]
-[assembly: AssemblyFileVersion("0.3.7.0")]
+[assembly: AssemblyVersion("0.3.10.0")]
+[assembly: AssemblyFileVersion("0.3.10.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
 
 internal static class Setup
@@ -33,8 +33,8 @@ internal static class Setup
     static readonly Dictionary<string, string> Executables = new Dictionary<string, string> { { "pc-manager", "PCManager.exe" }, { "file-search", "AI Center.exe" }, { "screen-translator", "ScreenTranslator.exe" } };
     static string Sid { get { return WindowsIdentity.GetCurrent().User.Value; } }
     static bool Admin { get { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } }
-    const string Version = "0.3.7"; // suite release; tools/build_suite.py refuses to build when these differ from its table
-    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.8" }, { "file-search", "0.3.5" }, { "screen-translator", "0.2.7" } };
+    const string Version = "0.3.10"; // suite release; tools/build_suite.py refuses to build when these differ from its table
+    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.11" }, { "file-search", "0.3.7" }, { "screen-translator", "0.2.7" } };
     static string Uninstaller { get { return "Uninstall.exe"; } }
     static string Expand(string path) { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path).Replace("{sid}", Sid)); }
     static Dictionary<string, object> Marker(string root) { return Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(root, "suite-install.json")))); }

@@ -76,6 +76,10 @@ def validate(config, path):
     if any(not re.fullmatch(r"\.?[\w+-]+", v) for v in config["excluded_extensions"]):
         raise ValueError("Excluded file types must be extensions such as .pdf or .py")
     config["excluded_extensions"] = list(dict.fromkeys("." + v.lower().lstrip(".") for v in config["excluded_extensions"]))
+    weights = config["type_weights"]
+    if not isinstance(weights, dict) or any(not isinstance(k, str) or not (k == "default" or re.fullmatch(r"\.?[\w+-]+", k)) or type(v) not in (int, float) or not 0 <= v <= 10 for k, v in weights.items()):
+        raise ValueError("type_weights must map extensions such as .pdf, or default, to a number from 0 to 10")
+    config["type_weights"] = {k if k == "default" else "." + k.lower().lstrip("."): v for k, v in weights.items()}
     if config["preferred_device"] not in ("auto", "cpu", "gpu", "npu"):
         raise ValueError("preferred_device must be auto, cpu, gpu, or npu")
     if config["model_standby"] not in ("idle_unload", "keep_loaded"):

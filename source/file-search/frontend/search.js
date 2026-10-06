@@ -5,9 +5,13 @@
   const categories=[['All',4095],['Folders',2],['Documents',124],['Images',256],['Audio',128],['Video',512],['Archives',1024],['Programs',2048],['Other',1]];
   let rows=[],visible=[],selected=0,type=4095,sequence=0,timer,historyTimer,settings={},pending=false,dismissed=false;
   const historyKey='local-search-history-v1';
-  let history=[],historyRevision=0,menuRow=null,autoExtension=false;
+  let history=[],historyRevision=0,menuRow=null,autoExtension=false,openedAt={};
+  // The hint on each result: when you last opened that file from search, else when the file was last changed.
+  const remembered=data=>{if(data?.opened)openedAt=Object.fromEntries(Object.entries(data.opened).map(([path,time])=>[path.toLowerCase(),time]));};
+  function day(time){const date=new Date(time),now=new Date();if(date.toDateString()===now.toDateString())return 'Today';return date.toLocaleDateString('en-GB',date.getFullYear()===now.getFullYear()?{day:'numeric',month:'short'}:{month:'short',year:'numeric'});}
   try{const saved=JSON.parse(localStorage.getItem(historyKey)||'[]');if(Array.isArray(saved))history=saved.filter(value=>typeof value==='string'&&value.trim()&&value.length<=256).slice(0,20);}catch{}
   call('local_history_get').then(async data=>{
+    remembered(data);
     if(historyRevision===0){if(data.queries.length)history=data.queries;else if(history.length)await call('local_history_save',{queries:history});}
     localStorage.removeItem(historyKey);renderHistory();resize();
   }).catch(error=>localBridge.feedback(error.message,true));
@@ -55,7 +59,9 @@
         const detail=document.createElement('div');detail.className='details';const name=document.createElement('div');name.className='name';name.innerHTML=row.file_name_with_highlight;
         const path=document.createElement('div');path.className='path';path.textContent=row.program?'Program':row.file_path;path.title=row.file_path;detail.append(name,path);
         if(row.snippet){const snippet=document.createElement('div');snippet.className='snippet';snippet.textContent=row.snippet.replace(/\s+/g,' ');detail.append(snippet);}
-        const hint=document.createElement('span');hint.className=row.matches?.includes('Previously opened')?'meaning-hint':row.matches?.includes('Semantic')?'meaning-hint':'open-hint';hint.textContent=row.matches?.includes('Previously opened')?'Recent choice':row.matches?.includes('Semantic')?'Meaning':row.matches?.includes('Windows Search')?'Windows':row.program?'Run':'Open';hint.title=row.matches?.join(' · ')||'Open';button.append(icon,detail,hint);button.addEventListener('click',()=>{select(index);open('open_file');});button.addEventListener('contextmenu',event=>{event.preventDefault();showMenu(row,index,event.clientX,event.clientY);});host.append(button);
+        const opened=openedAt[String(row.file_path).toLowerCase()],hint=document.createElement('span');hint.className='open-hint';
+        hint.textContent=row.program?'Run':opened?'Opened '+day(opened):row.time_stamp?day(row.time_stamp):'Open';
+        hint.title=[opened?'Opened from search '+new Date(opened).toLocaleString('en-GB'):'',!row.program&&row.time_stamp?'Changed '+new Date(row.time_stamp).toLocaleString('en-GB'):'',...(row.matches||[])].filter(Boolean).join(' · ')||'Open';button.append(icon,detail,hint);button.addEventListener('click',()=>{select(index);open('open_file');});button.addEventListener('contextmenu',event=>{event.preventDefault();showMenu(row,index,event.clientX,event.clientY);});host.append(button);
       }
     }
     if(!visible.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=pending?'Searching…':'No matching files, folders or programs.';host.append(empty);}
@@ -104,7 +110,7 @@
   }
 
   function scheduleHistory(query,ticket){clearTimeout(historyTimer);historyTimer=setTimeout(()=>{if(!dismissed&&ticket===sequence&&$('query').value.trim()===query)remember(query);},800);}
-  function open(method,row=visible[selected]){if(!row)return;const query=$('query').value.trim();clearTimeout(historyTimer);closeMenu();if(method!=='open_file_folder')remember(query);call(method,{file_id:row.file_id,file_path:row.file_path,windows_result:row.windows_result===true,program:row.program===true,query:query.length<=256?query:''}).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});}
+  function open(method,row=visible[selected]){if(!row)return;const query=$('query').value.trim();clearTimeout(historyTimer);closeMenu();if(method!=='open_file_folder'){remember(query);if(query&&query.length<=256&&!row.program)openedAt[String(row.file_path).toLowerCase()]=Date.now();}call(method,{file_id:row.file_id,file_path:row.file_path,windows_result:row.windows_result===true,program:row.program===true,query:query.length<=256?query:''}).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});}
   for(const [id,method] of [['menu-open','open_file'],['menu-reveal','open_file_folder'],['menu-open-with','open_file_with']])$(id).addEventListener('click',()=>open(method,menuRow));
   document.addEventListener('pointerdown',event=>{if(!$('result-menu').contains(event.target))closeMenu();});
   for(const [label,mask] of categories){const button=document.createElement('button');button.textContent=label;button.className=mask===type?'active':'';button.addEventListener('click',()=>{type=mask;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b===button));render();});$('categories').append(button);}

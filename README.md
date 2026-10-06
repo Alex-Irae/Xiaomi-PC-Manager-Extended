@@ -1,4 +1,4 @@
-# Xiaomi Revamp 0.3.7 (PC Manager 0.2.8, AI Center 0.3.5, Screen Translator 0.2.7)
+# Xiaomi Revamp 0.3.10 (PC Manager 0.2.11, AI Center 0.3.7, Screen Translator 0.2.7)
 
 Three independent Windows applications connected through PC Manager: **PC Manager**, **Screen Translator** and **AI Center** (semantic file search). PC Manager is required by the combined installer; either optional app can also be installed and run alone. All OCR, translation and search inference runs locally.
 

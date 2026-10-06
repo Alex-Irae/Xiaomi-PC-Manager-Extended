@@ -1,6 +1,27 @@
-# After 0.3.7 (in the source, not in a build yet)
+# Xiaomi Revamp 0.3.10
 
+PC Manager 0.2.11, AI Center 0.3.7. Screen Translator stays at 0.2.7.
+
+- **AI Center: results are ranked by file type.** A new `type_weights` setting in `config.json` multiplies a match's score by a number for its extension: 1.3 for documents and sheets (`.pdf .doc .docx .xls .xlsx .ppt .pptx .csv`), 1.2 for notes and settings files (`.json .yaml .yml .md .txt .toml .cfg .conf .xml .rtf`), 1.0 for audio and video, 0.7 for source code, and `default` (0.9) for everything else. Folders keep 1. A file opened from search before and an exact file name still come first, whatever their type, and a code file that matches by name, path and contents can still beat a document that matches once. Results from Windows Search of a low-priority type are lowered the same way. There is no control for it in Settings: edit the numbers in `config.json` and restart AI Center; a missing entry falls back to `default`, and an empty `{}` switches the ranking off.
+- **AI Center: images are left out by default.** Image types (`.png .jpg .jpeg .gif .webp .bmp .ico .svg .tif .tiff .heic .avif .tga .dds`) join `.ini` and `.dll` in the default excluded file types; their names are rarely worth searching. Audio and video stay. Remove them from "Excluded file types" in Search settings to get images back.
+- **AI Center: a whole-drive index reaches Program Files.** `Program Files` and `Program Files (x86)` are no longer in the default `excluded_names`, so settings files kept beside a program can be found. `Windows`, the recycle bin, dependency folders and the suite's own folder stay excluded. An existing `config.json` keeps its own list until edited.
+- **PC Manager: an app link opens a program that sits in the tray.** A program in the tray can keep small helper windows; Clash Verge keeps a visible 13 by 13 tool window. 0.2.10 took that for the program's window, "focused" it and did nothing else. Tool windows are no longer counted, so the link starts the program again, and the running copy shows its window.
+
+# Xiaomi Revamp 0.3.9
+
+PC Manager 0.2.10. AI Center stays at 0.3.6 and Screen Translator at 0.2.7.
+
+- **PC Manager: app links work with User Account Control switched off.** App links in the quick panel, and custom shortcuts that open an app, are started through the desktop's own Explorer so that they never inherit PC Manager's administrator rights, and PC Manager refused when that Explorer was itself elevated. With UAC off every program of an administrator account is elevated, Explorer included, so every link failed with "Windows Explorer could not open this app link". The desktop's Explorer is now accepted in that case. With UAC on the rule is unchanged.
+- **PC Manager: an app link brings a running app forward.** When the linked program already shows a window, that window is restored and focused instead of the program being started again. When it is not running, or only sits in the tray, it is started as before, which lets it open its own window. Links with arguments (File Search, Screen Translator) always run their action.
+
+# Xiaomi Revamp 0.3.8
+
+PC Manager 0.2.9, AI Center 0.3.6. Screen Translator stays at 0.2.7.
+
+- **AI Center: one quiet hint on every search result.** The "Meaning", "Windows" and "Recent choice" badges are gone; they looked different from each other and said little, since almost every result is found by meaning. Each row now shows, in the same muted style, "Opened 3 Oct" when you opened that file from search before, otherwise the date the file was last changed; programs still say "Run". The tooltip keeps the reasons a row matched. Windows' own last-opened date is not used: on a synchronised, indexed drive every file shows this month.
 - **PC Manager: shared colours are published at start.** A palette chosen before 0.3.7 reached the other apps only after pressing Apply on the Shared appearance card or changing the appearance. PC Manager now writes its theme, accent and window colours to the shared settings when it starts, and only when they differ.
+- **REQUIREMENTS.txt.** One plain list of what each app needs on the PC, what it carries with it and what a developer needs, kept at the top of the source and written into the installation folder by the upgrade.
+- **Query benchmark.** `source/file-search/tests/benchmark_query_devices.py` times the device-dependent step of a search (turning the query into a vector) on GPU, NPU and CPU, back to back and after idle pauses.
 
 # Xiaomi Revamp 0.3.7
 

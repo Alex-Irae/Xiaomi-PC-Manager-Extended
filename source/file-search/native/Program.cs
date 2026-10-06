@@ -604,7 +604,7 @@ internal sealed partial class CenterContext : ApplicationContext
             {
                 var history=new SearchHistory(Program.Data);var parameters=request.GetProperty("params");
                 var state=method switch {"local_history_get"=>history.Read(),"local_history_save"=>history.Save(parameters.GetProperty("queries").Deserialize<string[]>()??Array.Empty<string>()),"local_history_remember"=>history.Remember(parameters.GetProperty("query").GetString()!),"local_history_remove"=>history.Remove(parameters.GetProperty("query").GetString()!),_=>history.Clear()};
-                Reply(new {queries=state.Queries,saved=true});
+                Reply(new {queries=state.Queries,opened=SearchHistory.OpenedAt(state),saved=true});
                 if(method=="local_history_clear"){var changed=JsonSerializer.SerializeToElement(new {kind="history_changed",queries=state.Queries});Search.Receive(changed);center?.Receive(changed);}
             }
             catch(Exception error){Reply(null,1,"Protected history is unavailable: "+error.Message);}

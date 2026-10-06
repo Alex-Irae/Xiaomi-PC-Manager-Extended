@@ -37,13 +37,20 @@ async function main(){
   vm.runInContext(fs.readFileSync('frontend/query-filters.js','utf8'),f.context);
   vm.runInContext(fs.readFileSync('frontend/result-fusion.js','utf8'),f.context);
   f.context.ResultFusion=f.window.ResultFusion; // in a browser, window is the global object
+  {
+    // A Windows row of a low-priority file type is lowered; a preferred type gains nothing over local rows.
+    const row=(name,extra={})=>({name,file_path:'C:/Corpus/'+name,matches:[],...extra}),merged=(...windows)=>f.context.ResultFusion.merge([row('local.md')],windows,'notes').map(item=>item.name).join();
+    assert.equal(merged(row('script.py',{type_weight:.7})),'local.md,script.py');
+    assert.equal(merged(row('report.pdf',{type_weight:1.3})),'local.md,report.pdf');
+    assert.equal(merged(row('script.py',{type_weight:.7}),row('report.pdf',{type_weight:1.3})),'local.md,report.pdf,script.py');
+  }
   vm.runInContext(fs.readFileSync('frontend/search.js','utf8'),f.context);await flush();
   assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
   f.ids.query.value='est';f.ids.query.emit('input');
   assert.equal(f.ids.history.hidden,false);assert.equal(f.ids.history.children[1].children[0].textContent,'estimation-free');
   f.ids.history.children[1].children[0].emit('click');await flush();
   assert(calls.some(call=>call.method==='local_search'&&call.params.semantic));
-  assert(f.ids.results.children.some(node=>node.children?.some(child=>child.className==='meaning-hint')));
+  assert(f.ids.results.children.some(node=>node.children?.some(child=>child.className==='open-hint'))&&!f.ids.results.children.some(node=>node.children?.some(child=>child.className==='meaning-hint')));
   f.advance(800);assert(encryptedHistory.includes('estimation-free'));assert.equal(f.stored.has('local-search-history-v1'),false);
   assert.equal(f.ids.history.hidden,false,'Exact previous query must remain visible');
   const resultButton=f.ids.results.children.find(node=>node.className?.startsWith('result'));

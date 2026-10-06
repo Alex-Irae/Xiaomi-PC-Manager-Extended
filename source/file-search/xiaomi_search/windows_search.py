@@ -199,7 +199,7 @@ class WindowsSearch:
                 'file_type': kind, 'file_size': metadata.st_size, 'time_stamp': metadata.st_mtime_ns // 1000000,
                 'file_name_with_highlight': highlighted(path.name, tokens),
                 'snippet': summary[:650], 'matches': ['Windows Search']+(['Previously opened'] if identity in order else []),
-                'windows_result': True, 'windows_rank': rank,
+                'windows_result': True, 'windows_rank': rank, 'type_weight': service.store.type_weight(path.suffix.lower(), kind),
                 'preference_rank': order.get(identity, 1000000)})
             with self.lock:
                 self.issued[identity] = time.monotonic()

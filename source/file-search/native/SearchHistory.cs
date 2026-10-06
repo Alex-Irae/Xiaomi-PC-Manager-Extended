@@ -62,6 +62,10 @@ internal sealed class SearchHistory(string directory)
         state.Opens=state.Opens.GroupBy(value=>value.Query).SelectMany(group=>group.OrderByDescending(value=>value.Count).ThenByDescending(value=>value.Last).Take(20)).ToList();
         Write(state);
     }
+    // When each remembered file was last opened from search, in milliseconds since 1970, for the result list.
+    // Windows' own last-access time is no use for this: synchronisation and indexing touch every file.
+    internal static Dictionary<string,long> OpenedAt(State state)=>state.Opens.GroupBy(item=>item.Path,StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(group=>group.Key,group=>(group.Max(item=>item.Last)-DateTime.UnixEpoch.Ticks)/TimeSpan.TicksPerMillisecond,StringComparer.OrdinalIgnoreCase);
     internal string[] Preferred(string query)=>Read().Opens.Where(item=>item.Query==Key(query)).OrderByDescending(item=>item.Count).ThenByDescending(item=>item.Last).Select(item=>item.Path).ToArray();
     internal static object Check(string directory)
     {
@@ -71,6 +75,8 @@ internal sealed class SearchHistory(string directory)
         history.RecordOpen("  efs ",a);history.RecordOpen("EFS",b);history.RecordOpen("efs",a);
         var reopened=new SearchHistory(directory);if(reopened.Preferred(" EFS ").First()!=a)throw new Exception("Open count priority failed");
         reopened.RecordOpen("efs",b);if(reopened.Preferred("efs").First()!=b)throw new Exception("Recent tie-break failed");
+        var opened=OpenedAt(reopened.Read());long now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if(opened.Count!=2||!opened.TryGetValue(b.ToUpperInvariant(),out long last)||Math.Abs(now-last)>60000)throw new Exception("Last-opened times failed");
         if(Encoding.UTF8.GetString(File.ReadAllBytes(history.path)).Contains("first.txt"))throw new Exception("History leaked plaintext");
         reopened.Remove("EFS");if(reopened.Read().Queries.Length!=0||reopened.Preferred("efs").Length!=0)throw new Exception("Remove did not forget preferences");
         reopened.Remember("other");reopened.Clear();if(reopened.Read().Queries.Length!=0)throw new Exception("Clear failed");
