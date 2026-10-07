@@ -45,6 +45,19 @@ async function main(){
     assert.equal(merged(row('script.py',{type_weight:.7}),row('report.pdf',{type_weight:1.3})),'local.md,report.pdf,script.py');
   }
   vm.runInContext(fs.readFileSync('frontend/search.js','utf8'),f.context);await flush();
+  {
+    // A typed path is looked up, not searched for, and Enter opens the first row in Explorer.
+    const answer=f.context.localBridge.call;let asked=[];
+    f.context.localBridge.call=async(method,params)=>{asked.push([method,params]);if(method==='local_path')return {results:params.text.includes('missing')?[]:[{file_id:null,file_path:'C:\\Users\\Me\\.claude',name:'.claude',file_type:2,file_name_with_highlight:'.claude',matches:['Path'],typed_path:true}]};return answer(method,params);};
+    f.ids.query.value='~\\.claude';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+    assert.equal(JSON.stringify(asked.filter(([method])=>method==='local_path'||method==='local_open_path')),JSON.stringify([['local_path',{text:'~\\.claude'}],['local_open_path',{path:'C:\\Users\\Me\\.claude'}]]));
+    assert(!asked.some(([method])=>method==='local_search'),'a path must not be sent to search');
+    asked=[];f.ids.query.value='C:\\missing';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+    assert(!asked.some(([method])=>method==='local_open_path'));
+    asked=[];f.ids.query.value='~tilde notes';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+    assert(asked.some(([method])=>method==='local_search')&&!asked.some(([method])=>method==='local_path'),'words that only begin with ~ are searched');
+    f.context.localBridge.call=answer;f.ids.query.value='';f.ids.query.emit('input');await flush();calls.length=0;
+  }
   assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
   f.ids.query.value='est';f.ids.query.emit('input');
   assert.equal(f.ids.history.hidden,false);assert.equal(f.ids.history.children[1].children[0].textContent,'estimation-free');
@@ -117,7 +130,7 @@ async function main(){
   for(const key of fields)d.ids[key]=new Element();
   for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby','index-location','index-storage','embedding-model-location','index-folder','backup-index','index-backup-status'])d.ids[key]=new Element();
   for(const key of ['name_enabled','content_enabled','semantic_enabled'])d.ids[key].type='checkbox';
-  const controls={roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],name_only_extensions:['.py','.js'],preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
+  const controls={roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],name_only_extensions:['.py','.js'],model_standby:'keep_loaded',preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
   let mode='paused',onStatus,backup={active:false,phase:''},cancelBackup=false;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null},backup});
   const previews=[];
   d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_index_info')return {path:'C:/Data/index.sqlite3.dpapi',bytes:2147483648,saved:'2026-10-04T00:00:00Z',model_path:'C:/Models/qwen'};if(method==='local_backup_index'){if(cancelBackup)return {cancelled:true};backup={active:true,phase:'Copying encrypted index'};return {accepted:true};}if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
@@ -125,6 +138,8 @@ async function main(){
   assert.equal(d.ids['paths-summary'].children.length,2);
   // The name-only types are an editable list like the excluded types: shown joined, saved as an array.
   assert.equal(d.ids.name_only_extensions.value,'.py, .js');
+  assert.equal(d.ids.model_standby.value,'keep_loaded');d.ids.model_standby.value='free_idle';d.ids.model_standby.emit('change');await flush();
+  assert.equal(JSON.stringify(settingsCalls.filter(c=>c.method==='local_save_config').at(-1).params),JSON.stringify({model_standby:'free_idle'}));
   d.ids.name_only_extensions.value='.py; .ts  .sql';d.ids.name_only_extensions.emit('change');await flush();
   assert.equal(JSON.stringify(settingsCalls.filter(c=>c.method==='local_save_config').at(-1).params),JSON.stringify({name_only_extensions:['.py','.ts','.sql']}));
   d.ids['paths-exclude'].emit('click');for(const path of ['C:/One','C:/Two','C:/Three','C:/Four','C:/Five']){d.ids['path-input'].value=path;d.ids['path-add'].emit('click');await flush();}

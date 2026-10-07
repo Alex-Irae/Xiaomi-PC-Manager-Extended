@@ -121,6 +121,12 @@ def main():
             standby.schedule_release()
             assert standby.timer is not None and standby.timer.is_alive()
             previous_timer = standby.timer
+            standby.config["model_standby"] = "free_idle"
+            standby.schedule_release()
+            assert previous_timer.finished.is_set() and standby.timer is None, "with free_idle the host replaces the worker; the worker keeps its model"
+            standby.config["model_standby"] = "idle_unload"
+            standby.schedule_release()
+            previous_timer = standby.timer
             standby.config["model_standby"] = "keep_loaded"
             standby.schedule_release()
             assert previous_timer.finished.is_set() and standby.timer is None

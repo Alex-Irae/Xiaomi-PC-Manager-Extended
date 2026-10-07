@@ -1,3 +1,22 @@
+# Xiaomi Revamp 0.3.15
+
+AI Center 0.3.11. PC Manager stays at 0.2.13 and Screen Translator at 0.2.8.
+
+- **AI Center: type a path, press Enter, and Explorer opens there.** A query that is a path is not searched: `~` and `~\.claude` (your user folder), a drive path such as `C:\Users`, `%APPDATA%\...` and `\\server\share` are recognised, with `/` accepted for `\`. The bar shows the place itself first, then the entries beside it whose names begin with what was typed last, so `~\.cl` already offers `.claude`; a path ending in `\` lists the folder. Enter opens the first row, the arrow keys choose another. A folder opens in Explorer; a file is shown selected in its folder and is never run. Folders excluded from the index open too: you named the place yourself. The path is remembered with your recent searches.
+
+# Xiaomi Revamp 0.3.14
+
+AI Center 0.3.10, PC Manager 0.2.13, Screen Translator 0.2.8.
+
+- **AI Center: "Search model in memory" in Search settings.** Searching by meaning keeps the model and a table of every passage in memory, 1.6 to 2 GB on a whole-drive index. The new choice "Free when idle" gives that back: after two minutes without a search or embedding work (`idle_unload_seconds`), the search worker is replaced by a fresh one that holds no model, keeps watching files and skips the opening scan. When the search bar opens, the model and the table are loaded while the query is typed; measured from nothing, results by name arrive in about half a second and results by meaning in three to four seconds. Only the open search bar holds the memory; AI Center's own window may stay open. "Keep loaded" stays the default. The third choice, "Stop the search worker when idle", is the older behaviour and ends file watching between searches. The worker is replaced, not emptied, because dropping the model inside it returned only a third of the memory: the GPU runtime keeps the rest until its process ends.
+- **AI Center: no more walk of every folder every few minutes.** With indexing set to realtime, a full walk of all included folders started five minutes after the previous one ended, about every twelve minutes all day on a whole drive, although the file watcher was already reporting changes. While a worker stays and watches, that walk now runs once a day, and at each start.
+- **AI Center: a file that keeps changing is not embedded again at each change.** Logs that grow all day, with two thousand passages each, had every passage embedded again whenever they changed, which kept the GPU working permanently. A changed file is now read again only after five seconds per passage it holds, counted from its last read and capped at a day (`reread_seconds_per_passage` in `config.json`; 0 switches the wait off). A short note is current again within seconds, a large log a few times a day. Until then the stored passages stay searchable. A file that could not be read (too long, locked) is tried again after an hour, not at each change.
+- **AI Center: `.log` joins the name-only types** by default. An existing list in `config.json` is not changed.
+- **AI Center: with "Free when idle", indexing never loads the model by itself.** Application state files and logs change every few seconds; embedding them brought the model back within a minute of its release. Changed files are still read at once, so searching by name and by content stays current, and their passages are embedded while the model is in memory for a search, the most recent first. A walk of the folders (at start, daily, "Index now") still embeds everything it finds. Memory is given back two minutes after the last search or walk, whatever is still waiting.
+- **All three apps: a start before the desktop exists waits for it.** At sign-in an app could be started before Windows Explorer's desktop was there; it then showed "Windows Explorer is unavailable." and did not start. The launcher now waits up to two minutes.
+- **PC Manager: file search is started in the background with "Free when idle" too.** PC Manager started it only when the standby choice was "Keep loaded".
+- **AI Center: "Indexing progress" counts only files due now.** A visit queued for later by the wait above is not shown as outstanding work.
+
 # Xiaomi Revamp 0.3.13
 
 AI Center 0.3.9. PC Manager stays at 0.2.12 and Screen Translator at 0.2.7.

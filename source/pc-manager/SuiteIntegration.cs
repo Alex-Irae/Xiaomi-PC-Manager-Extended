@@ -50,7 +50,8 @@ public sealed partial class ManagerApplication
                 using var saved=File.Exists(config)?JsonDocument.Parse(File.ReadAllText(config)):null;
                 // File search is started in the background only when its own startup settings allow it.
                 bool Wanted(string key,bool fallback)=>saved is null||!saved.RootElement.TryGetProperty(key,out var value)?fallback:value.ValueKind==JsonValueKind.True;
-                if((saved is null || saved.RootElement.TryGetProperty("model_standby",out var mode)&&mode.GetString()=="keep_loaded")&&(Wanted("run_at_startup",true)||Wanted("center_at_startup",false)))
+                // Every standby choice but "idle_unload" keeps a search worker running, so file search is started in the background.
+                if((saved is null || saved.RootElement.TryGetProperty("model_standby",out var mode)&&mode.GetString()!="idle_unload")&&(Wanted("run_at_startup",true)||Wanted("center_at_startup",false)))
                     ProcessSearchResident();
             }
         }

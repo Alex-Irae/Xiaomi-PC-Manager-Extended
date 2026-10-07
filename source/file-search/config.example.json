@@ -54,7 +54,8 @@
     ".css",
     ".sql",
     ".ps1",
-    ".sh"
+    ".sh",
+    ".log"
   ],
   "type_weights": {
     "default": 0.9,
@@ -120,6 +121,7 @@
   "max_extracted_characters": 2000000,
   "max_chunks_per_file": 3000,
   "idle_unload_seconds": 120,
+  "reread_seconds_per_passage": 5,
   "model_standby": "keep_loaded",
   "double_ctrl_ms": 450,
   "shortcut": "double_ctrl",

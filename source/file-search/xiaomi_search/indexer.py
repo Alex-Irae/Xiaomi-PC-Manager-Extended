@@ -38,6 +38,7 @@ class Indexer:
         self.condition = threading.Condition()
         self.jobs = {}
         self.vector_jobs = set()
+        self.catching_up = False  # a walk of the folders is embedding what it found, whatever the standby choice
         self.running = False
         self.busy = False
         self.current = ""
@@ -130,6 +131,9 @@ class Indexer:
         # Startup must not delay the bridge by validating hundreds of thousands of
         # old paths. Search filters apply immediately; scans reconcile metadata.
         self.configure_watch(watch)
+        # Visits a previous worker had put off (see reread_wait) are queued again; each waits out its own time.
+        for path in self.store.stale_files():
+            self.enqueue(path)
         self.thread = threading.Thread(target=self._work, name="local-indexer", daemon=True)
         self.thread.start()
 
@@ -272,6 +276,16 @@ class Indexer:
         changed = row["mtime_ns"] != information.st_mtime_ns or row["size"] != information.st_size or row['ctime_ns'] != information.st_ctime_ns or row["status"] in ("pending", "error") or row["extraction_key"] != self.extraction_key or (name_only and row["status"] != "metadata_only")
         # A readable file that was left as a name only, and whose type is no longer on that list, is read now.
         changed = changed or (not name_only and row["status"] == "metadata_only" and path.suffix.lower() in SUPPORTED and information.st_size <= self.config["max_file_mb"] * 1024 * 1024)
+        if changed and not name_only and row["status"] in ("indexed", "error"):
+            # A file that keeps changing (a log that grows all day) would have every passage embedded again at
+            # each change. It is read again only after a wait that grows with its size; until then its stored
+            # passages stay searchable and the visit is queued for the end of the wait.
+            # A file that could not be read (too long, locked) is tried again after an hour, not at each change.
+            wait = self.store.reread_wait(row["id"], self.config["reread_seconds_per_passage"], 3600 if row["status"] == "error" and self.config["reread_seconds_per_passage"] else 0)
+            if wait > 0:
+                self.store.mark_stale(row["id"])  # a later worker picks the visit up again
+                self.enqueue(path, delay=wait)
+                changed = False
         if changed:
             try:
                 if name_only or information.st_size > self.config["max_file_mb"] * 1024 * 1024 or path.suffix.lower() not in SUPPORTED:
@@ -341,8 +355,20 @@ class Indexer:
             self.semantic_error = str(exc)
             LOG.warning("Semantic backfill paused: %s", exc)
 
+    def _may_embed(self):
+        """With "free when idle" the model is never loaded for background work alone: files that keep
+        changing (application state, logs) would bring it back every few minutes. Their passages wait until
+        a search has loaded the model, or until a walk of the folders (start, "Index now") is catching up."""
+        return self.config["model_standby"] != "free_idle" or getattr(self.embedder, "pipeline", None) is not None or self.catching_up
+
+    def resume_embedding(self):
+        """The model has just been loaded for a search: passages that waited for it are embedded now."""
+        self.vector_jobs.update(self.store.pending_vector_files())
+        with self.condition:
+            self.condition.notify_all()
+
     def _embedding_step(self):
-        if self.vector_jobs and self.config['semantic_enabled'] and not self.semantic_error and self.mode != 'paused' and not (self.mode == 'battery_saver' and on_battery()):
+        if self.vector_jobs and self._may_embed() and self.config['semantic_enabled'] and not self.semantic_error and self.mode != 'paused' and not (self.mode == 'battery_saver' and on_battery()):
             fid = self.vector_jobs.pop()
             self.phase = 'Embedding'
             self._vectors(fid)
@@ -354,7 +380,9 @@ class Indexer:
                 while self.running:
                     now = time.monotonic()
                     ready = next((p for p, deadline in self.jobs.items() if deadline <= now), None)
-                    can_embed = bool(self.vector_jobs) and self.config["semantic_enabled"] and not self.semantic_error and not (self.mode == "battery_saver" and on_battery())
+                    if not self.vector_jobs and not self.scanning:
+                        self.catching_up = False
+                    can_embed = bool(self.vector_jobs) and self._may_embed() and self.config["semantic_enabled"] and not self.semantic_error and not (self.mode == "battery_saver" and on_battery())
                     if self.mode != "paused" and (ready or can_embed):
                         break
                     wait = None
@@ -376,6 +404,7 @@ class Indexer:
                     self.current = str(path)
                     if path.is_dir():
                         self.scanning = path
+                        self.catching_up = True
                         try:
                             self._scan(path)
                         finally:
@@ -417,4 +446,4 @@ class Indexer:
 
     def status(self):
         with self.condition:
-            return {"mode": self.mode, "busy": self.busy, "phase": self.phase if self.busy else 'Idle', "current": self.current, "processed": self.processed, "queued_files": len(self.jobs), "queued_embedding_files": len(self.vector_jobs), "scan_error": self.scan_error, "semantic_error": self.semantic_error}
+            return {"mode": self.mode, "busy": self.busy, "phase": self.phase if self.busy else 'Idle', "current": self.current, "processed": self.processed, "scanning": bool(self.scanning), "catching_up": self.catching_up, "queued_files": sum(1 for deadline in self.jobs.values() if deadline <= time.monotonic() + 60), "queued_embedding_files": len(self.vector_jobs), "scan_error": self.scan_error, "semantic_error": self.semantic_error}

@@ -127,7 +127,7 @@ class Store:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA)
             columns = {row[1] for row in db.execute('PRAGMA table_info(files)')}
-            for name, kind in [('file_key', "TEXT NOT NULL DEFAULT ''"), ('ctime_ns', 'INTEGER NOT NULL DEFAULT 0')]:
+            for name, kind in [('file_key', "TEXT NOT NULL DEFAULT ''"), ('ctime_ns', 'INTEGER NOT NULL DEFAULT 0'), ('read_at', 'REAL NOT NULL DEFAULT 0'), ('stale', 'INTEGER NOT NULL DEFAULT 0')]:
                 if name not in columns:
                     db.execute(f'ALTER TABLE files ADD COLUMN {name} {kind}')
             # Drive-wide discovery must not scan every stored file for each
@@ -213,7 +213,29 @@ class Store:
             for location, text in parts:
                 cursor = db.execute("INSERT INTO chunks(file_id,location,text) VALUES(?,?,?)", (file_id, location, text))
                 db.execute("INSERT INTO chunk_fts(rowid,text) VALUES(?,?)", (cursor.lastrowid, text))
-            db.execute("UPDATE files SET size=?,mtime_ns=?,ctime_ns=?,digest=?,status=?,error=?,extraction_key=?,active=1 WHERE id=?", (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, digest, status, error, extraction_key, file_id))
+            db.execute("UPDATE files SET size=?,mtime_ns=?,ctime_ns=?,digest=?,status=?,error=?,extraction_key=?,read_at=?,stale=0,active=1 WHERE id=?", (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, digest, status, error, extraction_key, time.time(), file_id))
+
+    def mark_stale(self, file_id):
+        with self.connect() as db:
+            db.execute('UPDATE files SET stale=1 WHERE id=? AND stale=0', (file_id,))
+
+    def stale_files(self):
+        """Paths whose changed contents still wait to be read."""
+        with self.connect() as db:
+            return [row[0] for row in db.execute('SELECT path FROM files WHERE stale=1 AND active=1')]
+
+    def pending_vector_files(self, limit=5000):
+        """Files with passages not yet embedded, the most recently read first."""
+        with self.connect() as db:
+            return [row[0] for row in db.execute("SELECT c.file_id FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.vector IS NULL AND f.active=1 AND f.status='indexed' GROUP BY c.file_id ORDER BY max(f.read_at) DESC LIMIT ?", (limit,))]
+
+    def reread_wait(self, file_id, seconds_per_passage, minimum=0):
+        """Seconds until a changed file may be read again: so many per passage it holds (at least
+        `minimum`), counted from its last read and capped at a day. Kept in the index, so a new worker
+        does not start over."""
+        with self.connect() as db:
+            row = db.execute('SELECT read_at,(SELECT count(*) FROM chunks WHERE file_id=files.id) FROM files WHERE id=?', (file_id,)).fetchone()
+        return max(0.0, row[0] + min(max(row[1] * seconds_per_passage, minimum), 86400) - time.time()) if row and row[0] else 0.0
 
     def flush(self):
         if self.protected:
@@ -279,7 +301,7 @@ class Store:
     def record_error(self, file_id, error):
         # Stale content is withheld when a previously indexed file fails to update.
         with self.connect() as db:
-            db.execute("UPDATE files SET status='error',error=? WHERE id=?", (str(error), file_id))
+            db.execute("UPDATE files SET status='error',error=?,read_at=? WHERE id=?", (str(error), time.time(), file_id))
 
     def mark_missing(self, path):
         with self.connect() as db:

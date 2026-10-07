@@ -83,14 +83,19 @@ def validate(config, path):
     config["type_weights"] = {k if k == "default" else "." + k.lower().lstrip("."): v for k, v in weights.items()}
     if config["preferred_device"] not in ("auto", "cpu", "gpu", "npu"):
         raise ValueError("preferred_device must be auto, cpu, gpu, or npu")
-    if config["model_standby"] not in ("idle_unload", "keep_loaded"):
-        raise ValueError("model_standby must be idle_unload or keep_loaded")
+    # keep_loaded: model and passage table stay in memory. free_idle: after idle_unload_seconds the native
+    # host replaces the worker with a fresh one that keeps watching files and loads the model when the
+    # search bar opens. idle_unload: the host stops the worker when nothing uses it.
+    if config["model_standby"] not in ("idle_unload", "free_idle", "keep_loaded"):
+        raise ValueError("model_standby must be keep_loaded, free_idle or idle_unload")
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", config["accent_color"]):
         raise ValueError("accent_color must be a six-digit hex color")
     if config["font_family"] not in ("Segoe UI", "MiSans", "Arial") or config["bar_size"] not in ("compact", "comfortable") or config["arrow_style"] not in ("arrow", "chevron"):
         raise ValueError("Unsupported appearance setting")
     if not isinstance(config["devices"], list) or not config["devices"] or any(d not in ("NPU", "GPU", "CPU") for d in config["devices"]):
         raise ValueError("devices must be an ordered list of NPU, GPU, CPU")
+    if type(config["reread_seconds_per_passage"]) is not int or not 0 <= config["reread_seconds_per_passage"] <= 3600:
+        raise ValueError("reread_seconds_per_passage must be a whole number from 0 to 3600")
     for name in ("max_tokens", "chunk_characters", "max_file_mb", "max_extracted_characters", "max_chunks_per_file", "idle_unload_seconds", "double_ctrl_ms"):
         if type(config[name]) is not int or config[name] <= 0:
             raise ValueError(f"{name} must be a positive integer")

@@ -1,6 +1,8 @@
 """Frontend-independent search service and Xiaomi WebView message adapter."""
 import json
 import copy
+import html
+import os
 import logging
 import threading
 import time
@@ -56,6 +58,60 @@ class Service:
             threading.Thread(target=self._backfill, daemon=True, name='coarse-backfill').start()
         self.embedder.active = lambda: self.maintenance_active or self.indexer.busy or (
             self.indexer.mode != 'paused' and bool(self.indexer.jobs or self.indexer.vector_jobs))
+
+    def warm(self):
+        """Load what a search by meaning needs. Asked for when the search bar opens, so that a worker
+        started without the model has it by the time a query has been typed (three to four seconds)."""
+        if not self.config['semantic_enabled']:
+            return
+        began = time.perf_counter()
+        self.embedder.warm()
+        try:
+            self.store.coarse(self.embedder.identity())
+        except (OSError, ValueError):
+            pass  # the search itself reports a model that cannot be read
+        if time.perf_counter() - began > .5:
+            LOG.info('Search model and passage table ready after %.1f s', time.perf_counter() - began)
+        # While the model is in memory for the search, the passages that waited for it are embedded.
+        self.indexer.resume_embedding()
+
+    @staticmethod
+    def expand_path(text):
+        """A path typed into the search bar, with ~ and %VARIABLES% expanded. None unless it is absolute."""
+        text = text.strip().strip('"')
+        if not text or len(text) > 1024:
+            return None
+        expanded = Path(os.path.expandvars(os.path.expanduser(text.replace('/', '\\'))))
+        return expanded if expanded.is_absolute() else None
+
+    def typed_path(self, text):
+        """Rows for a typed path: the path itself when it exists, then the entries beside it whose names
+        begin with what was typed last (or the folder's own entries after a trailing separator).
+        Nothing here comes from the index: the user named the place, so exclusions do not apply."""
+        target = self.expand_path(text)
+        if target is None:
+            return {"results": []}
+        rows = []
+        try:
+            if target.exists():
+                rows.append(target)
+            listing = target.is_dir() and text.strip().strip('"').endswith(('\\', '/'))
+            folder, begins = (target, '') if listing else (target.parent, target.name.casefold())
+            if folder.is_dir() and folder != target or listing:
+                entries = sorted((entry for entry in os.scandir(folder) if entry.name.casefold().startswith(begins)), key=lambda entry: (not entry.is_dir(), entry.name.casefold()))
+                rows += [Path(entry.path) for entry in entries[:40] if Path(entry.path) != target]
+        except OSError:
+            pass
+        results = []
+        for path in rows[:40]:
+            try:
+                information = path.stat()
+            except OSError:
+                continue
+            name = path.name or str(path)
+            results.append({'file_id': None, 'file_path': str(path), 'name': name, 'file_type': 2 if path.is_dir() else file_type(path), 'file_size': information.st_size,
+                'time_stamp': information.st_mtime_ns // 1000000, 'file_name_with_highlight': html.escape(name), 'matches': ['Path'], 'typed_path': True})
+        return {"results": results}
 
     def _backfill(self):
         try:
@@ -421,6 +477,21 @@ class Service:
         if method == "local_mode":
             self.indexer.set_mode(params.get("mode"))
             return self.status()
+        if method == "local_path":
+            text = params.get("text", "")
+            if not isinstance(text, str):
+                raise ValueError("Invalid path")
+            return self.typed_path(text)
+        if method == "local_open_path":
+            target = self.expand_path(params.get("path", "")) if isinstance(params.get("path"), str) else None
+            if target is None or not target.exists():
+                raise ValueError("No such file or folder")
+            # Explorer shows the place; nothing is run. A file is selected in its folder.
+            self.window_action("folder" if target.is_dir() else "reveal", {"path": str(target)})
+            return {}
+        if method == "local_warm":
+            threading.Thread(target=self.warm, daemon=True, name='search-warmup').start()
+            return {}
         if method == "local_model_release":
             self.embedder.unload()
             return self.status()

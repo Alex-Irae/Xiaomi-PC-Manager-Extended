@@ -190,7 +190,42 @@ internal sealed partial class CenterContext : ApplicationContext
     // Headless checks run from a build folder and must never register that copy with Windows startup.
     readonly bool registersStartup;
     JsonElement? readinessStatus;
-    internal bool KeepSearchReady => residentEnabled && settings.GetProperty("model_standby").GetString()=="keep_loaded";
+    // Only "idle_unload" lets the search worker stop when nothing uses it. "free_idle" keeps a worker and its
+    // file watcher at all times and replaces the one that loaded the model (see FreeIdleMemory).
+    internal bool KeepSearchReady => residentEnabled && settings.GetProperty("model_standby").GetString()!="idle_unload";
+    bool FreeWhenIdle => residentEnabled && settings.GetProperty("model_standby").GetString()=="free_idle";
+    // The worker may have loaded the model or the passage table since it started.
+    bool memoryUsed;
+    bool lightStart;
+    bool workerScanning;
+    int workerQueued;
+    string? freeWaiting;
+    DateTime lastUse=DateTime.UtcNow;
+    // With "free_idle" the worker probably holds no model: it is loaded while the query is being typed.
+    internal void WarmSearch()
+    {
+        if(!FreeWhenIdle)return;
+        EnsureBackend();memoryUsed=true;lastUse=DateTime.UtcNow;
+        Write(new {owner="suite",mode=0,data=new {id=2147483644,persistent=false,request=new {method="local_warm"}}});
+    }
+    // The model's memory (about a gigabyte, plus a kilobyte per passage) only returns to Windows when its
+    // process ends: dropping the model inside the worker kept about 800 MB, also after OpenVINO's own
+    // shutdown call (results 034 and 035). So after the idle time the worker is replaced by a fresh one,
+    // which watches files from its first second and skips the opening scan its predecessor already did.
+    void FreeIdleMemory()
+    {
+        // Not IndexingActive: files that change every second keep the worker "active" for milliseconds at a time
+        // all day. A walk of the folders or a requested index must finish first; embedding counts as use below.
+        // Only the search bar holds the model. AI Center's own window may stay open for hours: its pages ask
+        // again when a worker is replaced, and an open settings page kept 1.5 GB in memory for nothing.
+        if(!FreeWhenIdle||!memoryUsed)return;
+        string? waiting=backend is null||backend.HasExited||!backendReady?"the worker is starting":outstanding.Count>0?"requests without an answer: "+string.Join(", ",outstanding):backgroundIndex?"the scheduled index":indexingRequests.Count>0?"a requested index":workerScanning?"a walk of the folders":workerQueued>20?"files waiting to be read":Search.Visible?"the open search bar":settingsRequests.Count>0?"a settings change":null;
+        // One line per change of reason, so the log shows why memory was not given back.
+        if(waiting!=freeWaiting){freeWaiting=waiting;if(waiting is not null)Program.Log("Idle memory is kept for now: "+waiting);}
+        if(waiting is not null||DateTime.UtcNow-lastUse<TimeSpan.FromSeconds(settings.GetProperty("idle_unload_seconds").GetInt32()))return;
+        memoryUsed=false;workerScanning=false;workerQueued=0;StopBackend("idle: replaced by a fresh worker to free memory");
+        lightStart=true;EnsureBackend();idle.Start();
+    }
     CenterWindow? center;
     JsonElement settings;
     JsonElement? settingsHistory;
@@ -222,7 +257,7 @@ internal sealed partial class CenterContext : ApplicationContext
         tray.ContextMenuStrip.Items.Add("AI Center",null,(_,_)=>ShowCenter());
         tray.ContextMenuStrip.Items.Add("File Search",null,(_,_)=>Search.ShowSearch());
         tray.ContextMenuStrip.Items.Add("Quit AI Center",null,(_,_)=>QuitCenter());tray.DoubleClick+=(_,_)=>ShowCenter();
-        idle.Tick+=(_,_)=>{if(!KeepSearchReady&&outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");};
+        idle.Tick+=(_,_)=>{if(!KeepSearchReady&&outstanding.Count==0&&!IndexingActive)StopBackend("30 seconds without a request");else FreeIdleMemory();};
         string schedule=Path.Combine(Program.Data,"schedule.txt");
         if(File.Exists(schedule)&&DateTime.TryParse(File.ReadAllText(schedule),out var time))lastScheduled=time.ToUniversalTime();
         else if(!headless)File.WriteAllText(schedule,lastScheduled.ToString("O"));
@@ -278,7 +313,9 @@ internal sealed partial class CenterContext : ApplicationContext
         if(KeepSearchReady && (backend is null||backend.HasExited))EnsureBackend();
         if(backgroundIndex&&settings.GetProperty("indexing_mode").GetString()=="battery_saver"&&SystemInformation.PowerStatus.PowerLineStatus==PowerLineStatus.Offline){StopBackend("scheduled indexing paused on battery");return;}
         if(IndexingActive||(backend is not null&&!KeepSearchReady)||!settings.TryGetProperty("indexing_frequency",out var frequency))return;
-        int minutes=frequency.GetString() switch {"realtime"=>5,"5_minutes"=>5,"15_minutes"=>15,"hourly"=>60,"daily"=>1440,_=>0};
+        // "realtime" with a worker that stays and watches files needs no walk of every folder every few minutes:
+        // that walk ran about every twelve minutes all day. One a day catches what the watcher missed.
+        int minutes=frequency.GetString() switch {"realtime"=>KeepSearchReady?1440:5,"5_minutes"=>5,"15_minutes"=>15,"hourly"=>60,"daily"=>1440,_=>0};
         string mode=settings.GetProperty("indexing_mode").GetString()!;
         if(minutes==0||mode=="paused"||DateTime.UtcNow-lastScheduled<TimeSpan.FromMinutes(minutes)||(mode=="battery_saver"&&SystemInformation.PowerStatus.PowerLineStatus==PowerLineStatus.Offline))return;
         EnsureBackend();backgroundIndex=true;outstanding.Add("maintenance:987654321");
@@ -295,9 +332,12 @@ internal sealed partial class CenterContext : ApplicationContext
         {WorkingDirectory=Program.Root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
         start.ArgumentList.Add("-m");start.ArgumentList.Add("xiaomi_search.backend");
         start.ArgumentList.Add("--config");start.ArgumentList.Add(Program.Config);start.ArgumentList.Add("--data");start.ArgumentList.Add(Program.Data);
-        if(paused)start.ArgumentList.Add("--paused");if(noShortcut)start.ArgumentList.Add("--no-shortcut");start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONDONTWRITEBYTECODE"]="1";
+        if(paused)start.ArgumentList.Add("--paused");if(noShortcut)start.ArgumentList.Add("--no-shortcut");
+        if(lightStart){start.ArgumentList.Add("--no-scan");lightStart=false;}start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONDONTWRITEBYTECODE"]="1";
         var process=Process.Start(start)??throw new InvalidOperationException("Local backend failed to start.");backend=process;
-        Program.Log($"Owned backend started: {process.Id}");process.EnableRaisingEvents=true;
+        Program.Log($"Owned backend started: {process.Id}");
+        // The idle timer otherwise starts with the first request from a window, which a worker started in the background never gets.
+        if(FreeWhenIdle)idle.Start();process.EnableRaisingEvents=true;
         process.Exited+=(_,_)=>Post(()=>{if(ReferenceEquals(backend,process)&&!Program.Exiting){Program.Log("Search backend exited unexpectedly");backend=null;NotifyStopped();process.Dispose();}});
         _=Task.Run(async()=>
         {
@@ -629,6 +669,8 @@ internal sealed partial class CenterContext : ApplicationContext
         bool warmRead=KeepSearchReady&&owner=="search"&&(method.StartsWith("register_",StringComparison.Ordinal)||method=="local_status");
         if(!ActiveWindow&&!pendingEdit&&!warmRead){Reply(null,1,"Search is dismissed");return;}
         EnsureBackend();Touch();
+        // Only a search loads the model; the scheduled index check every few minutes must not count as use.
+        if(method=="local_search"){memoryUsed=true;lastUse=DateTime.UtcNow;}
         if(method is "local_index_now" or "local_reset_index")indexingRequests.Add(owner+":"+data.GetProperty("id").GetRawText());
         if(method=="local_save_config")settingsRequests.Add(owner+":"+data.GetProperty("id").GetRawText());
         if(message.TryGetProperty("mode",out var mode)&&mode.GetInt32()==0&&data.TryGetProperty("id",out var identifier)&&(!data.TryGetProperty("persistent",out var persistent)||!persistent.GetBoolean()))outstanding.Add(owner+":"+identifier.GetRawText());
@@ -658,6 +700,13 @@ internal sealed partial class CenterContext : ApplicationContext
             {
                 var activity=message.GetProperty("indexer");
                 workerIndexing=WorkerActive(activity);
+                // Embedding new passages loads the model too, without any search.
+                // A walk that is catching up keeps the model; passages that only wait for it do not, or files
+                // that change all day would hold it for ever. They are embedded during the next search.
+                if(activity.TryGetProperty("catching_up",out var catching)&&catching.GetBoolean()){memoryUsed=true;lastUse=DateTime.UtcNow;}
+                else if(activity.GetProperty("phase").GetString()=="Embedding")memoryUsed=true;
+                workerQueued=activity.GetProperty("queued_files").GetInt32();
+                workerScanning=activity.TryGetProperty("scanning",out var scanning)&&scanning.GetBoolean();
                 if(!workerIndexing&&!IndexingActive&&!ActiveWindow&&outstanding.Count==0)CheckUnused();
             }
             else if(kind.GetString()=="action")
@@ -711,6 +760,9 @@ internal sealed partial class CenterContext : ApplicationContext
                 bool opened=true;if(testFileLaunch is not null)opened=testFileLaunch(action,file);else if(action=="open_with")opened=FileActions.OpenWith(file);else Process.Start(new ProcessStartInfo(file){UseShellExecute=true});
                 if(opened&&args.TryGetProperty("query",out var query))try{new SearchHistory(Program.Data).RecordOpen(query.GetString()??"",file);}catch(Exception error){Program.Log("Remembering open failed: "+error.Message);}
                 return new {opened};
+            case "folder":
+                if(testFileLaunch is not null){testFileLaunch(action,args.GetProperty("path").GetString()!);break;}
+                var folder=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};folder.ArgumentList.Add(args.GetProperty("path").GetString()!);Process.Start(folder);break;
             case "reveal":if(testFileLaunch is not null){testFileLaunch(action,args.GetProperty("path").GetString()!);break;}var explorer=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};explorer.ArgumentList.Add("/select,");explorer.ArgumentList.Add(args.GetProperty("path").GetString()!);Process.Start(explorer);break;
             case "copy":Clipboard.SetText(args.GetProperty("path").GetString()!);break;
             case "choose_folder":if(testBackupFolder is not null)return testBackupFolder;using(var dialog=new FolderBrowserDialog {Description="Choose a backup or folder location"})return dialog.ShowDialog(center)==DialogResult.OK?dialog.SelectedPath:null;
@@ -1094,7 +1146,7 @@ internal sealed class SearchWindow : WebWindow
     }
     internal void ShowSearch()
     {
-        App.HideCenterForSearch();
+        App.HideCenterForSearch();App.WarmSearch();
         Program.Log($"Show search: handle={Handle}, dpi={DeviceDpi}");
         if(!placed)
         {

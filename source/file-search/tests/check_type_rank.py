@@ -65,6 +65,34 @@ def main():
         assert service.config['name_only_extensions']==['.js'] and json.loads((args.output/'config.json').read_text(encoding='utf-8'))['name_only_extensions']==['.js']
         service.indexer._file(corpus/'late.py')
         assert 'late.py' in order('quagga')
+        # A file that changes again soon after it was read keeps its stored passages until its wait is over.
+        assert cfg['reread_seconds_per_passage']==5 and '.log' in load('config.example.json')['name_only_extensions']
+        diary=corpus/'diary.md';diary.write_text('the okapi lives in the forest',encoding='utf-8');service.indexer._file(diary)
+        diary.write_text('the okapi lives in the forest, and so does the bongo',encoding='utf-8');service.indexer._file(diary)
+        assert 'diary.md' in order('okapi') and 'diary.md' not in order('bongo') and str(diary.absolute()) in service.indexer.jobs
+        assert service.store.stale_files()==[str(diary.resolve())],'a put-off visit must survive a change of worker'
+        # "Free when idle": background embedding never loads the model by itself.
+        service.config['model_standby']='free_idle'
+        assert not service.indexer._may_embed()
+        service.embedder.pipeline=object();assert service.indexer._may_embed()
+        service.embedder.pipeline=None;service.indexer.catching_up=True;assert service.indexer._may_embed()
+        service.indexer.catching_up=False;service.config['model_standby']='keep_loaded';assert service.indexer._may_embed()
+        with service.store.connect() as db:db.execute("UPDATE files SET read_at=read_at-10 WHERE name='diary.md'")
+        service.indexer._file(diary)
+        assert 'diary.md' in order('bongo') and service.store.stale_files()==[]
+        # A typed path: the place itself first, then what begins like it; a trailing separator lists the folder.
+        paths=lambda text:[row['file_path'] for row in service.dispatch('local_path',{'text':text})['results']]
+        assert paths(str(corpus))[0]==str(corpus) and all(row['typed_path'] for row in service.dispatch('local_path',{'text':str(corpus)})['results'])
+        assert set(paths(str(corpus)+'\\'))>={str(corpus/'diary.md'),str(corpus/'display settings folder')} and paths(str(corpus)+'\\')[1]==str(corpus/'display settings folder'),'folders come first'
+        assert paths(str(corpus/'zebra'))==[str(corpus/'zebra notes.md'),str(corpus/'zebra tool.py')]
+        assert paths('~')==[str(Path.home())] and paths('%USERPROFILE%')[0]==str(Path.home()) and paths('diary.md')==[] and paths(str(corpus/'nothing here'))==[]
+        opened=[];service.window_action=lambda action,params:opened.append((action,params['path']))
+        service.dispatch('local_open_path',{'path':str(corpus)});service.dispatch('local_open_path',{'path':str(corpus/'diary.md')})
+        assert opened==[('folder',str(corpus)),('reveal',str(corpus/'diary.md'))]
+        for bad in ('diary.md',str(corpus/'nothing here'),''):
+            try:service.dispatch('local_open_path',{'path':bad})
+            except ValueError:continue
+            raise AssertionError(f'opened {bad!r}')
         for wrong in ({'.pdf':'high'},{'.pdf':-1},{'p d f':1},[]):
             try:validate({**cfg,'type_weights':wrong},args.output/'config.json')
             except ValueError:continue

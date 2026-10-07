@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--data", default="data", help="Private application index/cache directory")
     parser.add_argument("--paused", action="store_true", help="Pause background indexing for an explicit validation session")
     parser.add_argument("--no-shortcut", action="store_true", help="Suppress the native host shortcut for this session")
+    parser.add_argument("--no-scan", action="store_true", help="Skip the opening scan: this worker replaces one that was watching until a moment ago")
     args = parser.parse_args()
     data = Path(args.data).resolve()
     data.mkdir(parents=True, exist_ok=True)
@@ -89,9 +90,11 @@ def main():
     try:
         logging.info('Starting index notifications')
         service.indexer.start(watch=settings['indexing_frequency'] == 'realtime')
-        if settings['indexing_frequency'] == 'realtime':
+        if settings['indexing_frequency'] == 'realtime' and not args.no_scan:
             service.indexer.request_scan()
         send({"kind": "ready", "settings": settings, "pid": os.getpid()})
+        if args.no_scan:
+            service.notify()  # tells the host that nothing is being indexed, so the next idle period can free memory again
         if not trace_seconds:
             faulthandler.cancel_dump_traceback_later()
         logging.info('Local search backend ready')

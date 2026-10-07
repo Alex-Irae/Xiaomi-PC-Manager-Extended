@@ -19,14 +19,14 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("Xiaomi Revamp")]
 #if PC_MANAGER
-[assembly: AssemblyVersion("0.2.12.0")]
-[assembly: AssemblyFileVersion("0.2.12.0")]
+[assembly: AssemblyVersion("0.2.13.0")]
+[assembly: AssemblyFileVersion("0.2.13.0")]
 #elif FILE_SEARCH
-[assembly: AssemblyVersion("0.3.9.0")]
-[assembly: AssemblyFileVersion("0.3.9.0")]
+[assembly: AssemblyVersion("0.3.11.0")]
+[assembly: AssemblyFileVersion("0.3.11.0")]
 #else
-[assembly: AssemblyVersion("0.2.7.0")]
-[assembly: AssemblyFileVersion("0.2.7.0")]
+[assembly: AssemblyVersion("0.2.8.0")]
+[assembly: AssemblyFileVersion("0.2.8.0")]
 #endif
 
 internal static class Launcher
@@ -82,6 +82,9 @@ internal static class Launcher
             windows=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("9BA05972-F6A8-11CF-A442-00A0C90A8F39")));
             object location=0,root=0;int hwnd;
             desktop=((dynamic)windows).FindWindowSW(ref location,ref root,8,out hwnd,1);
+            // At sign-in an app can be started before the desktop exists: the start then failed with this
+            // message and the app did not run. The desktop is waited for, up to two minutes.
+            for(int attempt=0;desktop==null&&attempt<240;attempt++){Thread.Sleep(500);desktop=((dynamic)windows).FindWindowSW(ref location,ref root,8,out hwnd,1);}
             if(desktop==null)throw new InvalidOperationException("Windows Explorer is unavailable.");
             document=((dynamic)desktop).Document;shell=((dynamic)document).Application;
             ((dynamic)shell).ShellExecute(executable,arguments,Path.GetDirectoryName(executable),"open",1);
