@@ -67,15 +67,16 @@ def validate(config, path):
     # Older settings files have no entry: AI Center's tray icon then stays off at sign-in.
     if type(config.setdefault('center_at_startup', False)) is not bool:
         raise ValueError('center_at_startup must be a boolean')
-    for key in ("excluded_folders", "excluded_extensions"):
+    for key in ("excluded_folders", "excluded_extensions", "name_only_extensions"):
         if not isinstance(config[key], list) or any(not isinstance(v, str) or not v.strip() for v in config[key]):
             raise ValueError(f"{key} must be a list of nonempty strings")
     if any(not Path(p).is_absolute() for p in config['excluded_folders']):
         raise ValueError('Excluded folders must be absolute paths')
     config["excluded_folders"] = list(dict.fromkeys(str(Path(p).resolve()) for p in config["excluded_folders"]))
-    if any(not re.fullmatch(r"\.?[\w+-]+", v) for v in config["excluded_extensions"]):
-        raise ValueError("Excluded file types must be extensions such as .pdf or .py")
-    config["excluded_extensions"] = list(dict.fromkeys("." + v.lower().lstrip(".") for v in config["excluded_extensions"]))
+    for key in ("excluded_extensions", "name_only_extensions"):
+        if any(not re.fullmatch(r"\.?[\w+-]+", v) for v in config[key]):
+            raise ValueError("Excluded and name-only file types must be extensions such as .pdf or .py")
+        config[key] = list(dict.fromkeys("." + v.lower().lstrip(".") for v in config[key]))
     weights = config["type_weights"]
     if not isinstance(weights, dict) or any(not isinstance(k, str) or not (k == "default" or re.fullmatch(r"\.?[\w+-]+", k)) or type(v) not in (int, float) or not 0 <= v <= 10 for k, v in weights.items()):
         raise ValueError("type_weights must map extensions such as .pdf, or default, to a number from 0 to 10")

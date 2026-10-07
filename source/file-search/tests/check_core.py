@@ -18,7 +18,14 @@ from xiaomi_search.config import PROJECT, validate
 from xiaomi_search.extract import chunks
 from xiaomi_search.embedding import Embedder
 from xiaomi_search.service import Service
-from xiaomi_search.store import highlighted
+from xiaomi_search.store import COARSE_DIMENSION, highlighted
+
+
+def unit(*leading):
+    """Synthetic vector as long as the index's fast-scan prefix; the scan skips shorter ones."""
+    vector = np.zeros(COARSE_DIMENSION, dtype=np.float32)  # shape: [C]
+    vector[:len(leading)] = leading
+    return vector
 
 
 def main():
@@ -74,11 +81,11 @@ def main():
                     return "synthetic-v1"
 
                 def encode(self, texts, query=False):
-                    return np.asarray([[1, 0]], dtype=np.float32)  # shape: [1,2]
+                    return unit(1)[None]  # shape: [1,C]
 
             fid = service.store.get_file(path=str(first))["id"]
             for row in service.store.pending_vectors(fid, "synthetic-v1"):
-                service.store.put_vector(row["id"], np.asarray([1, 0], dtype=np.float32), "synthetic-v1")  # shape: [2]
+                service.store.put_vector(row["id"], unit(1), "synthetic-v1")  # shape: [C]
             hybrid = service.store.search("common interpolation weights", SyntheticEmbedder())
             assert hybrid["results"][0]["name"] == "cohesion.md"
             assert "Semantic" in hybrid["results"][0]["matches"], "Vector channel must contribute without literal overlap"
@@ -87,7 +94,7 @@ def main():
             service.store.save(row["id"], second.stat(), "coverage-fixture", chunks(second, config), service.indexer.extraction_key)
             for passage in service.store.pending_vectors(row["id"], "synthetic-v1"):
                 # The decoy is weaker semantically, but has one incidental lexical word.
-                service.store.put_vector(passage["id"], np.asarray([.8, .6], dtype=np.float32), "synthetic-v1")  # shape: [2]
+                service.store.put_vector(passage["id"], unit(.8, .6), "synthetic-v1")  # shape: [C]
             ranking = service.store.search("learningless synthesis utilizing collective repulsions", SyntheticEmbedder())["results"]
             assert ranking[0]["name"] == "cohesion.md", "One incidental word must not outweigh the strongest meaning-only match"
             assert service.store.search("budget.md", SyntheticEmbedder())["results"][0]["name"] == "budget.md", "Exact filename priority must survive semantic fusion"

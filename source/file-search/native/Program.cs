@@ -402,7 +402,13 @@ internal sealed partial class CenterContext : ApplicationContext
         Search.Hide();await Wait(()=>!Search.BrowserLoaded);
         ShowCenter();await Wait(()=>center!.PageReady);if(!tray.Visible)throw new InvalidOperationException("Opening AI Center did not restore its tray icon");
         center!.Hide();await Wait(()=>!center.BrowserLoaded);
-        return new {passed=true,quitKeepsSearch=true,outsideStartupChangeApplied=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
+        // The shared browser process ending under an open window (a crash, or a disconnected one being ended
+        // after standby) must leave a working window, not a black one.
+        ShowCenter();await Wait(()=>center!.PageReady);
+        var lost=center!.BrowserIdentity;WebWindow.EndBrowserProcess();
+        await Wait(()=>center.PageReady&&center.BrowserIdentity is not null&&!ReferenceEquals(center.BrowserIdentity,lost));
+        center.Hide();await Wait(()=>!center.BrowserLoaded);
+        return new {passed=true,windowRecoversFromLostBrowser=true,quitKeepsSearch=true,outsideStartupChangeApplied=true,hiddenStartupLoadedBrowser=false,centerTrayVisible=true,minimizedTrayVisible=true,hiddenCenterTrayVisible=true,searchTrayVisible=true,centerBrowserReleased=true,searchBrowserReleased=true,searchBrowserRecreated=true,centerAccentChanges=true,searchAccentChanges=true,releaseAfterMilliseconds=5000};
     }
     internal async Task<object> CheckUX()
     {
@@ -783,7 +789,11 @@ internal class WebWindow : Form
     protected WebView2 Web=new() {Dock=DockStyle.Fill};
     readonly System.Windows.Forms.Timer browserIdle=new() {Interval=5000};
     readonly string owner,page;
-    bool loading,navigated;
+    bool loading,navigated,recovering;
+    // Both windows share one embedded browser process. It is remembered so that it can be ended when it has
+    // stopped answering (see Initialize).
+    static int browserProcess;
+    static DateTime browserStarted;
     Point dragOrigin;
     protected bool Ready;
     internal WebWindow(CenterContext app,string owner,string page)
@@ -831,6 +841,8 @@ internal class WebWindow : Form
             await web.EnsureCoreWebView2Async(environment);
             if(web!=Web||web.IsDisposed)return;
             var core=web.CoreWebView2;
+            try{using var browser=Process.GetProcessById((int)core.BrowserProcessId);browserProcess=browser.Id;browserStarted=browser.StartTime;}
+            catch(Exception error) when(error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception){browserProcess=0;}
             core.SetVirtualHostNameToFolderMapping("ai-center.local",Path.Combine(Program.Root,"frontend"),CoreWebView2HostResourceAccessKind.Deny);
             core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.AreDevToolsEnabled=false;core.Settings.IsStatusBarEnabled=false;core.Settings.IsZoomControlEnabled=false;
             core.NavigationStarting+=(_,eventArgs)=>{ if(!eventArgs.Uri.StartsWith(Program.Origin+"/",StringComparison.Ordinal))eventArgs.Cancel=true; };
@@ -847,12 +859,48 @@ internal class WebWindow : Form
                 }
                 catch(Exception exc){Program.Log(exc.ToString());}
             };
-            core.ProcessFailed+=(_,eventArgs)=>{Program.Log("WebView process failed: "+eventArgs.ProcessFailedKind);};
+            core.ProcessFailed+=(_,eventArgs)=>
+            {
+                Program.Log("WebView process failed: "+eventArgs.ProcessFailedKind);
+                // The shared browser process ended (a crash, or the other window ending a disconnected one):
+                // this window takes a fresh browser now, or the next time it is shown.
+                if(eventArgs.ProcessFailedKind==CoreWebView2ProcessFailedKind.BrowserProcessExited&&web==Web)BeginInvoke(()=>{if(web!=Web)return;ReleaseBrowser();if(Visible||(owner=="search"&&App?.KeepSearchReady==true))_=Initialize(!Visible);});
+            };
             core.NavigationCompleted+=(_,eventArgs)=>{if(eventArgs.IsSuccess&&web==Web){navigated=true;NavigationReady();}};
-            Ready=true;core.Navigate(Program.Origin+"/"+page);
+            Ready=true;recovering=false;core.Navigate(Program.Origin+"/"+page);
         }
-        catch(Exception exc){if(web==Web&&!web.IsDisposed){Program.Log(exc.ToString());if(Visible)MessageBox.Show(this,exc.Message,"Local UI unavailable");}}
+        catch(Exception exc)
+        {
+            if(web!=Web||web.IsDisposed)return;
+            Program.Log(exc.ToString());
+            // After hours of standby the browser process can be disconnected from this program: every new
+            // window then failed with "The object invoked has disconnected from its clients" until a reboot.
+            // First that process is ended and the window tries again with a fresh one. If that fails too,
+            // the stale connection is held inside this program, and only a new program instance clears it:
+            // the launcher starts one when this one ends with an error code.
+            if(!recovering)
+            {
+                recovering=true;EndBrowserProcess();ReleaseBrowser();
+                await Task.Delay(500);await Initialize(prepare);return;
+            }
+            Program.Log("The window could not be opened twice; restarting");
+            if(Visible)MessageBox.Show(this,"The window could not be opened ("+exc.Message+").\n\nAI Center restarts itself now. Open it again in a few seconds.","AI Center");
+            Environment.ExitCode=1;App.Quit();
+        }
         finally{if(web==Web)loading=false;}
+    }
+    internal static void EndBrowserProcess()
+    {
+        if(browserProcess==0)return;
+        try
+        {
+            using var browser=Process.GetProcessById(browserProcess);
+            // The number may have been given to another program since: name and start time must still match.
+            if(!browser.ProcessName.Equals("msedgewebview2",StringComparison.OrdinalIgnoreCase)||browser.StartTime!=browserStarted)return;
+            browser.Kill(true);browser.WaitForExit(3000);Program.Log("Ended the disconnected browser process "+browserProcess);
+        }
+        catch(Exception error) when(error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception){}
+        finally{browserProcess=0;}
     }
     protected virtual void NavigationReady(){}
     protected virtual void HostAction(string action,JsonElement message)

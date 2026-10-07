@@ -1,3 +1,11 @@
+# Xiaomi Revamp 0.3.12
+
+AI Center 0.3.8. PC Manager stays at 0.2.12 and Screen Translator at 0.2.7.
+
+- **AI Center: a window recovers when its embedded browser is gone.** After hours of standby, opening AI Center showed a black window and "The object invoked has disconnected from its clients", and only a reboot helped. The two windows share one browser process; when a window cannot be opened, that process is now ended and the window tries once more with a fresh one. If that fails as well, AI Center restarts itself (the launcher starts a new copy) instead of leaving a dead window. A window that loses its browser while open takes a new one. The resident check ends the browser under an open window and expects a working page again.
+- **AI Center: source code is found by name only.** A new `name_only_extensions` setting in `config.json` lists types whose contents are never read or embedded (`.py .c .cpp .h .hpp .java .js .jsx .ts .tsx .html .css .sql .ps1 .sh`). On a whole-drive index with Program Files, code was 83% of 2.3 million passages and of the embedding work: the index had grown to 16 GB and the GPU worked through a night. Files stay findable by name and path. There is no control in Settings: edit the list and restart AI Center; an empty list reads every supported type again.
+- **AI Center: `compact` command.** `python -m xiaomi_search --config <config.json> --data <data folder> compact`, run with AI Center closed, deletes the rows of files that are excluded or gone, removes the passages of name-only types, and shrinks the index file. Nothing is compacted automatically: rewriting a file of several gigabytes takes minutes.
+
 # Xiaomi Revamp 0.3.11
 
 PC Manager 0.2.12. AI Center stays at 0.3.7 and Screen Translator at 0.2.7.

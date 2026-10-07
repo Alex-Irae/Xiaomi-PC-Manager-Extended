@@ -44,6 +44,22 @@ def main():
         assert order('display settings')[0]=='display settings.py'
         service.store.type_weights={}
         assert set(order('display settings'))==set(found)
+        # Source code is found by name only: its contents are never read. A code file indexed before the
+        # rule loses its passages at the next visit, and compact() does the same for the whole index at once.
+        for name in ('zebra notes.md','zebra tool.py','old report.md'):(corpus/name).write_text('the quagga is a striped animal',encoding='utf-8')
+        cfg['name_only_extensions']=[]
+        for name in ('zebra notes.md','zebra tool.py','old report.md'):service.indexer._file(corpus/name)
+        assert {'zebra notes.md','zebra tool.py','old report.md'}<=set(order('quagga'))
+        cfg['name_only_extensions']=['.py']
+        service.store.mark_missing(corpus/'old report.md')
+        passages=lambda:service.store.connect().__enter__().execute('SELECT count(*) FROM chunks').fetchone()[0]
+        before=passages()
+        assert service.store.compact(cfg['name_only_extensions'])=={'removed_files':1,'name_only_files':1}
+        assert passages()==before-2 and order('quagga')==['zebra notes.md'] and 'zebra tool.py' in order('zebra')
+        service.indexer._file(corpus/'old report.md')
+        assert set(order('quagga'))=={'zebra notes.md','old report.md'},'a returning file is indexed afresh'
+        (corpus/'late.py').write_text('the quagga again',encoding='utf-8');service.indexer._file(corpus/'late.py')
+        assert 'late.py' not in order('quagga') and 'late.py' in order('late')
         for wrong in ({'.pdf':'high'},{'.pdf':-1},{'p d f':1},[]):
             try:validate({**cfg,'type_weights':wrong},args.output/'config.json')
             except ValueError:continue

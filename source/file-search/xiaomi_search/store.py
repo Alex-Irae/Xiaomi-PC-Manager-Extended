@@ -248,6 +248,34 @@ class Store:
         self.flush()
         return str(target)
 
+    def compact(self, name_only=()):
+        """Remove what the current settings no longer search, then give the disk space back.
+
+        Rows of files that are excluded or gone are deleted (such a file is indexed afresh if it
+        returns), and files of the name-only types lose their passages. Run with the app closed:
+        the final VACUUM rewrites the whole file. Returns the number of files of each kind.
+        """
+        marks = ','.join('?' * len(name_only))
+        with self.connect() as db:
+            gone = [row[0] for row in db.execute('SELECT id FROM files WHERE active=0')]
+            named = [row[0] for row in db.execute(f"SELECT id FROM files WHERE active=1 AND status<>'metadata_only' AND extension IN ({marks})", list(name_only))] if name_only else []
+        # Small transactions: one over two million passages would grow the journal by gigabytes.
+        for ids, removed in ((gone, True), (named, False)):
+            for start in range(0, len(ids), 500):
+                batch = ids[start:start + 500]
+                some = ','.join('?' * len(batch))
+                with self.connect() as db:
+                    db.execute(f'DELETE FROM chunks WHERE file_id IN ({some})', batch)
+                    if removed:
+                        db.execute(f'DELETE FROM file_fts WHERE rowid IN ({some})', batch)
+                        db.execute(f'DELETE FROM files WHERE id IN ({some})', batch)
+                    else:
+                        db.execute(f"UPDATE files SET status='metadata_only',digest='',error=NULL WHERE id IN ({some})", batch)
+        with self.connect() as db:
+            db.execute('VACUUM')
+        self.flush()
+        return {'removed_files': len(gone), 'name_only_files': len(named)}
+
     def record_error(self, file_id, error):
         # Stale content is withheld when a previously indexed file fails to update.
         with self.connect() as db:
@@ -342,6 +370,9 @@ class Store:
             _, last, count, ids, matrix = self._coarse
             cursor = db.execute("SELECT slot,chunk_id,coarse FROM vectors WHERE slot>? AND model_id=? ORDER BY slot", (last, model_id))
             while batch := cursor.fetchmany(8192):
+                # ponytail: a model with fewer than COARSE_DIMENSION dimensions has shorter rows, which are
+                # skipped here, so it gets no semantic results. Zero-pad the prefix (here and for the query) if
+                # such a model is ever used; the two shipped models have 1024 and 384.
                 batch = [r for r in batch if len(r[2]) == COARSE_DIMENSION * 2]
                 if not batch:
                     continue

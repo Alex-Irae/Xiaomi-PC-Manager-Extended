@@ -12,6 +12,14 @@ import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from xiaomi_search.config import load
 from xiaomi_search.service import Service
+from xiaomi_search.store import COARSE_DIMENSION
+
+
+def unit(*leading):
+    """Synthetic vector as long as the index's fast-scan prefix; the scan skips shorter ones."""
+    vector = np.zeros(COARSE_DIMENSION, dtype=np.float32)  # shape: [C]
+    vector[:len(leading)] = leading
+    return vector
 
 
 def main():
@@ -28,7 +36,7 @@ def main():
     class Vector:
         config={'semantic_threshold':.3}
         def identity(self):return 'filename-regression'
-        def encode(self,texts,query=False):return np.asarray([[1,0]],dtype=np.float32)  # shape: [1,2]
+        def encode(self,texts,query=False):return unit(1)[None]  # shape: [1,C]
     try:
         paper=corpus/'research.txt'
         paper.write_text('EFS generates samples without fitting a score model.',encoding='utf-8')
@@ -37,7 +45,7 @@ def main():
             service.indexer._file(path)
         row=service.store.get_file(path=str(paper.resolve()))
         for passage in service.store.pending_vectors(row['id'],'filename-regression'):
-            service.store.put_vector(passage['id'],np.asarray([1,0],dtype=np.float32),'filename-regression')  # shape: [2]
+            service.store.put_vector(passage['id'],unit(1),'filename-regression')  # shape: [C]
         reply=service.store.search('EFS',Vector())
         assert reply['results'][0]['name']=='research.txt'
         assert set(reply['results'][0]['matches'])=={'Content','Semantic'}

@@ -6,6 +6,7 @@ Commands (from project root):
   python -m xiaomi_search desktop
   python -m xiaomi_search index --lexical-only
   python -m xiaomi_search search "shared interpolation weights"
+  python -m xiaomi_search --config <config.json> --data <data folder> compact   (with the app closed)
 """
 import argparse
 import json
@@ -37,6 +38,7 @@ def main():
     search.add_argument("query", help="Natural language or filename; supports ext:, type:, folder:, before:, after:")
     search.add_argument("--lexical-only", action="store_true", help="Skip semantic inference and return filename/content matches")
     commands.add_parser("status", help="Inspect index counts and configured local model presence without inference")
+    commands.add_parser("compact", help="With the app closed: drop excluded or missing files and the passages of name-only types, then shrink the index file")
     args = parser.parse_args()
     if args.command == "desktop":
         from .config import PROJECT
@@ -72,6 +74,8 @@ def main():
             print(json.dumps(service.status(), indent=2))
             if service.indexer.semantic_error or service.indexer.scan_error or service.store.counts().get("error", 0):
                 return 1
+        elif args.command == "compact":
+            print(json.dumps(service.store.compact(config["name_only_extensions"])))
         elif args.command == "search":
             print(json.dumps(service.search({"text": args.query}), indent=2, ensure_ascii=False))
         else:

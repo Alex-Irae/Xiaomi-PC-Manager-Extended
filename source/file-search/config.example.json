@@ -39,6 +39,23 @@
     ".tga",
     ".dds"
   ],
+  "name_only_extensions": [
+    ".py",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".java",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".html",
+    ".css",
+    ".sql",
+    ".ps1",
+    ".sh"
+  ],
   "type_weights": {
     "default": 0.9,
     ".pdf": 1.3,
