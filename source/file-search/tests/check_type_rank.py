@@ -60,6 +60,11 @@ def main():
         assert set(order('quagga'))=={'zebra notes.md','old report.md'},'a returning file is indexed afresh'
         (corpus/'late.py').write_text('the quagga again',encoding='utf-8');service.indexer._file(corpus/'late.py')
         assert 'late.py' not in order('quagga') and 'late.py' in order('late')
+        # The Settings field saves the list; a type taken off it is read again at the file's next visit.
+        service.dispatch('local_save_config',{'name_only_extensions':['JS']})
+        assert service.config['name_only_extensions']==['.js'] and json.loads((args.output/'config.json').read_text(encoding='utf-8'))['name_only_extensions']==['.js']
+        service.indexer._file(corpus/'late.py')
+        assert 'late.py' in order('quagga')
         for wrong in ({'.pdf':'high'},{'.pdf':-1},{'p d f':1},[]):
             try:validate({**cfg,'type_weights':wrong},args.output/'config.json')
             except ValueError:continue

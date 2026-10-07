@@ -270,6 +270,8 @@ class Indexer:
         # sixths of a whole-drive index and of the embedding work. A file indexed before the rule loses them here.
         name_only = path.suffix.lower() in self.config["name_only_extensions"]
         changed = row["mtime_ns"] != information.st_mtime_ns or row["size"] != information.st_size or row['ctime_ns'] != information.st_ctime_ns or row["status"] in ("pending", "error") or row["extraction_key"] != self.extraction_key or (name_only and row["status"] != "metadata_only")
+        # A readable file that was left as a name only, and whose type is no longer on that list, is read now.
+        changed = changed or (not name_only and row["status"] == "metadata_only" and path.suffix.lower() in SUPPORTED and information.st_size <= self.config["max_file_mb"] * 1024 * 1024)
         if changed:
             try:
                 if name_only or information.st_size > self.config["max_file_mb"] * 1024 * 1024 or path.suffix.lower() not in SUPPORTED:

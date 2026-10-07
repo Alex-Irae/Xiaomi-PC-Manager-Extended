@@ -1,3 +1,9 @@
+# Xiaomi Revamp 0.3.13
+
+AI Center 0.3.9. PC Manager stays at 0.2.12 and Screen Translator at 0.2.7.
+
+- **AI Center: "Name-only types" in Search settings.** The list of file types found by filename only (0.3.12) is now a field under "Excluded types", edited the same way: extensions separated by commas or spaces, applied at once, with undo and redo. A type added to the list loses its stored contents, and a type taken off is read again, as the indexer next visits each file; saving the field starts that pass unless indexing is set to manual, where "Index now" does it. Removing a type does not shrink the index file by itself; `compact` does.
+
 # Xiaomi Revamp 0.3.12
 
 AI Center 0.3.8. PC Manager stays at 0.2.12 and Screen Translator at 0.2.7.

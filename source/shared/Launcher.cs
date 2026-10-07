@@ -22,8 +22,8 @@ using System.Reflection;
 [assembly: AssemblyVersion("0.2.12.0")]
 [assembly: AssemblyFileVersion("0.2.12.0")]
 #elif FILE_SEARCH
-[assembly: AssemblyVersion("0.3.8.0")]
-[assembly: AssemblyFileVersion("0.3.8.0")]
+[assembly: AssemblyVersion("0.3.9.0")]
+[assembly: AssemblyFileVersion("0.3.9.0")]
 #else
 [assembly: AssemblyVersion("0.2.7.0")]
 [assembly: AssemblyFileVersion("0.2.7.0")]

@@ -3,7 +3,7 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const keys=['excluded_extensions','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const lists=['excluded_extensions','name_only_extensions'],keys=[...lists,'preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};
@@ -48,7 +48,7 @@
   window.addEventListener('suite-settings',event=>{if(!settings)return; settings={...settings,...event.detail};committed={...committed,...event.detail};history[position]=copy(settings);render();});
   window.addEventListener('suite-owner',event=>{$('suite-owner').textContent=event.detail;});
   $('suite-manager').addEventListener('click',()=>call('local_suite_manager').catch(error));
-  for(const key of keys){$(key).addEventListener('change',()=>{clearTimeout(colorTimer);const field=$(key),value=field.type==='checkbox'?field.checked:key==='excluded_extensions'?field.value.split(/[\s,;]+/).filter(Boolean):field.value;apply({...settings,[key]:value});});}
+  for(const key of keys){$(key).addEventListener('change',()=>{clearTimeout(colorTimer);const field=$(key),value=field.type==='checkbox'?field.checked:lists.includes(key)?field.value.split(/[\s,;]+/).filter(Boolean):field.value;apply({...settings,[key]:value});});}
   $('accent_color').addEventListener('input',()=>{localBridge.appearance({...settings,accent_color:$('accent_color').value});clearTimeout(colorTimer);const value=$('accent_color').value;colorTimer=setTimeout(()=>apply({...settings,accent_color:value}),250);});
   $('settings-form').addEventListener('submit',event=>event.preventDefault());
   function step(delta){const next=position+delta;if(next<0||next>=history.length)return;position=next;apply(copy(history[position]),false);remember();buttons();}

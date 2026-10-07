@@ -330,7 +330,7 @@ class Service:
             return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
-            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
+            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "name_only_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
             if set(params) - allowed:
                 raise ValueError("Unsupported setting")
             settings = validate({**self.config, **params}, self.config_path)
@@ -339,6 +339,7 @@ class Service:
             frequency_changed = settings['indexing_frequency'] != self.config['indexing_frequency']
             device_changed = settings["preferred_device"] != self.config["preferred_device"] or settings["devices"] != self.config["devices"]
             enabling_semantics = settings["semantic_enabled"] and not self.config["semantic_enabled"]
+            name_only_changed = settings["name_only_extensions"] != self.config["name_only_extensions"]
             disabling_semantics = self.config['semantic_enabled'] and not settings['semantic_enabled']
             for key, filename in [('roots', 'included-folders.txt'), ('excluded_folders', 'excluded-folders.txt')]:
                 if key in params:
@@ -362,6 +363,10 @@ class Service:
             if 'indexing_mode' in params:
                 self.indexer.set_mode(settings["indexing_mode"])
             if enabling_semantics and settings['indexing_frequency'] == 'realtime':
+                self.indexer.request_scan()
+            # A type added to the list loses its passages, and one taken off is read again, when the
+            # indexer next visits each file. With manual indexing that visit is "Index now".
+            if name_only_changed and settings['indexing_frequency'] != 'manual':
                 self.indexer.request_scan()
             with self._cache_lock:
                 self._cache.clear()
