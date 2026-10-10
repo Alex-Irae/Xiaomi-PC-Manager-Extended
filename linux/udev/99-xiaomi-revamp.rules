@@ -1,0 +1,6 @@
+# Purpose: let the logged-in user (group "video") change the battery charge limit and the performance profile
+#          without root, for PC Manager on Linux. Installed by linux/install.sh. Remove the file to undo.
+# The files only exist when the kernel supports the feature on this laptop; the rules do nothing otherwise.
+# With power-profiles-daemon running, the profile is set through it and the second rule is not needed.
+ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Battery", RUN+="/bin/sh -c 'f=/sys%p/charge_control_end_threshold; [ -e $$f ] && chgrp video $$f && chmod g+w $$f'"
+ACTION=="add|change", SUBSYSTEM=="platform-profile", RUN+="/bin/sh -c 'f=/sys%p/profile; [ -e $$f ] && chgrp video $$f && chmod g+w $$f'"

@@ -1,0 +1,21 @@
+# Python packages of the search and translation engines on Linux (installed by linux/install.sh into
+# ~/.local/share/xiaomi-revamp/venv). The same engines as on Windows; versions follow the Windows requirements.
+# Not listed: torch, transformers and optimum-intel. The Windows build carries them for model conversion; if an
+# engine asks for one of them at run time on Linux, add it here and note why.
+numpy>=1.26,<3
+openvino>=2026.1,<2027
+openvino-genai>=2026.1,<2027
+openvino-tokenizers>=2026.1,<2027
+# file search: change notifications and document readers
+watchdog>=6,<7
+pypdf>=5,<7
+python-docx>=1.1,<2
+python-pptx>=1,<2
+openpyxl>=3.1,<4
+striprtf>=0.0.29,<0.1
+# translator: text detection and recognition helpers, pictures, tokenizer
+Pillow
+opencv-python-headless
+sentencepiece
+rapidocr-onnxruntime==1.4.4
+onnx

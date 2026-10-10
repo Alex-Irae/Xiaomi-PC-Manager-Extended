@@ -15,6 +15,7 @@ from pathlib import Path
 from queue import Empty, Queue
 import sys
 import subprocess
+import tempfile
 from threading import Event, Lock, Thread
 from time import monotonic, sleep
 from uuid import uuid4
@@ -22,12 +23,15 @@ from uuid import uuid4
 from .engine import serve
 
 MAX_MESSAGE = 100 * 1024 * 1024
+# The supervisor and its inference process talk over a named pipe on Windows and a Unix socket elsewhere.
+WINDOWS = os.name == "nt"
+PIPE_FAMILY = "AF_PIPE" if WINDOWS else "AF_UNIX"
 
 
 def engine_process(address):
     """Private authenticated local pipe; inherited stdin is explicitly disconnected."""
     authkey = bytes.fromhex(os.environ.pop("SCREEN_TRANSLATOR_PIPE_KEY"))
-    with Listener(address, family="AF_PIPE", authkey=authkey) as listener:
+    with Listener(address, family=PIPE_FAMILY, authkey=authkey) as listener:
         with listener.accept() as connection:
             serve(connection)
 
@@ -166,20 +170,20 @@ class Backend:
                         self.emit(identifier, "progress", self.stage, job_epoch)
                         # Explicit stdio prevents a spawned worker inheriting the host's command reader.
                         # AF_PIPE is local Windows IPC, authenticated with an ephemeral per-worker key.
-                        address = rf"\\.\pipe\ScreenTranslator-{uuid4().hex}"
+                        address = rf"\\.\pipe\ScreenTranslator-{uuid4().hex}" if WINDOWS else os.path.join(tempfile.gettempdir(), f"screen-translator-{uuid4().hex}.sock")
                         authkey = os.urandom(32)
                         environment = {**os.environ, "SCREEN_TRANSLATOR_PIPE_KEY": authkey.hex()}
                         bootstrap = "import sys,runpy;sys.path.insert(0,sys.argv.pop(1));runpy.run_module('screen_translator.backend',run_name='__main__')"
                         python_options = ["-X", "pycache_prefix=" + sys.pycache_prefix] if sys.pycache_prefix else []
                         self.process = subprocess.Popen([sys.executable, "-u", *python_options, "-c", bootstrap,
                             str(Path(__file__).resolve().parents[1]), "--engine-pipe", address], stdin=subprocess.DEVNULL, stdout=sys.stderr,
-                            stderr=sys.stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
+                            stderr=sys.stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS else 0)
                         deadline = monotonic() + 15
                         while job_epoch == self.epoch and not self.closed.is_set():
                             if self.process.poll() is not None:
                                 raise EOFError("Engine exited before connecting")
                             try:
-                                self.connection = Client(address, family="AF_PIPE", authkey=authkey)
+                                self.connection = Client(address, family=PIPE_FAMILY, authkey=authkey)
                                 break
                             except OSError:
                                 if monotonic() >= deadline:

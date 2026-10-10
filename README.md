@@ -60,6 +60,10 @@ The installer selects where settings and app data live. By default, profiles are
 
 Use Windows Settings or an app's **Uninstall.exe** to remove it. Read the uninstaller's choices before deleting saved settings or an index you want to keep.
 
+## Linux (in progress)
+
+A first base for Arch Linux with Hyprland is in [`linux/`](linux/README.md): the same web pages in native Wayland windows, the same search and translation engines, and a new hardware layer for PC Manager. It was written on Windows and has not run on Linux yet; the page says exactly what was checked and what was not.
+
 ## More pictures and development
 
 [View the screenshot tour](docs/SCREENSHOTS.md) · [Developer reference](DEVELOPMENT.md) · [Release notes](RELEASE_NOTES.md)

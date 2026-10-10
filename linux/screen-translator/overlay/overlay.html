@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Purpose: the translator's overlay on Linux. A full-screen transparent layer surface; each recognised text
+     region is covered by its translation, on the background colour sampled from the captured picture.
+     Dependencies: the shared host bridge (window.chrome.webview). Opened by translator.py, not on its own. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Screen Translator overlay</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "MiSans", "Noto Sans", sans-serif; }
+  #regions { position: fixed; inset: 0; }
+  .region { position: absolute; display: flex; align-items: center; overflow: hidden; line-height: 1.15; padding: 0 2px; box-sizing: border-box; border-radius: 2px; }
+  .region span { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #status { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: rgba(23, 26, 31, .92); color: #fff; font-size: 14px; }
+  #status[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="regions"></div>
+<div id="status" role="status" hidden></div>
+<script src="overlay.js"></script>
+</body>
+</html>

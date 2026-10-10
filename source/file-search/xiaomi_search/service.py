@@ -82,7 +82,7 @@ class Service:
         text = text.strip().strip('"')
         if not text or len(text) > 1024:
             return None
-        expanded = Path(os.path.expandvars(os.path.expanduser(text.replace('/', '\\'))))
+        expanded = Path(os.path.expandvars(os.path.expanduser(text.replace('/', '\\') if os.name == 'nt' else text)))
         return expanded if expanded.is_absolute() else None
 
     def typed_path(self, text):

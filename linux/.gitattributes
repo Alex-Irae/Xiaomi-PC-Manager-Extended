@@ -1,0 +1,2 @@
+# Linux reads these files as they are in the repository: line endings stay LF on every checkout.
+* text=auto eol=lf

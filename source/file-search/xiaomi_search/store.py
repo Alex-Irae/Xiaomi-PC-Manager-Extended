@@ -2,6 +2,7 @@
 import contextlib
 import html
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -111,6 +112,10 @@ class Store:
         if protection == 'windows':
             from .protection import ProtectedDatabase
             self.protected = ProtectedDatabase(self.path)
+        elif os.name != 'nt':
+            # Index encryption uses Windows account keys. Elsewhere the index is a plain file and the status says so.
+            if protection != 'none':
+                self.unencrypted = 'Index encryption is a Windows feature; on this system the index is a plain file.'
         else:
             from .protection import encrypt_folder, export_snapshot
             if protection == 'efs':
@@ -351,7 +356,7 @@ class Store:
             prefix = str(path).rstrip("\\/")
             # The entry itself and everything beneath it, as a range on the indexed path. substr() read every
             # row of the table for each missing file: a tenth of a second apiece on a whole drive.
-            db.execute("UPDATE files SET active=0 WHERE active=1 AND (path=? OR (path>=? AND path<?))", (prefix, prefix + "\\", prefix + "]"))
+            db.execute("UPDATE files SET active=0 WHERE active=1 AND (path=? OR (path>=? AND path<?))", (prefix, prefix + os.sep, prefix + chr(ord(os.sep) + 1)))
 
     def retain_roots(self, roots, allowed):
         with self.connect() as db:

@@ -21,7 +21,11 @@ SKIP_EXTENSIONS = {".sys", ".safetensors", ".gguf", ".bin", ".onnx", ".pyc", ".p
 
 def on_battery():
     if os.name != "nt":
-        return False
+        # Linux: a battery that reports it is discharging.
+        try:
+            return any(status.read_text().strip() == "Discharging" for status in Path("/sys/class/power_supply").glob("BAT*/status"))
+        except OSError:
+            return False
 
     class Power(ctypes.Structure):
         _fields_ = [("ac", ctypes.c_ubyte), ("flags", ctypes.c_ubyte), ("percent", ctypes.c_ubyte), ("reserved", ctypes.c_ubyte), ("seconds", ctypes.c_ulong), ("full_seconds", ctypes.c_ulong)]
@@ -266,7 +270,7 @@ class Indexer:
                     return
                 try:
                     information = entry.stat(follow_symlinks=False)
-                    attributes = information.st_file_attributes
+                    attributes = getattr(information, 'st_file_attributes', 0)  # Windows only; 0 elsewhere
                     # Never follow junctions or symbolic links, hydrate cloud placeholders or enter protected system entries.
                     if entry.is_symlink() or attributes & link or attributes & hidden == hidden or entry.name.casefold() in names:
                         continue
@@ -304,7 +308,7 @@ class Indexer:
         # Only entries beneath the scanned folder that this walk did not meet are checked.
         prefix = str(root).rstrip("\\/")
         with self.store.connect() as db:
-            paths = [r[0] for r in db.execute("SELECT path FROM files WHERE active=1 AND (lower(path)=lower(?) OR lower(substr(path,1,?))=lower(?))", (prefix, len(prefix) + 1, prefix + "\\"))]
+            paths = [r[0] for r in db.execute("SELECT path FROM files WHERE active=1 AND (lower(path)=lower(?) OR lower(substr(path,1,?))=lower(?))", (prefix, len(prefix) + 1, prefix + os.sep))]
         for name in paths:
             if not self.running:
                 return
