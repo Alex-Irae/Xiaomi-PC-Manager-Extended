@@ -10,11 +10,12 @@ import time
 from pathlib import Path
 
 from .extract import CHUNK_VERSION, EXTRACTOR_VERSION, SUPPORTED, chunks
-from .exclusions import is_within
+from .exclusions import canonical_path, is_within
 from .protection import IndexCapacityError
 
 LOG = logging.getLogger(__name__)
 # Executables are listed by name only (never read), so they can be found and launched.
+CATCH_UP_PASSAGES = 5000  # fewer waiting passages do not justify loading the model during a walk
 SKIP_EXTENSIONS = {".sys", ".safetensors", ".gguf", ".bin", ".onnx", ".pyc", ".pyo", ".pth", ".pt"}
 
 
@@ -39,6 +40,7 @@ class Indexer:
         self.jobs = {}
         self.vector_jobs = set()
         self.catching_up = False  # a walk of the folders is embedding what it found, whatever the standby choice
+        self.catch_up_requested = False
         self.running = False
         self.busy = False
         self.current = ""
@@ -116,7 +118,10 @@ class Indexer:
             self.jobs[str(Path(path).absolute())] = time.monotonic() + delay
             self.condition.notify_all()
 
-    def request_scan(self):
+    def request_scan(self, explicit=True):
+        """Queue a walk of every root. `explicit` (Index now, a settings change) embeds whatever it finds;
+        the walk at start and the daily one decide by how much is waiting (see _scan)."""
+        self.catch_up_requested = self.catch_up_requested or explicit
         self.refresh_exclusions()
         self.semantic_error = None
         self.embedder.failed_devices.clear()
@@ -191,74 +196,138 @@ class Indexer:
         if self.thread:
             self.thread.join(timeout=5)
 
+    def _settled(self):
+        """Files a walk need not look at again while their date, size and creation time are unchanged:
+        {path: (mtime_ns, size, ctime_ns)} and, for folders, {path: mtime_ns}. Empty when the stored
+        passages may belong to another embedding model, so that each file is examined as before."""
+        if self.config["semantic_enabled"]:
+            try:
+                if self.store.embedding_model() not in (None, self.embedder.identity()):
+                    return {}, {}
+            except (OSError, ValueError):
+                return {}, {}
+        name_only = set(self.config["name_only_extensions"])
+        limit = self.config["max_file_mb"] * 1024 * 1024
+        files, folders = {}, {}
+        for path, mtime_ns, size, ctime_ns, extension, status, kind in self.store.settled_rows(self.extraction_key):
+            if kind == 2:
+                folders[path] = mtime_ns
+            elif extension in name_only:
+                if status == "metadata_only":
+                    files[path] = (mtime_ns, size, ctime_ns)
+            elif not (status == "metadata_only" and extension in SUPPORTED and size <= limit):
+                files[path] = (mtime_ns, size, ctime_ns)
+        return files, folders
+
     def _scan(self, root):
-        """Discover, extract and embed progressively without writing source files."""
+        """Discover, extract and embed progressively without writing source files.
+
+        The folders are listed once each. Windows hands back every entry's dates, size and attributes with
+        the listing, so a file that has not changed costs one dictionary lookup: no call about the file
+        itself and nothing opened. Before, each file was resolved three times (which opens it) and asked
+        about a dozen times, 293 files a second; a whole drive took from ten minutes to most of an hour.
+        """
         def failure(exc):
             self.scan_error = str(exc)
             LOG.warning("Folder access error: %s", exc)
 
+        root = Path(root)
+        if not self.allowed(root):  # also re-reads the exclusion lists
+            return
+        files, folders = self._settled()
+        names = {name.casefold() for name in self.config["excluded_names"]}
+        types = set(self.config["excluded_extensions"]) | SKIP_EXTENSIONS
+        barred = {canonical_path(folder) for folder in self.config["excluded_folders"]} | {canonical_path(self.data)}
+        link, hidden = stat.FILE_ATTRIBUTE_REPARSE_POINT, stat.FILE_ATTRIBUTE_HIDDEN | stat.FILE_ATTRIBUTE_SYSTEM
+        seen = set()
         discovered = 0
-        for directory, children, names in os.walk(root, followlinks=False, onerror=failure):
+        pending = [root]
+        while pending:
+            folder = pending.pop()
             if not self.running:
                 return
-            if not self.allowed(Path(directory)):
-                children[:] = []
-                continue
             with self.condition:
                 while self.running and self.mode == "paused":
                     self.condition.wait()
-            children[:] = [name for name in children if self.allowed(Path(directory) / name)]
-            folder = Path(directory)
+            seen.add(str(folder))
             try:
-                row = self.store.discover(folder, folder.stat())
                 information = folder.stat()
-                if row['status'] != 'metadata_only' or row['mtime_ns'] != information.st_mtime_ns:
-                    self.store.save(row["id"], information, "", [], self.extraction_key, status="metadata_only")
+                if folders.get(str(folder)) != information.st_mtime_ns:
+                    row = self.store.discover(folder, information)
+                    if row['status'] != 'metadata_only' or row['mtime_ns'] != information.st_mtime_ns:
+                        self.store.save(row["id"], information, "", [], self.extraction_key, status="metadata_only")
+                with os.scandir(folder) as listing:
+                    entries = list(listing)
             except OSError as exc:
                 failure(exc)
-            for name in names:
-                with self.condition:
-                    while self.running and self.mode == 'paused':
-                        self.condition.wait()
+                continue
+            for entry in entries:
                 if not self.running:
                     return
-                path = Path(directory) / name
-                if not self.allowed(path):
-                    continue
                 try:
-                    self.phase = 'Extracting'
-                    self.current = str(path)
-                    self._file(path)
+                    information = entry.stat(follow_symlinks=False)
+                    attributes = information.st_file_attributes
+                    # Never follow junctions or symbolic links, hydrate cloud placeholders or enter protected system entries.
+                    if entry.is_symlink() or attributes & link or attributes & hidden == hidden or entry.name.casefold() in names:
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        if canonical_path(entry.path) not in barred:
+                            pending.append(Path(entry.path))
+                        continue
+                    if os.path.splitext(entry.name)[1].lower() in types or entry.path in self.internal_files:
+                        continue
+                    if files.get(entry.path) == (information.st_mtime_ns, information.st_size, information.st_ctime_ns):
+                        seen.add(entry.path)
+                    else:
+                        with self.condition:
+                            while self.running and self.mode == 'paused':
+                                self.condition.wait()
+                        path = Path(entry.path)
+                        if not self.allowed(path):
+                            continue
+                        self.phase = 'Extracting'
+                        self.current = entry.path
+                        self._file(path)
+                        seen.add(entry.path)
+                        # Interleave meanings during discovery rather than waiting for
+                        # every file on the drive to be crawled and extracted first.
+                        self._embedding_step()
                     discovered += 1
                     self.processed += 1
-                    if discovered % 100 == 0:
+                    if discovered % 10000 == 0:
                         LOG.info('Discovered %d files; filenames already searchable', discovered)
                         self.notify()
-                    # Interleave meanings during discovery rather than waiting for
-                    # every file on the drive to be crawled and extracted first.
-                    if discovered % 8 == 0:
-                        self._embedding_step()
                 except OSError as exc:
                     failure(exc)
         # Reconcile missing entries after explicit/initial scans, including changes
         # made while this application was stopped. Permission errors never tombstone.
-        # Only entries beneath the scanned folder are checked: a new subfolder must
-        # not cost a pass over every indexed path on the drive.
+        # Only entries beneath the scanned folder that this walk did not meet are checked.
         prefix = str(root).rstrip("\\/")
         with self.store.connect() as db:
             paths = [r[0] for r in db.execute("SELECT path FROM files WHERE active=1 AND (lower(path)=lower(?) OR lower(substr(path,1,?))=lower(?))", (prefix, len(prefix) + 1, prefix + "\\"))]
         for name in paths:
             if not self.running:
                 return
+            if name in seen:
+                continue
             try:
                 Path(name).stat()
             except FileNotFoundError:
                 self.store.mark_missing(Path(name))
             except OSError:
                 pass
-        if Path(root) in self.roots:
+        if root in self.roots:
             # Scope changes are reconciled on whole-root scans; queries already filter them.
-            self.store.retain_roots(self.roots, self.allowed)
+            # What this walk met is allowed by construction; only the rest is tested one by one.
+            self.store.retain_roots(self.roots, lambda candidate: str(candidate) in seen or self.allowed(candidate))
+        # Passages still without a vector are queued once here: unchanged files are no longer visited.
+        if self.config["semantic_enabled"]:
+            self.vector_jobs.update(self.store.pending_vector_files())
+            # With "free when idle" the model is loaded for a walk only when it was asked for ("Index now",
+            # a settings change) or when a real amount of new text was found. The few hundred passages that
+            # application state files leave behind wait for the next search.
+            if not self.catching_up and self.store.pending_vector_passages() >= CATCH_UP_PASSAGES:
+                self.catching_up = True
         LOG.info("Discovery complete: %d files", discovered)
 
     def _file(self, path):
@@ -273,7 +342,7 @@ class Indexer:
         # Types found by name only (source code by default) are never read: their passages made up five
         # sixths of a whole-drive index and of the embedding work. A file indexed before the rule loses them here.
         name_only = path.suffix.lower() in self.config["name_only_extensions"]
-        changed = row["mtime_ns"] != information.st_mtime_ns or row["size"] != information.st_size or row['ctime_ns'] != information.st_ctime_ns or row["status"] in ("pending", "error") or row["extraction_key"] != self.extraction_key or (name_only and row["status"] != "metadata_only")
+        changed = row["mtime_ns"] != information.st_mtime_ns or row["size"] != information.st_size or row['ctime_ns'] != information.st_ctime_ns or row["status"] == "pending" or (row["status"] == "error" and (row["error"] or "").startswith(("[Errno", "[WinError"))) or (row["status"] != "error" and row["extraction_key"] != self.extraction_key) or (name_only and row["status"] != "metadata_only")
         # A readable file that was left as a name only, and whose type is no longer on that list, is read now.
         changed = changed or (not name_only and row["status"] == "metadata_only" and path.suffix.lower() in SUPPORTED and information.st_size <= self.config["max_file_mb"] * 1024 * 1024)
         if changed and not name_only and row["status"] in ("indexed", "error"):
@@ -307,10 +376,12 @@ class Indexer:
             except IndexCapacityError:
                 raise
             except Exception as exc:
-                self.store.record_error(row["id"], exc)
+                self.store.record_error(row["id"], exc, information)
                 LOG.warning("Extraction failed: %s: %s", path, exc)
                 return
-        if self.config["semantic_enabled"] and self.store.get_file(row['id'])['status'] == 'indexed':
+        if not changed and row.get("stale"):
+            self.store.clear_stale(row["id"])
+        if self.config["semantic_enabled"] and path.suffix.lower() not in self.config["content_only_extensions"] and self.store.get_file(row['id'])['status'] == 'indexed':
             try:
                 # Unchanged, fully embedded files must not compile/load the model
                 # again on every scheduled snapshot check.
@@ -321,7 +392,7 @@ class Indexer:
 
     def _vectors(self, fid):
         row = self.store.get_file(fid)
-        if row is None or row["status"] != "indexed" or not self.allowed(Path(row["path"])):
+        if row is None or row["status"] != "indexed" or row["extension"] in self.config["content_only_extensions"] or not self.allowed(Path(row["path"])):
             return
         try:
             model_id = self.embedder.identity()
@@ -404,7 +475,7 @@ class Indexer:
                     self.current = str(path)
                     if path.is_dir():
                         self.scanning = path
-                        self.catching_up = True
+                        self.catching_up, self.catch_up_requested = self.catch_up_requested, False
                         try:
                             self._scan(path)
                         finally:
@@ -439,7 +510,9 @@ class Indexer:
     def wait_complete(self):
         """Used only by an explicit CLI index command; semantic failures terminate cleanly."""
         with self.condition:
-            while self.running and (self.jobs or self.busy or (self.vector_jobs and self.config['semantic_enabled'] and not self.semantic_error)):
+            # Visits put off for hours and passages waiting for the model are not work in progress: counting
+            # them left "Index now" and the daily request unanswered for as long as any file kept changing.
+            while self.running and (any(deadline <= time.monotonic() + 60 for deadline in self.jobs.values()) or self.busy or (self.vector_jobs and self._may_embed() and self.config['semantic_enabled'] and not self.semantic_error)):
                 if self.mode == 'paused':
                     return
                 self.condition.wait(timeout=1)

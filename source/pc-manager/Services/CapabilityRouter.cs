@@ -6,6 +6,7 @@ namespace XiaomiAIManager.Services;
 public sealed class CapabilityRouter(Preferences preferences, HardwareService hardware) : IDisposable
 {
     private readonly TelemetryService telemetry = new();
+    private const int SlowRead = 1000; // Milliseconds from which a full read is written to the log with its parts.
     private readonly XiaomiBridge xiaomi = new(preferences);
     internal Func<bool> OemCleanupEnabled { set => xiaomi.CleanupEnabled = value; }
     internal void EndOemSessionForValidation() => xiaomi.EndSessionForValidation();
@@ -22,8 +23,14 @@ public sealed class CapabilityRouter(Preferences preferences, HardwareService ha
             case "official.open": return XiaomiBridge.OpenOfficial(Text(args, "page"));
             case "state.read":
                 object reading;
+                var clock = System.Diagnostics.Stopwatch.StartNew();
                 lock (hardware.Sync) reading = hardware.Read(includeInventory: true);
-                return new { hardware = reading, telemetry = telemetry.Read(), xiaomiPath = xiaomi.Locate() };
+                long hardwareTook = clock.ElapsedMilliseconds;
+                object counters = telemetry.Read();
+                long countersTook = clock.ElapsedMilliseconds - hardwareTook;
+                string? located = xiaomi.Locate();
+                if (clock.ElapsedMilliseconds >= SlowRead) XiControl.Log.Write($"State.Read {clock.ElapsedMilliseconds} ms: hardware {hardwareTook}, counters {countersTook}, Xiaomi path {clock.ElapsedMilliseconds - hardwareTook - countersTook}");
+                return new { hardware = reading, telemetry = counters, xiaomiPath = located };
         }
         lock (hardware.Sync)
         {

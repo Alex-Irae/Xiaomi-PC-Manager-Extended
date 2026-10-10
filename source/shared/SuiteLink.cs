@@ -105,7 +105,7 @@ internal sealed class SuiteCommand
     public string Action { get; set; } = "";
     public long Created { get; set; }
 }
-internal sealed record SuiteStatus(string Component, int Pid, string State, string Owner, string? Error, long Updated, string[] Owned, object? Keyboard = null);
+internal sealed record SuiteStatus(string Component, int Pid, string State, string Owner, string? Error, long Updated, string[] Owned, object? Keyboard = null, long Started = 0);
 internal sealed record SuiteLease(int Pid, long Started, long Updated);
 
 internal static class SuiteStore
@@ -431,11 +431,21 @@ internal sealed class SuiteClient : IDisposable
     readonly Action<string> invoke;
     readonly Action<SuiteDocument> changed;
     readonly Func<string> status;
-    readonly System.Windows.Forms.Timer timer = new() { Interval = 250 };
+    // The apps used to look at the shared files four times a second, and PC Manager rewrote its lease at that
+    // rate plus a status file every second. Measured at idle: 85 wake-ups a second and 1.5% of a core in
+    // PC Manager, 40 and 0.5% in AI Center, and Microsoft Defender at 9% of a core instead of 3% because it
+    // scans every rewritten file. Now a change of the shared files wakes the apps, the lease and the status are
+    // written when they change, and this timer is only the safety net (a hub that crashed, a pause that ran out).
+    const int Calm = 5000, Retrying = 1000, WithoutWatcher = 250;
+    readonly System.Windows.Forms.Timer timer = new() { Interval = Calm };
+    readonly System.Windows.Forms.Control marshal = new();
+    readonly FileSystemWatcher? watcher;
+    int queued;
+    string lastReport = "";
     readonly Dictionary<string, FileStream> leases = new();
     SuiteKeyboard? keyboard;
     string signature = "";
-    long revision = -1, consumed, lastStatus;
+    long revision = -1, consumed;
     long lastRetry;
     bool? lastDefer;
     readonly long started = Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks;
@@ -449,7 +459,25 @@ internal sealed class SuiteClient : IDisposable
         string checkpoint = SuiteStore.FilePath("consumed-" + component + ".txt");
         if (File.Exists(checkpoint)) long.TryParse(File.ReadAllText(checkpoint), out consumed);
         timer.Tick += (_, _) => Poll();
+        _ = marshal.Handle; // created on the thread that owns the timer; file changes are handed to it
+        if (Hub) WriteLease();
+        try
+        {
+            watcher = new FileSystemWatcher(Path.GetDirectoryName(SuiteStore.FilePath("settings.json"))!, "*.json") { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
+            watcher.Changed += Changed; watcher.Created += Changed; watcher.Renamed += Changed;
+            watcher.EnableRaisingEvents = true;
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException) { watcher = null; }
         Poll(); timer.Start();
+    }
+    void WriteLease() => SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(Environment.ProcessId, started, DateTime.UtcNow.Ticks));
+    void Changed(object sender, FileSystemEventArgs change)
+    {
+        string name = Path.GetFileName(change.Name ?? "");
+        if (!name.Equals("settings.json", StringComparison.OrdinalIgnoreCase) && !name.Equals("hub.json", StringComparison.OrdinalIgnoreCase)) return;
+        if (Interlocked.Exchange(ref queued, 1) != 0) return; // several events for one save: one look
+        try { marshal.BeginInvoke(() => { Volatile.Write(ref queued, 0); Poll(); }); }
+        catch (InvalidOperationException) { Volatile.Write(ref queued, 0); } // the app is closing
     }
     internal static bool HubRunning()
     {
@@ -457,7 +485,8 @@ internal sealed class SuiteClient : IDisposable
         {
             string path = SuiteStore.FilePath("hub.json");
             var lease = File.Exists(path) ? JsonSerializer.Deserialize<SuiteLease>(SuiteStore.ReadText(path)) : null;
-            return lease is not null && DateTime.UtcNow.Ticks - lease.Updated < TimeSpan.FromSeconds(3).Ticks && SuiteStore.Alive(lease.Pid, lease.Started);
+            // The lease names the hub's process and its start time: it holds for as long as that process lives.
+            return lease is not null && lease.Pid != 0 && SuiteStore.Alive(lease.Pid, lease.Started);
         }
         catch (IOException) { return false; }
     }
@@ -466,7 +495,7 @@ internal sealed class SuiteClient : IDisposable
         try
         {
             Error = keyboard?.Error;
-            if (Hub) SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(Environment.ProcessId, started, DateTime.UtcNow.Ticks));
+            if (Hub && !File.Exists(SuiteStore.FilePath("hub.json"))) WriteLease();
             var document = SuiteStore.Read();
             bool defer = !Hub && HubRunning();
             bool settingsChanged = document.Revision != revision || lastDefer != defer;
@@ -501,13 +530,17 @@ internal sealed class SuiteClient : IDisposable
                     File.WriteAllText(SuiteStore.FilePath("consumed-" + component + ".txt"), consumed.ToString());
                     if (DateTime.UtcNow.Ticks - command.Created < TimeSpan.FromMinutes(2).Ticks) SafeInvoke(command.Action);
                 }
-            if (DateTime.UtcNow.Ticks - lastStatus > TimeSpan.FromSeconds(1).Ticks)
+            var report = new SuiteStatus(component, Environment.ProcessId, status(), Hub ? "PC Manager" : defer ? "PC Manager" : "Standalone", Error, 0, leases.Keys.ToArray(), keyboard?.Diagnostics, started);
+            string reported = JsonSerializer.Serialize(report), statusPath = SuiteStore.FilePath("status-" + component + ".json");
+            if (reported != lastReport || !File.Exists(statusPath))
             {
-                lastStatus = DateTime.UtcNow.Ticks;
-                SuiteStore.AtomicWrite(SuiteStore.FilePath("status-" + component + ".json"), new SuiteStatus(component, Environment.ProcessId, status(), Hub ? "PC Manager" : defer ? "PC Manager" : "Standalone", Error, lastStatus, leases.Keys.ToArray(),keyboard?.Diagnostics));
+                SuiteStore.AtomicWrite(statusPath, report with { Updated = DateTime.UtcNow.Ticks });
+                lastReport = reported;
             }
         }
         catch (Exception error) { Error = error.Message; }
+        int pace = watcher is null ? WithoutWatcher : keyboard?.Error is null ? Calm : Retrying;
+        if (timer.Interval != pace) timer.Interval = pace;
     }
     void SafeInvoke(string action) { try { invoke(action); } catch (Exception error) { Error = error.Message; } }
     internal void Suspend(bool paused)
@@ -524,7 +557,7 @@ internal sealed class SuiteClient : IDisposable
     }
     public void Dispose()
     {
-        timer.Stop(); timer.Dispose(); Release();
+        timer.Stop(); timer.Dispose(); watcher?.Dispose(); marshal.Dispose(); Release();
         // Releasing the hub lease is best effort: a busy file must not crash an app that is closing.
         try { if (Hub) SuiteStore.AtomicWrite(SuiteStore.FilePath("hub.json"), new SuiteLease(0, 0, 0)); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }

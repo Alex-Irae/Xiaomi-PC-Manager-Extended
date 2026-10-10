@@ -37,6 +37,7 @@ class Service:
         self.store.excluded_folders = config["excluded_folders"]
         self.store.excluded_extensions = config["excluded_extensions"]
         self.store.type_weights = config["type_weights"]
+        self.store.content_only = config["content_only_extensions"]
         self._cache = OrderedDict()
         self._cache_lock = threading.Lock()
         self.embedder = Embedder(config, self.data)
@@ -386,7 +387,7 @@ class Service:
             return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
-            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "name_only_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
+            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "name_only_extensions", "content_only_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
             if set(params) - allowed:
                 raise ValueError("Unsupported setting")
             settings = validate({**self.config, **params}, self.config_path)
@@ -406,6 +407,7 @@ class Service:
             self.indexer.roots = [Path(p).resolve() for p in settings["roots"]]
             self.store.excluded_folders = settings["excluded_folders"]
             self.store.excluded_extensions = settings["excluded_extensions"]
+            self.store.content_only = settings["content_only_extensions"]
             self.store.roots = settings['roots']
             if self.indexer.running and (roots_changed or frequency_changed):
                 self.indexer.configure_watch(settings['indexing_frequency'] == 'realtime')
@@ -448,7 +450,8 @@ class Service:
                     previous = self.indexer.mode
                     if params.get('force', True):
                         self.indexer.set_mode('normal')
-                    self.indexer.request_scan()
+                    # The scheduled daily request (force false) embeds only when enough is waiting; the button embeds all.
+                    self.indexer.request_scan(explicit=params.get('force', True))
                     try:
                         self.indexer.wait_complete()
                         self.store.flush()

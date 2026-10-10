@@ -46,6 +46,8 @@ public sealed class MainWindow : Form
     private string? validationPhase;
     private TaskCompletionSource<JsonElement>? validationResult;
     internal string StartPage { get; set; } = "home";
+    // Since this window was created; the log lines built on it say where an opening spends its time.
+    private readonly System.Diagnostics.Stopwatch lifetime = System.Diagnostics.Stopwatch.StartNew();
     private string DocumentPath => compact ? "/quick.html" : "/index.html";
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
@@ -78,6 +80,7 @@ public sealed class MainWindow : Form
             else { StopOutsideClicks(); ClosingPopup = false; motionEpoch++; }
         };
         VisibleChanged += async (_, _) => await UpdateVisibilityAsync();
+        VisibleChanged += (_, _) => TrimHiddenMemory();
         FormClosing += (_, e) =>
         {
             XiControl.Log.Write($"Window.FormClosing compact={compact} reason={e.CloseReason} exiting={app.Exiting}");
@@ -391,6 +394,18 @@ public sealed class MainWindow : Form
         }
         throw new TimeoutException("UI responsiveness probe did not finish.");
     }
+    // A hidden window (the quick panel waits loaded for its next opening) asks WebView2 to give memory back;
+    // showing it restores the normal level. This is a request to the browser, not the suspend and resume that
+    // invalidated the controller on this device.
+    private void TrimHiddenMemory()
+    {
+        try
+        {
+            if (IsDisposed || web.IsDisposed || web.CoreWebView2 is not { } core) return;
+            core.MemoryUsageTargetLevel = Visible ? CoreWebView2MemoryUsageTargetLevel.Normal : CoreWebView2MemoryUsageTargetLevel.Low;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or COMException or ObjectDisposedException) { XiControl.Log.Ex("Window.Memory", ex); }
+    }
     private Task UpdateVisibilityAsync()
     {
         // WinForms owns controller visibility. Explicit suspend/resume repeatedly invalidated
@@ -463,9 +478,11 @@ public sealed class MainWindow : Form
             web.CoreWebView2.NavigationCompleted += (_, e) =>
             {
                 webReady = e.IsSuccess;
+                if (!compact) XiControl.Log.Write($"Window.Loaded manager {lifetime.ElapsedMilliseconds} ms");
                 Send(new { activated = true, backendReady = app.Ready.IsCompletedSuccessfully });
                 if (!compact) SelectManagerPage(StartPage);
                 _ = UpdateVisibilityAsync();
+                TrimHiddenMemory();
             };
             web.Source = new Uri(LocalOrigin + DocumentPath);
         }
@@ -520,6 +537,8 @@ public sealed class MainWindow : Form
         bool held = false;
         bool oemHeld = false;
         bool restartAfterReply = false;
+        string? timed = null;
+        var took = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
@@ -536,7 +555,15 @@ public sealed class MainWindow : Form
             id = root.GetProperty("id").GetString();
             string? method = root.GetProperty("method").GetString();
             if (id is null || id.Length > 80 || method is null || method.Length > 80) return;
+            timed = method;
             JsonElement args = root.GetProperty("args").Clone();
+            if (method == "window.shown")
+            {
+                // The page reports that its first complete set of live values is on screen.
+                if (!compact) XiControl.Log.Write($"Window.Live manager {lifetime.ElapsedMilliseconds} ms, page {StartPage}");
+                Send(new { id, ok = true, data = new { } });
+                return;
+            }
             // Window actions must remain responsive while a firmware read/write is waiting.
             if (method.StartsWith("window.", StringComparison.Ordinal) && method != "window.awake")
             {
@@ -544,6 +571,7 @@ public sealed class MainWindow : Form
                 switch (method)
                 {
                     case "window.awake": await app.Ready; windowResult = app.SetAwake(args.GetProperty("on").GetBoolean()); break;
+                    case "window.live": windowResult = await Task.Run(Services.HardwareService.ReadLive); break;
                     case "window.state": windowResult = new { version = typeof(Program).Assembly.GetName().Version?.ToString(3) + (Program.TestMode ? "-test" : ""), awake = app.Awake, preventSleep = app.PreventSleep, ready = app.Ready.IsCompletedSuccessfully, isolationStatus = app.IsolationStatus, maximized = WindowState == FormWindowState.Maximized, screenBottomGap = compact ? (int?)null : Screen.FromControl(this).Bounds.Bottom - Bounds.Bottom }; break;
                     case "window.reconnect":
                         await app.Ready;
@@ -786,7 +814,11 @@ public sealed class MainWindow : Form
                 : "The operation could not be completed. Refresh the state and check the native log for details.";
             Send(new { id, ok = false, error = message });
         }
-        finally { if (held) app.Queue.Release(); if (oemHeld) app.OemQueue.Release(); }
+        finally
+        {
+            if (held) app.Queue.Release(); if (oemHeld) app.OemQueue.Release();
+            if (!compact && timed is not null && took.ElapsedMilliseconds >= 150) XiControl.Log.Write($"Window.Call {timed} {took.ElapsedMilliseconds} ms");
+        }
     }
     internal void Send(object value)
     {

@@ -3,7 +3,7 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const lists=['excluded_extensions','name_only_extensions'],keys=[...lists,'model_standby','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const lists=['excluded_extensions','content_only_extensions','name_only_extensions'],keys=[...lists,'model_standby','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};

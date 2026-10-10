@@ -19,14 +19,14 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("Xiaomi Revamp")]
 #if PC_MANAGER
-[assembly: AssemblyVersion("0.2.13.0")]
-[assembly: AssemblyFileVersion("0.2.13.0")]
+[assembly: AssemblyVersion("0.2.18.0")]
+[assembly: AssemblyFileVersion("0.2.18.0")]
 #elif FILE_SEARCH
-[assembly: AssemblyVersion("0.3.11.0")]
-[assembly: AssemblyFileVersion("0.3.11.0")]
+[assembly: AssemblyVersion("0.3.13.0")]
+[assembly: AssemblyFileVersion("0.3.13.0")]
 #else
-[assembly: AssemblyVersion("0.2.8.0")]
-[assembly: AssemblyFileVersion("0.2.8.0")]
+[assembly: AssemblyVersion("0.2.9.0")]
+[assembly: AssemblyFileVersion("0.2.9.0")]
 #endif
 
 internal static class Launcher

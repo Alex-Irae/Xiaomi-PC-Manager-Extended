@@ -118,7 +118,8 @@ public sealed partial class ManagerApplication
     static SuiteStatus? SuiteRunning(string component)
     {
         var status = SuiteStore.Status(component);
-        return status is not null && SuiteStore.Alive(status.Pid) && DateTime.UtcNow.Ticks - status.Updated < TimeSpan.FromSeconds(5).Ticks ? status : null;
+        // A status is written when it changes, not every second: the app is running while its process lives.
+        return status is not null && SuiteStore.Alive(status.Pid, status.Started == 0 ? null : status.Started) ? status : null;
     }
     // FileSync is its own product with its own installer; it is listed when its uninstall entry points to a real program.
     static string? FileSyncExecutable()
@@ -237,8 +238,8 @@ public sealed partial class ManagerApplication
         string path = SuiteEnvironment.Executable(component);
         if (!File.Exists(path)) throw new InvalidOperationException("That optional application is not installed.");
         bool settings = action == component + ".settings";
-        var status=SuiteStore.Status(component);
-        if(!settings&&status is not null&&SuiteStore.Alive(status.Pid)&&DateTime.UtcNow.Ticks-status.Updated<TimeSpan.FromSeconds(3).Ticks)
+        var status=SuiteRunning(component);
+        if(!settings&&status is not null)
         {
             AllowSetForegroundWindow((uint)status.Pid);
             SuiteStore.Send(action);return;

@@ -51,7 +51,7 @@ function eta() {
 function homePage() {
   const d = h(), t = snapshot?.telemetry || {}, power = UI.power(t);
   return heading(d.deviceName || "This PC", d.model || "Your computer") +
-    card("Device", `<div class="readout-grid">${readout("Model", d.model)}${readout("BIOS", d.bios)}${readout("Performance", d.mode ? UI.mode(d.mode, d.powerSource) : "Unavailable", d.mode ? UI.modeIcon(d.mode) : null)}${readout("Power source", d.powerSource === "Online" ? "AC" : d.powerSource === "Offline" ? "Battery" : "Unknown")}${readout("Battery", UI.number(d.batteryPercent, "%"))}${readout("Charge estimate", eta())}</div><p class="inline-note">Charging time uses remaining energy and the current battery charge rate. Charging slows near full, so this is an estimate.</p>`) +
+    card("Device", `<div class="readout-grid">${readout("Model", d.model)}${readout("BIOS", d.bios)}${readout("Performance", d.mode ? UI.mode(d.mode, d.powerSource) : "Unavailable", d.mode ? UI.modeIcon(d.mode) : null)}${readout("Power source", d.powerSource === "Online" ? (d.adapterWatts ? "AC · " + d.adapterWatts + " W" : "AC") : d.powerSource === "Offline" ? "Battery" : "Unknown")}${readout("Battery", UI.number(d.batteryPercent, "%"))}${readout("Charge estimate", eta())}</div><p class="inline-note">Charging time uses remaining energy and the current battery charge rate. Charging slows near full, so this is an estimate.</p>`) +
     `<div class="grid cols-3">${metric("CPU", UI.number(t.cpuPercent, "%"), "Current processor load")}${metric("Memory", UI.number(t.memoryUsedGiB, " GiB", 1), UI.number(t.memoryTotalGiB, " GiB", 1) + " available capacity")}${metric("Power draw", UI.number(power.watts, " W", 1), power.detail)}</div>` +
     specsCards(d.specs) + (prefs().developerMode ? card("Background manager", `<p class="inline-note">${UI.escape(isolationStatus || "Checking background status")}</p>`) : "");
 }
@@ -255,8 +255,10 @@ function render() {
   $("connection").textContent = Native.connected ? cachedState ? "Last known state · updating" : snapshot ? "Device connected" : "Connecting" : "Layout preview";
   $("connection").classList.toggle("connected", Boolean(snapshot));
   const conflict = h().chargeConflict ? `Charging conflict: desired ${h().requestedChargeLimit}%, firmware ${h().chargeLimit}%. The resident will retry; check OEM isolation if this persists.` : h().modeConflict ? "Another controller changed the performance mode. The resident will retry the saved selection." : null;
-  $("status-banner").hidden = Native.connected && !cachedState && !h().firmwareError && !conflict;
-  $("status-banner").textContent = !Native.connected ? "Layout preview. Open the desktop app for device controls." : h().firmwareError || conflict || (cachedState ? "Showing last known values while the resident updates this page." : "");
+  // No banner while the remembered state is on screen: it was there for half a second, pushed the page down and
+  // let it jump back up. The header says "Last known state" meanwhile, and a remembered warning is not current.
+  $("status-banner").hidden = Native.connected && (cachedState || (!h().firmwareError && !conflict));
+  $("status-banner").textContent = !Native.connected ? "Layout preview. Open the desktop app for device controls." : h().firmwareError || conflict || "";
 }
 function showPage(name) {
   document.querySelectorAll("details[data-persist]").forEach(node => { node.open = false; }); openDetails.clear();
@@ -307,6 +309,17 @@ function openSearchHit(hit) {
   }, 250);
 }
 function notice(message, error = false) { Revamp.toast(message, {error}); }
+// The state of the last session, complete: the window opens on it, so nothing is missing while the live values
+// are read. Before, only the hardware snapshot and two settings objects were kept, at most every 30 seconds:
+// the Apps rows, the Xiaomi components, the keep-awake switches and the version were absent on opening.
+function saveSession() {
+  if (!snapshot?.hardware || cachedState) return;
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({ snapshot, settingState, customization, suiteState, components, windowState: { awake, sleepOff, isolationStatus, appVersion }, savedAt: Date.now() }));
+    lastCacheWrite = Date.now();
+  } catch { /* Keep live state if browser storage is unavailable. */ }
+}
+let shownReported = false;
 async function refresh(force = false) {
   if (!Native.connected || busy || BrightnessInput.pending || document.hidden) return false;
   if (reading) { if (force) pendingRefresh = true; return false; }
@@ -326,8 +339,9 @@ async function refresh(force = false) {
     updateHistory(await Native.call("settings.history"));
     cachedState = false;
     $("last-updated").textContent = "Updated " + new Date().toLocaleTimeString("en-GB"); if (force || !dirty) render();
+    if (!shownReported) { shownReported = true; Native.call("window.shown").catch(() => {}); }
     if (Date.now() - lastCacheWrite > 30000 || force) {
-      try { localStorage.setItem(cacheKey, JSON.stringify({ snapshot, settingState, customization, savedAt: Date.now() })); lastCacheWrite = Date.now(); } catch { /* Keep live state if browser storage is unavailable. */ }
+      saveSession();
     }
     if ($("setting-search").value) renderSearch();
     return true;
@@ -555,16 +569,28 @@ document.querySelector(".app-header")?.addEventListener("pointerdown", event => 
   if (event.button === 0 && !event.target.closest("button,a,input,select")) Native.call("window.drag").catch(() => {});
 });
 window.addEventListener("hashchange", () => { const target = location.hash.slice(1); if (target !== page) showPage(target); });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(true); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(true); else saveSession(); });
+window.addEventListener("pagehide", saveSession);
 Native.listen(message => { if (message.appearance) { if (snapshot?.hardware?.preferences) snapshot.hardware.preferences.appearance = message.appearance; UI.applyAppearance(message.appearance); } if (message.managerPage) showPage(message.managerPage); if (message.activated) refresh(true); if (message.notice) notice(message.notice); });
 if (Native.connected) {
   try {
     const previous = JSON.parse(localStorage.getItem(cacheKey) || "null");
     if (previous?.snapshot?.hardware && Date.now() - previous.savedAt < 7 * 24 * 3600 * 1000) {
       snapshot = previous.snapshot; settingState = previous.settingState; customization = previous.customization;
+      if (previous.suiteState) suiteState = previous.suiteState;
+      if (previous.components) components = previous.components;
+      if (previous.windowState) ({ awake, sleepOff, isolationStatus, appVersion } = previous.windowState);
       cachedState = true;
       $("last-updated").textContent = "Last known values · " + new Date(previous.savedAt).toLocaleTimeString("en-GB");
     }
   } catch { /* A corrupt or unavailable cache must never block the manager. */ }
 }
-render(); refresh(true); setInterval(() => refresh(), 5000);
+render();
+// Battery, power source, brightness and display rate cost nothing to read: they replace the remembered values
+// at once, before the complete read (firmware, settings, apps) has answered.
+if (Native.connected) Native.call("window.live").then(live => {
+  if (!snapshot?.hardware || !cachedState) return;
+  snapshot.hardware = { ...snapshot.hardware, ...Object.fromEntries(Object.entries(live).filter(([, value]) => value !== null && value !== undefined)) };
+  if (!dirty) render();
+}).catch(() => {});
+refresh(true); setInterval(() => refresh(), 5000);

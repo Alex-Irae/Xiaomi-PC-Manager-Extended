@@ -1,3 +1,51 @@
+# Xiaomi Revamp 0.3.21
+
+PC Manager 0.2.18, AI Center 0.3.13, Screen Translator 0.2.9. FileSync 1.3.8 belongs with this release.
+
+- **All apps: the link between the apps no longer polls.** For shortcuts, the shared appearance and the app list, every app looked at the shared settings four times a second, and PC Manager rewrote a lease file at that rate plus a status file every second. Measured with nothing open and no input: PC Manager woke 85 times a second and used 1.5% of a processor core, AI Center 40 times and 0.5%, and Microsoft Defender used 9% of a core instead of 3%, because it scans every rewritten file. The apps are now woken by a change of the shared files, the lease and the status are written when they change, and a check every five seconds remains as a safety net. A shortcut owned by PC Manager reaches the other app as soon as the file is written, not at the next quarter second.
+- **PC Manager and AI Center: hidden windows give memory back.** The quick panel and the search bar stay loaded so that they open at once. While hidden they now ask WebView2 for its low memory level, and return to normal when shown.
+- **PC Manager: the charger's wattage next to "AC".** The quick panel's power badge and the Power source field of This PC show for example "AC · 100 W" when the charger reports its rating. The Battery page already has it as "Adapter rating".
+
+# Xiaomi Revamp 0.3.20
+
+PC Manager 0.2.17. AI Center stays at 0.3.12 and Screen Translator at 0.2.8. FileSync 1.3.8 belongs with this release.
+
+- **PC Manager: the refresh-rate display appears only for a change.** Plugging in the charger with the screen already at 120 Hz applied 120 Hz again and showed "Refresh rate 120" on screen. A display already at the wanted rate is now left alone: nothing is applied and nothing is shown.
+
+# Xiaomi Revamp 0.3.19
+
+PC Manager 0.2.16. AI Center stays at 0.3.12 and Screen Translator at 0.2.8. FileSync 1.3.8 belongs with this release.
+
+- **PC Manager: the big window gets its live values at once, also after the app sat unused.** One query, the processor package power, takes 265 ms each time and 5.5 s when nothing has asked Windows for it for about ten minutes, and every full read waited for it. That was the delay of several seconds on opening, and 0.3.18 only removed it for the first opening after a start. The query now runs beside the read: the Power draw tile shows the previous query's value, at most one refresh (5 seconds) old while the window is open.
+- **PC Manager: the big window no longer jumps when it opens.** For the half second before the live values arrive it showed the banner "Showing last known values while the resident updates this page", which pushed the whole page down and let it jump back up. The header still says "Last known state" during that time.
+
+# Xiaomi Revamp 0.3.18
+
+PC Manager 0.2.15. AI Center stays at 0.3.12 and Screen Translator at 0.2.8. FileSync 1.3.8 belongs with this release.
+
+- **PC Manager: the first opening of the big window after a start no longer waits five seconds.** The window's full read includes the processor, graphics and temperature counters. Windows needs about five seconds to set them up the first time (measured: 5.6 s), and the quick panel never uses them, so after every sign-in the first opening showed the remembered values for that long. They are now set up once in the background, ten seconds after the app is ready. Measured afterwards: window drawn after 130 to 160 ms, live values after 390 to 460 ms.
+- **PC Manager: a slow full read names its parts in the log.** A read of one second or more writes `State.Read N ms: hardware, counters, Xiaomi path`. The line written when the first live values arrive is now called `Window.Live` (it was `Window.Shown`, which it did not measure).
+
+# Xiaomi Revamp 0.3.17
+
+PC Manager 0.2.14. AI Center stays at 0.3.12 and Screen Translator at 0.2.8. FileSync 1.3.8 belongs with this release.
+
+- **PC Manager: the automatic refresh rate is tried again at sign-in.** Two seconds after sign-in the display is not always ready. The single attempt failed, the change of power source was recorded as handled, and the screen stayed at 120 Hz on battery with the notice "The automatic display rate could not be applied". The change now stays open and is retried at each check, every 30 seconds; the notice appears only after four failures in a row.
+- **PC Manager: the big window opens on a complete last session.** It kept only the hardware snapshot and two settings objects, written at most every 30 seconds, so the Apps rows, the Xiaomi components, the keep-awake switches and the version were missing on opening, and values could be days old. It now keeps everything its pages draw and saves it when the window closes. On opening, battery level, power source, brightness and display rate are read at once (they cost nothing) and replace the remembered ones before the complete read has answered.
+- **PC Manager: the log says where an opening spends its time.** `Window.Loaded`, `Window.Shown` and any call that takes 150 ms or more are written for the big window.
+
+# Xiaomi Revamp 0.3.16
+
+AI Center 0.3.12. PC Manager stays at 0.2.13 and Screen Translator at 0.2.8.
+
+- **AI Center: the walk of the folders takes seconds, not most of an hour.** At every start the indexer walks the included folders to catch what changed while it was not running. For each file it resolved the path three times (which opens the file) and asked Windows about it and its parent folders a dozen times: 293 files a second on a profile, 53 minutes for a whole drive at one boot, with the fans running and the antivirus following every access. The folders are now listed once each; Windows returns every entry's dates, size and attributes with the listing, so an unchanged file costs one lookup and nothing is opened. The same whole drive (173,000 files, 20,000 folders) is walked in about 9 seconds. New, changed and deleted files are found as before, and exclusions, links and system entries are skipped as before.
+- **AI Center: one walk a day, not two in a row.** The walk at start now counts as the daily one. Before, the scheduled daily walk could start minutes after the walk at start had ended.
+- **AI Center: "Index now" and the daily request finish.** They waited for every queued visit, including visits put off for hours and passages waiting for the model, so the request could stay unanswered for as long as any file kept changing, and "Free when idle" kept its memory meanwhile.
+- **AI Center: a walk loads the model only when it has to.** With "Free when idle", the walk at start and the daily walk embed only when 5,000 passages or more are waiting (a new folder, a first index); a few hundred from files that change all day wait for the next search. "Index now" and a settings change still embed everything.
+- **AI Center: "Text-only types" in Search settings.** Data files (`.json .yaml .yml .toml .csv` by default) are found by their name and by the words in them, but are no longer embedded for search by meaning. Programs rewrite such files all day and ship thousands of them: on one day 23,937 of 25,681 passages waiting for the GPU were JSON from application resources and state files. `compact` removes the vectors already stored for these types.
+- **AI Center: an unreadable file is left alone until it changes.** Files that are too long or not text were read again in full at every walk and every hour, five minutes for 136 files. Only a file Windows refused to open is tried again.
+- **AI Center: a deleted file is removed from the index without reading the whole table**, which took a tenth of a second per deleted file.
+
 # Xiaomi Revamp 0.3.15
 
 AI Center 0.3.11. PC Manager stays at 0.2.13 and Screen Translator at 0.2.8.

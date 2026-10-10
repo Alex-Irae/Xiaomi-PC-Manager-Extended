@@ -17,6 +17,7 @@ public sealed class HardwareService : IDisposable
     private readonly ManagedInputNode touchscreen;
     private PowerLineStatus? lastPower;
     private bool retryPolicies = true;
+    private int refreshFailures;
     private bool travelFullNotified;
     private AppConfig? advanced;
     public IMifsClient SharedFirmware { get; }
@@ -189,6 +190,14 @@ public sealed class HardwareService : IDisposable
             },
             customization = new { preferences.PopupPosition, preferences.PopupOffsetX, preferences.PopupOffsetY, preferences.QuickLinks, preferences.QuickSystemActions, preferences.QuickIcons }
         };
+    }
+
+    /// <summary>The values Windows answers at once, with no firmware call and no waiting behind other work:
+    /// what the big window shows first, on top of the state it kept from its last session.</summary>
+    internal static object ReadLive()
+    {
+        var power = PowerStatus.Read();
+        return new { batteryPercent = power.BatteryPercent, powerSource = power.LineStatus.ToString(), brightness = Brightness.Get(), refreshRate = RefreshRate.Current() };
     }
 
     private static T? SafeRead<T>(Func<T?> read)
@@ -543,21 +552,35 @@ public sealed class HardwareService : IDisposable
             catch (Exception ex) { XiControl.Log.Ex("FullCharge.Restore", ex); Notice?.Invoke("Full charging was not confirmed. Check Battery settings for a competing controller."); }
         }
         bool refreshTransition = preferences.LastRefreshPowerSource is not null && preferences.LastRefreshPowerSource != power.LineStatus.ToString();
-        if (preferences.LastRefreshPowerSource != power.LineStatus.ToString())
-        { preferences.LastRefreshPowerSource = power.LineStatus.ToString(); preferences.Save(); }
+        bool refreshPending = false;
         if (preferences.AutoRefresh && refreshTransition)
         {
             int target = power.LineStatus == PowerLineStatus.Online ? preferences.AcRefreshRate : preferences.BatteryRefreshRate;
-            if (!RefreshRate.Apply(target)) Notice?.Invoke("The automatic display rate could not be applied.");
+            // A display already at the wanted rate is left alone: applying it again showed "120" on screen when the
+            // charger was plugged in although nothing changed. The on-screen display is for a change only.
+            if (RefreshRate.Current() == target) refreshFailures = 0;
+            else if (!RefreshRate.Apply(target))
+            {
+                // At sign-in the display is not always ready yet: the one attempt failed two seconds after the
+                // start, the change of power source was recorded as handled, and the screen stayed at 120 Hz on
+                // battery. The change now stays open and is tried again at each check (every 30 seconds); the
+                // notice comes only when four attempts in a row have failed.
+                refreshPending = true;
+                XiControl.Log.Write($"Refresh.Auto source={power.LineStatus} requested={target} not applied, attempt {refreshFailures + 1}");
+                if (++refreshFailures == 4) Notice?.Invoke("The automatic display rate could not be applied.");
+            }
             else if (RefreshRate.Current() is int confirmed)
             {
+                refreshFailures = 0;
                 XiControl.Log.Write($"Refresh.Auto source={power.LineStatus} requested={target} confirmed={confirmed} osd={RefreshConfirmed is not null}");
                 RefreshConfirmed?.Invoke(confirmed);
             }
             else XiControl.Log.Write($"Refresh.Auto source={power.LineStatus} requested={target} confirmed=unavailable");
         }
+        if (!refreshPending && preferences.LastRefreshPowerSource != power.LineStatus.ToString())
+        { preferences.LastRefreshPowerSource = power.LineStatus.ToString(); preferences.Save(); }
         lastPower = power.LineStatus;
-        retryPolicies = false;
+        retryPolicies = refreshPending;
         if (advanced is not null)
         {
             // The poll also catches a source that was Unknown during the resume event.

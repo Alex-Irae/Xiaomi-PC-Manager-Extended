@@ -143,6 +143,7 @@ class Store:
                     db.execute(f"CREATE TRIGGER IF NOT EXISTS revision_{table}_{operation} AFTER {operation} ON {table} BEGIN UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'; END")
         self.excluded_folders = []
         self.excluded_extensions = []
+        self.content_only = []  # extensions whose passages are searched as text and never embedded
         self.type_weights = {}  # extension -> ranking multiplier, 'default' for the rest; empty means no preference
         self.roots = None  # Standalone Store callers have no configured scope.
         if self.protected:
@@ -224,10 +225,35 @@ class Store:
         with self.connect() as db:
             return [row[0] for row in db.execute('SELECT path FROM files WHERE stale=1 AND active=1')]
 
+    def embedding_model(self):
+        with self.connect() as db:
+            row = db.execute("SELECT value FROM meta WHERE key='embedding_model_hash'").fetchone()
+        return row[0] if row else None
+
+    def settled_rows(self, extraction_key):
+        """(path, mtime_ns, size, ctime_ns, extension, status, file_type) of entries that need no visit while
+        unchanged: read with the current settings, or unreadable for a reason that will not go away."""
+        with self.connect() as db:
+            return db.execute("SELECT path,mtime_ns,size,ctime_ns,extension,status,file_type FROM files WHERE active=1 AND stale=0 AND ((status IN ('indexed','empty_text','metadata_only') AND extraction_key=?) OR (status='error' AND error NOT LIKE '[Errno%' AND error NOT LIKE '[WinError%'))", (extraction_key,)).fetchall()
+
+    def clear_stale(self, file_id):
+        with self.connect() as db:
+            db.execute('UPDATE files SET stale=0 WHERE id=? AND stale=1', (file_id,))
+
+    def _embedded_types(self):
+        """SQL condition and parameters selecting files whose passages are embedded at all."""
+        return ("f.extension NOT IN (" + ",".join("?" * len(self.content_only)) + ")", list(self.content_only)) if self.content_only else ("1", [])
+
+    def pending_vector_passages(self):
+        types, values = self._embedded_types()
+        with self.connect() as db:
+            return db.execute(f"SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.vector IS NULL AND f.active=1 AND f.status='indexed' AND {types}", values).fetchone()[0]
+
     def pending_vector_files(self, limit=5000):
         """Files with passages not yet embedded, the most recently read first."""
+        types, values = self._embedded_types()
         with self.connect() as db:
-            return [row[0] for row in db.execute("SELECT c.file_id FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.vector IS NULL AND f.active=1 AND f.status='indexed' GROUP BY c.file_id ORDER BY max(f.read_at) DESC LIMIT ?", (limit,))]
+            return [row[0] for row in db.execute(f"SELECT c.file_id FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.vector IS NULL AND f.active=1 AND f.status='indexed' AND {types} GROUP BY c.file_id ORDER BY max(f.read_at) DESC LIMIT ?", values + [limit])]
 
     def reread_wait(self, file_id, seconds_per_passage, minimum=0):
         """Seconds until a changed file may be read again: so many per passage it holds (at least
@@ -293,20 +319,39 @@ class Store:
                         db.execute(f'DELETE FROM files WHERE id IN ({some})', batch)
                     else:
                         db.execute(f"UPDATE files SET status='metadata_only',digest='',error=NULL WHERE id IN ({some})", batch)
+        # Types searched as text only keep their passages and lose the vectors (four kilobytes a passage).
+        emptied = 0
+        if self.content_only:
+            types, values = self._embedded_types()
+            with self.connect() as db:
+                ids = [row[0] for row in db.execute(f"SELECT c.id FROM chunks c JOIN files f ON f.id=c.file_id WHERE c.vector IS NOT NULL AND NOT ({types})", values)]
+            emptied = len(ids)
+            for start in range(0, len(ids), 500):
+                batch = ids[start:start + 500]
+                some = ','.join('?' * len(batch))
+                with self.connect() as db:
+                    db.execute(f'UPDATE chunks SET vector=NULL,model_id=NULL,dimension=NULL WHERE id IN ({some})', batch)
+                    db.execute(f'DELETE FROM vectors WHERE chunk_id IN ({some})', batch)
         with self.connect() as db:
             db.execute('VACUUM')
         self.flush()
-        return {'removed_files': len(gone), 'name_only_files': len(named)}
+        return {'removed_files': len(gone), 'name_only_files': len(named), 'passages_without_vectors_now': emptied}
 
-    def record_error(self, file_id, error):
+    def record_error(self, file_id, error, stat=None):
         # Stale content is withheld when a previously indexed file fails to update.
         with self.connect() as db:
-            db.execute("UPDATE files SET status='error',error=?,read_at=? WHERE id=?", (str(error), time.time(), file_id))
+            # Date and size are not recorded here (save does that); the caller passes them so that an
+            # unreadable file is left alone until it changes.
+            db.execute("UPDATE files SET status='error',error=?,read_at=?,stale=0 WHERE id=?", (str(error), time.time(), file_id))
+            if stat is not None:
+                db.execute("UPDATE files SET size=?,mtime_ns=?,ctime_ns=? WHERE id=?", (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, file_id))
 
     def mark_missing(self, path):
         with self.connect() as db:
             prefix = str(path).rstrip("\\/")
-            db.execute("UPDATE files SET active=0 WHERE path=? OR substr(path,1,?)=?", (prefix, len(prefix + "\\"), prefix + "\\"))
+            # The entry itself and everything beneath it, as a range on the indexed path. substr() read every
+            # row of the table for each missing file: a tenth of a second apiece on a whole drive.
+            db.execute("UPDATE files SET active=0 WHERE active=1 AND (path=? OR (path>=? AND path<?))", (prefix, prefix + "\\", prefix + "]"))
 
     def retain_roots(self, roots, allowed):
         with self.connect() as db:
@@ -429,8 +474,10 @@ class Store:
             counts = dict(db.execute("SELECT status,count(*) FROM files WHERE active=1 AND file_type<>2 GROUP BY status"))
             counts["files"] = sum(counts.values())
             counts["folders"] = db.execute("SELECT count(*) FROM files WHERE active=1 AND file_type=2").fetchone()[0]
-            counts["chunks"] = db.execute("SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed'").fetchone()[0]
-            counts["vectors"] = db.execute("SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed' AND c.vector IS NOT NULL").fetchone()[0]
+            # Embedding progress counts only the passages that are embedded at all.
+            types, values = self._embedded_types()
+            counts["chunks"] = db.execute(f"SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed' AND {types}", values).fetchone()[0]
+            counts["vectors"] = db.execute(f"SELECT count(*) FROM chunks c JOIN files f ON f.id=c.file_id WHERE f.active=1 AND f.status='indexed' AND c.vector IS NOT NULL AND {types}", values).fetchone()[0]
             self._counts = (time.monotonic(), dict(counts))
             return counts
 

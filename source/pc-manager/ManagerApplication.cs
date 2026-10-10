@@ -126,7 +126,16 @@ public sealed partial class ManagerApplication : ApplicationContext
                 XiControl.Log.Write("Resident.Ready");
                 // Warm the one-time WMI inventory after the immediate control path is ready.
                 // The manager can then show specs without starting eight providers on first open.
-                _ = Task.Run(async () => { await Task.Delay(10000); if (!Exiting) ComputerSpecs.ReadCached(); });
+                // The same goes for the processor, graphics and temperature counters behind the big window's full
+                // read: Windows needs about five seconds to set them up the first time (measured 5.6 s), and the quick
+                // panel never uses them, so the first opening after every start waited that long for live values.
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(10000);
+                    if (Exiting) return;
+                    ComputerSpecs.ReadCached();
+                    try { Router.Handle("state.read", default); } catch (Exception ex) { XiControl.Log.Ex("State warm-up", ex); }
+                });
             }
             catch (Exception ex)
             {

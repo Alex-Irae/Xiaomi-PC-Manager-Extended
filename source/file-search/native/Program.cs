@@ -333,7 +333,10 @@ internal sealed partial class CenterContext : ApplicationContext
         start.ArgumentList.Add("-m");start.ArgumentList.Add("xiaomi_search.backend");
         start.ArgumentList.Add("--config");start.ArgumentList.Add(Program.Config);start.ArgumentList.Add("--data");start.ArgumentList.Add(Program.Data);
         if(paused)start.ArgumentList.Add("--paused");if(noShortcut)start.ArgumentList.Add("--no-shortcut");
-        if(lightStart){start.ArgumentList.Add("--no-scan");lightStart=false;}start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONDONTWRITEBYTECODE"]="1";
+        if(lightStart){start.ArgumentList.Add("--no-scan");lightStart=false;}
+        // A worker that starts in realtime mode walks the folders itself: that walk is today's, and the
+        // scheduled one must not start again minutes later (on 8 October it followed a 53-minute walk at once).
+        else if(settings.TryGetProperty("indexing_frequency",out var cadence)&&cadence.GetString()=="realtime"){lastScheduled=DateTime.UtcNow;try{File.WriteAllText(Path.Combine(Program.Data,"schedule.txt"),lastScheduled.ToString("O"));}catch(IOException){}}start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONDONTWRITEBYTECODE"]="1";
         var process=Process.Start(start)??throw new InvalidOperationException("Local backend failed to start.");backend=process;
         Program.Log($"Owned backend started: {process.Id}");
         // The idle timer otherwise starts with the first request from a window, which a worker started in the background never gets.
@@ -878,6 +881,14 @@ internal class WebWindow : Form
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);if(Visible&&WindowState!=FormWindowState.Minimized){browserIdle.Stop();_=Initialize();}else browserIdle.Start();
+        TrimHiddenMemory();
+    }
+    // A hidden window that stays loaded (the search bar, kept ready) asks WebView2 to give memory back; showing
+    // it restores the normal level.
+    void TrimHiddenMemory()
+    {
+        try{if(!Web.IsDisposed&&Web.CoreWebView2 is {} core)core.MemoryUsageTargetLevel=Visible?CoreWebView2MemoryUsageTargetLevel.Normal:CoreWebView2MemoryUsageTargetLevel.Low;}
+        catch(Exception error) when(error is InvalidOperationException or System.Runtime.InteropServices.COMException or ObjectDisposedException){Program.Log("Memory level: "+error.Message);}
     }
     internal void Prepare(){_=Initialize(true);}
     async Task Initialize(bool prepare=false)
@@ -918,7 +929,7 @@ internal class WebWindow : Form
                 // this window takes a fresh browser now, or the next time it is shown.
                 if(eventArgs.ProcessFailedKind==CoreWebView2ProcessFailedKind.BrowserProcessExited&&web==Web)BeginInvoke(()=>{if(web!=Web)return;ReleaseBrowser();if(Visible||(owner=="search"&&App?.KeepSearchReady==true))_=Initialize(!Visible);});
             };
-            core.NavigationCompleted+=(_,eventArgs)=>{if(eventArgs.IsSuccess&&web==Web){navigated=true;NavigationReady();}};
+            core.NavigationCompleted+=(_,eventArgs)=>{if(eventArgs.IsSuccess&&web==Web){navigated=true;NavigationReady();TrimHiddenMemory();}};
             Ready=true;recovering=false;core.Navigate(Program.Origin+"/"+page);
         }
         catch(Exception exc)

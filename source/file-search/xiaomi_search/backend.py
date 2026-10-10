@@ -91,7 +91,7 @@ def main():
         logging.info('Starting index notifications')
         service.indexer.start(watch=settings['indexing_frequency'] == 'realtime')
         if settings['indexing_frequency'] == 'realtime' and not args.no_scan:
-            service.indexer.request_scan()
+            service.indexer.request_scan(explicit=False)
         send({"kind": "ready", "settings": settings, "pid": os.getpid()})
         if args.no_scan:
             service.notify()  # tells the host that nothing is being indexed, so the next idle period can free memory again

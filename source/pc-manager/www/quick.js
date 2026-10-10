@@ -49,7 +49,7 @@ function update() {
   $("current-mode").textContent = h.mode == null ? "Unavailable" : UI.mode(h.mode, h.powerSource);
   const ac = h.powerSource === "Online";
   const knownSource = ac || h.powerSource === "Offline";
-  $("power-source").textContent = ac ? "AC" : knownSource ? "Battery" : "Unknown";
+  $("power-source").textContent = ac ? (h.adapterWatts ? "AC · " + h.adapterWatts + " W" : "AC") : knownSource ? "Battery" : "Unknown";
   const modeIcons = { Quiet: "quiet", Auto: "auto", FullSpeed: "speed", Turbo: "speed", Eco: "battery" };
   const order = UI.modes(h.powerSource);
   const visible = order.filter(mode => (h.visibleModes || order).includes(mode));

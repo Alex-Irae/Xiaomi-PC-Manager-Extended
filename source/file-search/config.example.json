@@ -39,6 +39,13 @@
     ".tga",
     ".dds"
   ],
+  "content_only_extensions": [
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".csv"
+  ],
   "name_only_extensions": [
     ".py",
     ".c",
