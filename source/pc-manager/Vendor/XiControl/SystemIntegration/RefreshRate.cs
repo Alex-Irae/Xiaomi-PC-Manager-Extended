@@ -195,8 +195,10 @@ public static class RefreshRate
 
                 cur.dmDisplayFrequency = (uint)best;
                 cur.dmFields = DmPelsWidth | DmPelsHeight | DmBitsPerPel | DmDisplayFrequency;
-                return ChangeDisplaySettingsExW(panel, ref cur, IntPtr.Zero, CdsUpdateRegistry, IntPtr.Zero) == DispChangeSuccessful
-                    ? ApplyResult.Ok : ApplyResult.Failed;
+                int code = ChangeDisplaySettingsExW(panel, ref cur, IntPtr.Zero, CdsUpdateRegistry, IntPtr.Zero);
+                // Windows' reason for a refusal: DISP_CHANGE_RESTART 1, FAILED -1, BADMODE -2, NOTUPDATED -3, BADPARAM -5.
+                if (code != DispChangeSuccessful) Log.Write($"RefreshRate: Windows refused {best} Hz, code {code}");
+                return code == DispChangeSuccessful ? ApplyResult.Ok : ApplyResult.Failed;
             }
             catch (Exception ex) { Log.Ex("RefreshRate.Apply", ex); return ApplyResult.Failed; }
         }

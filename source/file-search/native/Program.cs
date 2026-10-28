@@ -573,6 +573,21 @@ internal sealed partial class CenterContext : ApplicationContext
         await Search.SavePreview("extension-filter.png");
         return new {passed=true,includedRows=true,excludedRows=true,expandAboveFour=true,contextMenu=true,open=true,openWith=true,showInExplorer=true,choiceSurvivesBrowserDisposal=true,exactHistoryVisible=true,repeatQueryFavoriteFirst=true,enterSearchDoesNotOpenFile=true,exactExtensionFilter=true,removeForgetsChoice=true,removedQueryStaysRemoved=true,externalAppsLaunched=false,openWithDialogVisuallyTested=false};
     }
+    // ~ and %VARIABLES% in a keyword's target.
+    static string Expand(string target)
+    {
+        string path=Environment.ExpandEnvironmentVariables(target);
+        return path=="~"||path.StartsWith("~\\")||path.StartsWith("~/")?Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)+path.Substring(1):path;
+    }
+    // A short Windows notice from AI Center, for a keyword that ran without a window. Its own tray icon, removed after
+    // ten seconds, because AI Center's icon is hidden unless the user shows it.
+    internal void Notice(string title,string text,bool failed)=>Post(()=>
+    {
+        var icon=new NotifyIcon {Icon=Personalization.AppIcon,Text="AI Center",Visible=true};
+        icon.ShowBalloonTip(6000,title.Length>63?title[..63]:title,text.Length>255?text[..252]+"...":text,failed?ToolTipIcon.Error:ToolTipIcon.Info);
+        var timer=new System.Windows.Forms.Timer {Interval=10000};
+        timer.Tick+=(_,_)=>{timer.Dispose();icon.Visible=false;icon.Dispose();};timer.Start();
+    });
     internal void Post(Action action){if(!Search.IsDisposed&&Search.IsHandleCreated)Search.BeginInvoke(action);}
     internal void Send(JsonElement message,string owner)
     {
@@ -590,6 +605,56 @@ internal sealed partial class CenterContext : ApplicationContext
         if(method=="local_save_config"){try{SaveSuiteShortcut(request.GetProperty("params"));}catch(Exception error){Reply(null,1,error.Message);return;}}
         if(method=="local_config"){try{ReadScope();BroadcastTheme();Reply(new {settings,path=Program.Config,version=typeof(Program).Assembly.GetName().Version?.ToString(3)});}catch(Exception error){Reply(null,1,error.Message);}return;}
         if(method=="local_xiaoai"){Reply(new {installed=XiaoAi() is not null,icon=XiaoAiIcon()});return;}
+        // A keyword from Search settings (ps -> powershell.exe) opens its program, file or folder at once. The target
+        // comes from the settings in memory: nothing is searched and the search worker is not needed.
+        if(method=="local_keyword")
+        {
+            try
+            {
+                string word=(request.GetProperty("params").GetProperty("keyword").GetString()??"").Trim().ToLowerInvariant();
+                if(settings.ValueKind!=JsonValueKind.Object||!settings.TryGetProperty("keywords",out var keywords)||keywords.ValueKind!=JsonValueKind.Object||!keywords.TryGetProperty(word,out var target))throw new ArgumentException("No such keyword. Add it in Search settings.");
+                // A command keyword (airtunnel -> a PowerShell line), or a keyword that runs a script file instead of
+                // opening it. Hidden ones say how they ended in a notice; terminal ones keep their window open.
+                if(target.ValueKind==JsonValueKind.Object)
+                {
+                    bool terminal=target.TryGetProperty("window",out var window)&&window.GetString()=="terminal";
+                    var start=target.TryGetProperty("command",out var command)?Runner.Command(target.GetProperty("shell").GetString()!,command.GetString()!,terminal,word):Runner.Script(Expand(target.GetProperty("run").GetString()!),terminal,word);
+                    if(testFileLaunch is not null)testFileLaunch(terminal?"run-terminal":"run-hidden",start.FileName+" "+(start.Arguments.Length>0?start.Arguments:string.Join(" | ",start.ArgumentList))+" @ "+start.WorkingDirectory);
+                    else Runner.Start(start,terminal,word,Notice);
+                    Search.Hide();Reply(new {opened=true,path=word});
+                    return;
+                }
+                string path=Expand(target.GetString()!);
+                // A full path that is not there is said by name: "the system cannot find the file" did not say which.
+                if(Path.IsPathRooted(path)&&!File.Exists(path)&&!Directory.Exists(path))throw new FileNotFoundException("\""+word+"\" points to "+path+", which is not there. Choose it again in Search settings (Browse).");
+                // The program starts in the user's own folder. Without this it started in AI Center's folder, so a
+                // console opened by a keyword began in C:\Program Files\Xiaomi Revamp.
+                // A shell that has a Windows Terminal profile (PowerShell, Windows PowerShell, Command Prompt) opens
+                // through that profile, as from the Start menu: started directly, the window was titled with the
+                // full path of the program and carried no profile icon, hard to tell apart in the taskbar.
+                string? profile=TerminalProfile(path);
+                if(testFileLaunch is not null)testFileLaunch(profile is null?"keyword":"terminal",profile??path);
+                else if(profile is not null){var terminal=new ProcessStartInfo("wt.exe"){UseShellExecute=true};terminal.ArgumentList.Add("-p");terminal.ArgumentList.Add(profile);Process.Start(terminal);}
+                else Process.Start(new ProcessStartInfo(path){UseShellExecute=true,WorkingDirectory=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)});
+                Search.Hide();Reply(new {opened=true,path});
+            }
+            catch(FileNotFoundException error){Reply(null,1,error.Message);}
+            catch(Exception error){Reply(null,1,"Could not open: "+error.Message);}
+            return;
+        }
+        // Browse for a keyword's target. The dialog starts in the Start menu's programs: choosing a shortcut there
+        // gives the program it points to.
+        if(method=="local_keyword_browse")
+        {
+            if(owner!="manager"){Reply(null,1,"Keywords are edited in AI Center's Search settings");return;}
+            try
+            {
+                using var dialog=new OpenFileDialog {Title="Choose what the keyword opens",Filter="Programs and shortcuts (*.exe;*.lnk;*.cmd;*.bat)|*.exe;*.lnk;*.cmd;*.bat|All files (*.*)|*.*",CheckFileExists=true,Multiselect=false,DereferenceLinks=true,InitialDirectory=Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms)};
+                Reply(new {path=dialog.ShowDialog(center)==DialogResult.OK?dialog.FileName:null});
+            }
+            catch(Exception error){Reply(null,1,error.Message);}
+            return;
+        }
         if(method is "local_index_info" or "local_index_folder")
         {
             if(owner!="manager"){Reply(null,1,"Index backups belong to AI Center search settings");return;}
@@ -763,9 +828,21 @@ internal sealed partial class CenterContext : ApplicationContext
                 bool opened=true;if(testFileLaunch is not null)opened=testFileLaunch(action,file);else if(action=="open_with")opened=FileActions.OpenWith(file);else Process.Start(new ProcessStartInfo(file){UseShellExecute=true});
                 if(opened&&args.TryGetProperty("query",out var query))try{new SearchHistory(Program.Data).RecordOpen(query.GetString()??"",file);}catch(Exception error){Program.Log("Remembering open failed: "+error.Message);}
                 return new {opened};
+            // Run a script from the search results (its menu's Run, or a click when its type is set to run): in a
+            // terminal window that stays open, so its output can be read.
+            case "run":
+                string script=args.GetProperty("path").GetString()!;
+                var run=Runner.Script(script,true,Path.GetFileNameWithoutExtension(script));
+                if(testFileLaunch is not null)testFileLaunch(action,script);else Runner.Start(run,true,"",Notice);
+                if(args.TryGetProperty("query",out var asked))try{new SearchHistory(Program.Data).RecordOpen(asked.GetString()??"",script);}catch(Exception error){Program.Log("Remembering run failed: "+error.Message);}
+                return new {opened=true};
             case "folder":
                 if(testFileLaunch is not null){testFileLaunch(action,args.GetProperty("path").GetString()!);break;}
                 var folder=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};folder.ArgumentList.Add(args.GetProperty("path").GetString()!);Process.Start(folder);break;
+            case "reveal" when args.GetProperty("path").GetString()!.StartsWith("shell:AppsFolder\\",StringComparison.OrdinalIgnoreCase):
+                string located=ProgramLocation(args.GetProperty("path").GetString()!.Substring("shell:AppsFolder\\".Length))??throw new InvalidOperationException("Windows does not say where this app's files are.");
+                if(testFileLaunch is not null){testFileLaunch(action,located);break;}
+                var shown=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};if(File.Exists(located)){shown.ArgumentList.Add("/select,");}shown.ArgumentList.Add(located);Process.Start(shown);break;
             case "reveal":if(testFileLaunch is not null){testFileLaunch(action,args.GetProperty("path").GetString()!);break;}var explorer=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};explorer.ArgumentList.Add("/select,");explorer.ArgumentList.Add(args.GetProperty("path").GetString()!);Process.Start(explorer);break;
             case "copy":Clipboard.SetText(args.GetProperty("path").GetString()!);break;
             case "choose_folder":if(testBackupFolder is not null)return testBackupFolder;using(var dialog=new FolderBrowserDialog {Description="Choose a backup or folder location"})return dialog.ShowDialog(center)==DialogResult.OK?dialog.SelectedPath:null;
@@ -774,6 +851,51 @@ internal sealed partial class CenterContext : ApplicationContext
             case "hide":Search.Hide();break;case "show_search":Search.ShowSearch();break;case "manage":ShowCenter();break;case "quit":Post(Quit);break;
             default:throw new ArgumentException("Unknown native action "+action);
         }
+        return null;
+    }
+    // Where a Start-menu app lives: the file its shortcut starts, or the install folder of a Store app. Asked of the
+    // Windows shell, which is where the app list itself comes from.
+    internal static string? ProgramLocation(string appId)
+    {
+        try
+        {
+            dynamic shell=Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            dynamic? item=shell.NameSpace("shell:AppsFolder")?.ParseName(appId);
+            if(item is null)return null;
+            foreach(string property in new[]{"System.Link.TargetParsingPath","System.AppUserModel.PackageInstallPath"})
+            {
+                string? value=item.ExtendedProperty(property) as string;
+                if(!string.IsNullOrWhiteSpace(value)&&(File.Exists(value)||Directory.Exists(value)))return value;
+            }
+        }
+        catch(Exception error){Program.Log("Program location unavailable: "+error.Message);}
+        return null;
+    }
+    // The Windows Terminal profile (its guid) that starts this program, or null: a profile whose command is this
+    // program's file, or the PowerShell profile Terminal makes for pwsh.exe. Hidden profiles and a missing or
+    // unreadable settings file give null, and the program is started directly as before.
+    internal static string? TerminalProfile(string path)
+    {
+        string name=Path.GetFileName(path);
+        if(!name.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))return null;
+        try
+        {
+            string settingsFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Packages","Microsoft.WindowsTerminal_8wekyb3d8bbwe","LocalState","settings.json");
+            if(!File.Exists(settingsFile))return null;
+            using var document=JsonDocument.Parse(File.ReadAllText(settingsFile),new JsonDocumentOptions{CommentHandling=JsonCommentHandling.Skip,AllowTrailingCommas=true});
+            if(!document.RootElement.TryGetProperty("profiles",out var profiles))return null;
+            var list=profiles.ValueKind==JsonValueKind.Array?profiles:profiles.TryGetProperty("list",out var inner)?inner:default;
+            if(list.ValueKind!=JsonValueKind.Array)return null;
+            foreach(var profile in list.EnumerateArray())
+            {
+                if(profile.TryGetProperty("hidden",out var hidden)&&hidden.ValueKind==JsonValueKind.True||!profile.TryGetProperty("guid",out var guid))continue;
+                string command=profile.TryGetProperty("commandline",out var line)?Environment.ExpandEnvironmentVariables(line.GetString()??"").Trim():"";
+                string program=command.StartsWith('"')?command[1..Math.Max(1,command.IndexOf('"',1))]:command.Split(' ')[0];
+                bool core=profile.TryGetProperty("source",out var source)&&source.GetString()=="Windows.Terminal.PowershellCore";
+                if(program.Length>0?Path.GetFileName(program).Equals(name,StringComparison.OrdinalIgnoreCase):core&&name.Equals("pwsh.exe",StringComparison.OrdinalIgnoreCase))return guid.GetString();
+            }
+        }
+        catch(Exception error){Program.Log("Terminal profile unavailable: "+error.Message);}
         return null;
     }
     internal void ShowCenter()

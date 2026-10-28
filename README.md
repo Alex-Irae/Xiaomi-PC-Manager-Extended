@@ -2,72 +2,150 @@
 
 **Your laptop controls, local file search and screen translation, together.**
 
-Xiaomi Revamp connects three independent Windows apps. PC Manager brings everyday laptop controls into one place. Add AI Center to find files by name, contents or meaning, and Screen Translator to read Chinese text on your screen in English. Search and translation run on your computer.
+Xiaomi Revamp is a set of three Windows apps that work well together and can also be used on their own. **PC Manager** puts every laptop control in one place. **AI Center** finds your files by name, by what is written in them, or by what they are about. **Screen Translator** shows Chinese text on your screen in English, right where it was. Search and translation run entirely on your computer.
 
 ![PC Manager overview with laptop controls and hardware information](docs/screenshots/pc-manager-overview.png)
 
-## Choose what you need
+## The three apps
 
-| App | What you can do | Take a tour |
+| App | In one sentence | Guide |
 | --- | --- | --- |
-| **PC Manager** | Change performance, battery care and display settings; customize quick controls and shortcuts. | [PC Manager guide](source/pc-manager/README.md) |
-| **AI Center / File Search** | Find a document even when you remember its subject better than its filename. | [Search guide](source/file-search/README.md) |
-| **Screen Translator** | Translate Chinese text in a screen or selected region, with English displayed at the original text position. | [Translator guide](source/screen-translator/README.md) |
+| **PC Manager** | Performance, battery care, display, keyboard and touch settings, a quick panel in the tray, and shortcuts for everything. | [PC Manager guide](source/pc-manager/README.md) |
+| **AI Center / File Search** | A search bar that finds a document even when you remember its subject better than its name. | [Search guide](source/file-search/README.md) |
+| **Screen Translator** | Translate the Chinese on your screen, or on a part of it, with the English laid over the original. | [Translator guide](source/screen-translator/README.md) |
 
-Each app has its own folder and executable. PC Manager coordinates shortcuts and can share its appearance with the other apps. AI Center and Screen Translator can also work independently.
+## Everything PC Manager can do
 
-## Find a file without opening a large window
+**Performance and power**
+- Switch performance modes from the window, the quick panel or the Mi key. On mains power: Silent, Smart, Full speed and Eco. On battery: Eco, Quiet, Auto and Turbo.
+- Choose one mode for mains power and another for battery; PC Manager switches when you plug in or unplug.
+- **Stay awake** keeps the laptop working; **Prevent sleep** keeps it working while still letting the screen turn off.
 
-Press **Ctrl twice**, type what you remember, then press **Enter**. Choose a file type or add it to your query, such as `project report pdf`. Enter searches; clicking a result opens it.
+**Battery**
+- Set a daily charge limit (80, 70, 60, 50 or 40 %) to make the battery last longer.
+- **Travel charging** allows one full charge for a trip; the daily limit comes back when you unplug.
+- See battery health and, while charging, the charger's power (for example "AC · 100 W") in the quick panel and on the overview.
 
-![Compact File Search with a PDF query and example document results](docs/screenshots/file-search-results.png)
+**Display**
+- Brightness, with optional automatic brightness from the light sensor.
+- Refresh rate: pick one, cycle with a key, or let PC Manager use one rate on mains power and another on battery. When the PC starts, the right rate is set at the sign-in screen, so the screen does not flicker once you are at work.
+- A pop-up confirms a refresh rate change, and only appears when the rate actually changes.
+- **Screen off now** turns the screen off without locking or sleeping.
 
-Open **AI Center** when you want to choose indexed folders, manage the model or back up the index. The File Search shortcut opens only the compact bar.
+**Keyboard and keys**
+- Up to 16 shortcuts of your own: open an app, a file, a PC Manager page or a device action. Record the keys you press or pick from a list.
+- The Mi key: a short press changes the performance mode, a long press opens the quick panel. The Copilot key can be given another action.
+- Xiaomi-style pop-ups for the special keys: microphone, Caps Lock, Fn lock, keyboard backlight, performance mode and more. Choose Xiaomi's original look or the XiControl style.
+- In developer mode, key diagnostics show the last event each special key sent.
 
-## Read Chinese on your screen
+**Touch and input**
+- Turn the touchpad and the touchscreen on or off.
+- Adjust the touchpad's haptic strength and click force.
 
-Choose **Translate screen** or **Select region**, or use your configured shortcut. A floating toolbox appears while the local models prepare the translation. Switch back to the original text or press **Esc** to dismiss it. English and mixed-language labels are deliberately preserved.
+**Quick panel and tray**
+- A compact panel in the tray for the controls you use most, plus links to apps and files.
+- Choose which controls appear, their order, the panel's size, position, compact layout and animation.
 
-![Screen Translator overview with screen, region and filter controls](docs/screenshots/screen-translator-overview.png)
+**Hardware monitor**
+- Small, medium or large monitor views of processor, graphics, AI chip, memory, temperature and power, with graphs and an optional log file.
+- The overview lists your PC's specifications, memory and storage.
 
-The current bundled translation direction is **Chinese to English**. Translation filter refreshes the overlay as the screen changes.
+**Look and feel**
+- Light or dark theme, color presets, your own accent, background and card colors, and a profile picture.
+- Asset packs: import your own button icons, pop-up images and styles.
+- The other apps can follow PC Manager's theme and accent.
 
-## Install and start
+**Xiaomi's own tools**
+- PC Manager keeps Xiaomi's original background tools from overriding your settings, and can still open Xiaomi PC Manager, Xiaomi Store, XiaoAI, the original quick panel and its meeting subtitles (Xiaomi account needed) when they are installed.
+- Links to official downloads and support.
 
-1. Open [Downloads](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases) and choose the release you want.
-2. Run **Xiaomi-Revamp-Installer.exe**. Choose the installation location, data location and startup options. PC Manager is required in the combined installer; AI Center and Screen Translator are optional.
-3. Launch **PC Manager**, **AI Center**, **File Search** or **Screen Translator** from their Windows shortcuts. PC Manager's Toolbox also opens the connected apps.
+**Settings and safety**
+- Undo and redo for settings changes, and a settings backup you can restore.
+- Starts with Windows and stays in the tray. Some hardware controls need administrator approval.
 
-Use the installer ZIP if you prefer to extract the setup files first. Keep the extracted setup and its payload together. Standalone installers, when listed on a release, install the optional apps separately.
+## Everything AI Center / File Search can do
 
-**Source and installer versions are separate.** This branch and its screenshots describe Xiaomi Revamp **0.3.21**, with PC Manager **0.2.18**, AI Center **0.3.13** and Screen Translator **0.2.9**. At this documentation update, the latest published installer release is **v0.3.4**. Check the release tag before downloading; a source update does not replace its installer assets.
+**Searching**
+- Press **Ctrl twice** for a small search bar anywhere. Type a name, a phrase or a description, and press **Enter**.
+- Three kinds of matches: by file name, by the words inside the file, and by meaning (a document about "holiday plans" is found with "vacation").
+- Narrow to a file type from the list or by adding it to your search, such as `project report pdf`.
+- Your programs from the Start menu appear in the results too.
+- Click a result to open it; right-click for **Show in Explorer** (also for programs: it opens the folder of the program's file), **Open with**, and **Run** for scripts.
+- Scripts (.bat, .cmd, .ps1, .py, .sh) open by default. Choose script types under **Run on click** if you want a click to run them instead.
+- Type a folder path such as `~\Documents` or `C:\` to browse it and press **Enter** to open it in Explorer.
 
-## Before you install
+**Keywords**
+- Give a short word to a program, file or folder, for example `ps` for PowerShell or `vs` for VS Code. Type the word and press **Enter** to open it at once, without a search.
+- A keyword can also run a script, or a command of your own in PowerShell 7, Command Prompt or Git Bash: `flush` for `ipconfig /flushdns`. It runs quietly with a notice saying how it went, or in a terminal window that stays open, as you choose.
+- Add keywords as rows in Search settings, with a **Browse** button to pick the program or script.
+- PowerShell, Windows PowerShell and Command Prompt open in Windows Terminal with their usual title and icon.
 
-Use **Windows 11 x64** with Microsoft Edge WebView2 Runtime. PC Manager's firmware controls require a compatible Xiaomi laptop; the tested model is Xiaomi Book Pro 14 2026. Search and translation use Intel hardware supported by OpenVINO, with GPU, NPU or CPU execution depending on available drivers. See [requirements](REQUIREMENTS.txt) for the full compatibility list.
+**What gets searched**
+- Choose the folders to search and the folders to leave out.
+- Some file types can be searched by name only (their contents are never read), or by name and words only, without meaning search.
+- Choose whether indexing runs all the time, once a day, in a battery-saving way, or is paused.
+- Progress shows how much is indexed and how much is understood for meaning search, with an estimated time left.
 
-The packaged apps carry private runtimes and models. Initial indexing can take hours or days for a large document collection. Model loading and first-time compilation also take time; the screenshots do not demonstrate a particular loading speed.
+**Memory and speed**
+- **Keep loaded**: searches are instant, the search model stays in memory.
+- **Free when idle**: the model leaves memory when you are not searching and loads again while you type.
+- Uses the Intel graphics, AI chip (NPU) or processor, whichever you prefer and is available.
 
-## Shortcuts, appearance and your data
+**Your index**
+- The index stays on your computer, protected by Windows encryption where available.
+- **Index and backup** shows where the index is and makes a backup before a reinstall.
+- Font, result size, accent and the search bar's look are yours to choose.
 
-Manage connected shortcuts in **PC Manager → Keyboard**. Choose a preset or record the keys you actually press. Assigning an occupied shortcut swaps the two actions' keys. Optional apps handle their own shortcuts when PC Manager is closed.
+## Everything Screen Translator can do
+
+- **Translate screen** or **Select region**, from its window, the quick panel or a shortcut.
+- The English appears over the original Chinese, in the same place; switch between original and translated, save a PNG, or press **Esc** to close.
+- **Translation filter** keeps translating while the screen changes, for example while you scroll.
+- English, numbers and mixed labels are left as they are, so app names and buttons stay recognizable.
+- Text size and fitting options; text that cannot fit is marked.
+- Power profiles: **Auto** follows Windows' power mode, **Eco** refreshes less often.
+- Shows when its models are loaded, with **Stop inference** and **Exit app and unload models** to free memory.
+- Works offline: images and recognized text stay in memory unless you save a screenshot. The bundled models translate **Chinese to English**.
+
+## Working together
+
+- One place for shortcuts: **PC Manager → Keyboard** manages the shortcuts of all three apps. Giving a key that is already taken swaps the two actions. When PC Manager is closed, each app handles its own shortcuts.
+- The **Toolbox** in PC Manager opens the other apps, their settings and their start-with-Windows switch.
+- Shared theme and accent across the apps, and FileSync too when installed.
 
 ![PC Manager Toolbox with connected apps and shared appearance](docs/screenshots/pc-manager-apps.png)
 
-Settings let you choose themes, accents and custom colors. FileSync, when installed separately inside Xiaomi Revamp, can also follow PC Manager's appearance.
+## Install and start
 
-The installer selects where settings and app data live. By default, profiles are under `%LOCALAPPDATA%\XiaomiRevamp\install-<root-hash>`; models stay in their app folders. AI Center keeps a local search index and offers a built-in backup. Screen content and search documents are not sent through the shared shortcut connection.
+1. Open [Downloads](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases) and choose a release.
+2. Run **Xiaomi-Revamp-Installer.exe**. Choose where to install, where your settings and data go, and which apps start with Windows. PC Manager is always installed; AI Center and Screen Translator are optional.
+3. Open **PC Manager**, **AI Center**, **File Search** or **Screen Translator** from the Start menu. PC Manager's Toolbox opens them too.
 
-Use Windows Settings or an app's **Uninstall.exe** to remove it. Read the uninstaller's choices before deleting saved settings or an index you want to keep.
+To remove an app, use Windows Settings or the app's **Uninstall.exe**, and read its choices before deleting saved settings or a search index you want to keep.
+
+**Versions.** This page describes Xiaomi Revamp **0.3.27** (PC Manager **0.2.20**, AI Center **0.3.18**, Screen Translator **0.2.9**). The installer for this version is release **v0.3.27** on the [Downloads](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases) page.
+
+## Before you install
+
+- **Windows 11, 64-bit.** Microsoft Edge WebView2 is needed (it is part of Windows 11).
+- **Xiaomi laptop for the hardware controls.** Tested on the Xiaomi Book Pro 14 2026. Other Xiaomi models may offer different controls; on other PCs PC Manager opens, but the Xiaomi-specific controls are not available.
+- **Intel processor for search and translation.** They use the Intel graphics, AI chip or processor.
+- **Time for the first index.** A large document collection can take hours to index the first time. Loading the models also takes a moment, especially the very first time.
+
+The full list is in [requirements](REQUIREMENTS.txt).
+
+## Your data
+
+Everything stays on your computer. Search reads your files to build a local index; translation looks at your screen only when you ask. Nothing is sent to an online service, except Xiaomi's own meeting subtitles if you choose to open them, and the optional download of missing translation models when you ask for it.
 
 ## Linux (in progress)
 
-A first base for Arch Linux with Hyprland is in [`linux/`](linux/README.md): the same web pages in native Wayland windows, the same search and translation engines, and a new hardware layer for PC Manager. It was written on Windows and has not run on Linux yet; the page says exactly what was checked and what was not.
+A first base for Arch Linux with Hyprland is in [`linux/`](linux/README.md): the same pages in native windows, the same search and translation, and a new hardware layer for PC Manager. It has not run on Linux yet; that page says what was checked and what was not.
 
-## More pictures and development
+## More
 
-[View the screenshot tour](docs/SCREENSHOTS.md) · [Developer reference](DEVELOPMENT.md) · [Release notes](RELEASE_NOTES.md)
+[Screenshot tour](docs/SCREENSHOTS.md) · [Release notes](RELEASE_NOTES.md) · [Technical and developer reference](DEVELOPMENT.md) (data locations, how the apps connect, building from source)
 
-Editable source lives under `source/`; installed apps use their own runtime folders. Keep a separate development checkout for changes and testing. This is an unofficial project, not a Xiaomi product. PC Manager builds on XiControl 0.16.0; its [GPLv3 license](source/pc-manager/LICENSE), upstream authorship and third-party notices are retained.
+This is an unofficial project, not a Xiaomi product. PC Manager builds on XiControl 0.16.0; its [GPLv3 license](source/pc-manager/LICENSE), upstream authorship and third-party notices are kept.
 
-Screenshots show the current interface with demonstration data. Hardware readings, file names, progress and device states are examples, not performance measurements or your personal files.
+Screenshots use demonstration data. Readings, file names and progress are examples, not measurements or anyone's personal files.

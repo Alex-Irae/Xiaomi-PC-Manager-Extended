@@ -6,7 +6,7 @@ Change performance, look after your battery, adjust the display and keep frequen
 
 ![PC Manager overview](../../docs/screenshots/pc-manager-overview.png)
 
-Current source: **0.2.18**, part of Xiaomi Revamp **0.3.21**. [Installation and requirements](../../README.md#install-and-start).
+Current source: **0.2.20**, part of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
 
 ## Quick controls when you need them
 

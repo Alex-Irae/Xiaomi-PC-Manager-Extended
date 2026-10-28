@@ -19,11 +19,11 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("Xiaomi Revamp")]
 #if PC_MANAGER
-[assembly: AssemblyVersion("0.2.18.0")]
-[assembly: AssemblyFileVersion("0.2.18.0")]
+[assembly: AssemblyVersion("0.2.20.0")]
+[assembly: AssemblyFileVersion("0.2.20.0")]
 #elif FILE_SEARCH
-[assembly: AssemblyVersion("0.3.13.0")]
-[assembly: AssemblyFileVersion("0.3.13.0")]
+[assembly: AssemblyVersion("0.3.18.0")]
+[assembly: AssemblyFileVersion("0.3.18.0")]
 #else
 [assembly: AssemblyVersion("0.2.9.0")]
 [assembly: AssemblyFileVersion("0.2.9.0")]

@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
+# Script files the search bar can run instead of opening (the native host knows how to run each one).
+RUNNABLE = (".bat", ".cmd", ".ps1", ".py", ".sh")
 
 
 def write_atomic(path, text):
@@ -33,6 +35,23 @@ def load(path):
     from .exclusions import refresh
     refresh(config, path)
     return validate(config, path)
+
+
+def _keyword(word, value):
+    """One keyword in its stored form, or None when it is not valid."""
+    if not isinstance(word, str) or not re.fullmatch(r"[^\s=]{1,32}", word):
+        return None
+    if isinstance(value, str):
+        value = value.strip().strip('"')
+        return value if value and len(value) <= 1024 else None
+    if not isinstance(value, dict) or value.get("window") not in ("hidden", "terminal"):
+        return None
+    if set(value) == {"run", "window"} and isinstance(value["run"], str):
+        path = value["run"].strip().strip('"')
+        return {"run": path, "window": value["window"]} if path and len(path) <= 1024 and Path(path).suffix.lower() in RUNNABLE else None
+    if set(value) == {"command", "shell", "window"} and isinstance(value["command"], str) and value["shell"] in ("pwsh", "cmd", "bash"):
+        return dict(value) if value["command"].strip() and len(value["command"]) <= 4096 else None
+    return None
 
 
 def validate(config, path):
@@ -77,6 +96,18 @@ def validate(config, path):
         if any(not re.fullmatch(r"\.?[\w+-]+", v) for v in config[key]):
             raise ValueError("File types must be extensions such as .pdf or .py")
         config[key] = list(dict.fromkeys("." + v.lower().lstrip(".") for v in config[key]))
+    # Script types that run when clicked in the results; any other type opens. Empty by default: opening is safe.
+    run = config.setdefault("run_extensions", [])
+    if not isinstance(run, list) or any(not isinstance(v, str) or "." + v.lower().lstrip(".") not in RUNNABLE for v in run):
+        raise ValueError("Only these script types can run when clicked: " + ", ".join(RUNNABLE))
+    config["run_extensions"] = list(dict.fromkeys("." + v.lower().lstrip(".") for v in run))
+    # Keywords of the search bar. A word opens a program, file or folder (ps -> powershell.exe, a plain text), runs a
+    # script file ({"run": path, "window": ...}) or runs a command line ({"command": text, "shell": ..., "window": ...}).
+    keywords = config["keywords"]
+    if not isinstance(keywords, dict) or len(keywords) > 200 or any(_keyword(word, value) is None for word, value in keywords.items()):
+        raise ValueError("Keywords are single words of at most 32 characters, each opening a program, file or folder, "
+                         "running a script (" + ", ".join(RUNNABLE) + ") or running a command in PowerShell 7, cmd or Git Bash")
+    config["keywords"] = {word.lower(): _keyword(word, value) for word, value in keywords.items()}
     weights = config["type_weights"]
     if not isinstance(weights, dict) or any(not isinstance(k, str) or not (k == "default" or re.fullmatch(r"\.?[\w+-]+", k)) or type(v) not in (int, float) or not 0 <= v <= 10 for k, v in weights.items()):
         raise ValueError("type_weights must map extensions such as .pdf, or default, to a number from 0 to 10")

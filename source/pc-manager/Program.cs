@@ -19,6 +19,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "--boot-refresh" or "--boot-refresh-screen") { Environment.ExitCode = Services.BootRefresh.Run(args); return; } // Windows' start task, see BootRefresh
         if (args.SequenceEqual(new[] { "--check-settings" }))
         {
             try { Services.AdvancedControls.CheckSettingValidation(); }

@@ -33,7 +33,7 @@
     const clear=document.createElement('button');clear.type='button';clear.className='history-clear';clear.textContent='Clear history';clear.addEventListener('click',()=>forget());host.append(clear);
   }
   function closeMenu(){menuRow=null;$('result-menu').hidden=true;}
-  function showMenu(row,index,x,y){select(index);menuRow=row;const menu=$('result-menu');menu.hidden=false;$('menu-open-with').disabled=row.file_type===2||row.program===true;$('menu-reveal').disabled=row.program===true;menu.style.left=Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px';$('menu-open').focus();}
+  function showMenu(row,index,x,y){if(row.keyword)return;select(index);menuRow=row;const menu=$('result-menu');menu.hidden=false;$('menu-open-with').disabled=row.file_type===2||row.program===true;$('menu-reveal').disabled=false;$('menu-run').hidden=row.program===true||row.file_type===2||!/\.(bat|cmd|ps1|py|sh)$/i.test(String(row.file_path||''));menu.style.left=Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px';$('menu-open').focus();}
   function reset(){
     ++sequence;clearTimeout(timer);clearTimeout(historyTimer);closeMenu();rows=[];pending=false;type=4095;autoExtension=false;$('file-type').value='';$('query').value='';
     document.querySelectorAll('nav button').forEach((button,index)=>button.classList.toggle('active',index===0));
@@ -50,12 +50,12 @@
     const host=$('results');host.replaceChildren();visible=[];
     const extension=$('file-type').value;
     const filtered=rows.filter(row=>(type===4095||(row.file_type&type))&&(!extension||(row.file_type!==2&&row.name.toLowerCase().endsWith('.'+extension))));
-    const groups=rows[0]?.typed_path?[['Path',rows]]:type===4095?[['Best matches',filtered.slice(0,5)],...categories.slice(1).map(([label,mask])=>[label,filtered.slice(5).filter(row=>row.file_type&mask).slice(0,12)])]:[[categories.find(c=>c[1]===type)[0],filtered.slice(0,60)]];
+    const groups=rows[0]?.typed_path?[['Path',rows]]:rows[0]?.keyword?[['Keyword',rows]]:type===4095?[['Best matches',filtered.slice(0,5)],...categories.slice(1).map(([label,mask])=>[label,filtered.slice(5).filter(row=>row.file_type&mask).slice(0,12)])]:[[categories.find(c=>c[1]===type)[0],filtered.slice(0,60)]];
     for(const [label,items] of groups){
       if(!items.length)continue;const heading=document.createElement('div');heading.className='group-label';heading.textContent=label;host.append(heading);
       for(const row of items){
         const index=visible.length;visible.push(row);const button=document.createElement('button');button.className='result'+(row.file_type===2?' folder':'');button.role='option';
-        const icon=document.createElement('span');icon.className='kind';icon.textContent=row.program?'APP':row.file_type===2?'▱':row.name.split('.').pop().slice(0,3).toUpperCase();
+        const icon=document.createElement('span');icon.className='kind';icon.textContent=row.keyword?'KEY':row.program?'APP':row.file_type===2?'▱':row.name.split('.').pop().slice(0,3).toUpperCase();
         const detail=document.createElement('div');detail.className='details';const name=document.createElement('div');name.className='name';name.innerHTML=row.file_name_with_highlight;
         const path=document.createElement('div');path.className='path';path.textContent=row.program?'Program':row.file_path;path.title=row.file_path;detail.append(name,path);
         if(row.snippet){const snippet=document.createElement('div');snippet.className='snippet';snippet.textContent=row.snippet.replace(/\s+/g,' ');detail.append(snippet);}
@@ -86,6 +86,9 @@
     clearTimeout(timer);clearTimeout(historyTimer);closeMenu();rows=[];search();
   });
   // A typed path (~\\.claude, C:\\Users, %APPDATA%\\..., \\\\server\\share) is a place to open, not words to search for.
+  // A keyword from Search settings (ps -> powershell.exe) is not searched: its row is shown at once and Enter opens it.
+  const keyword=text=>{const word=text.trim().toLowerCase();return word&&Object.hasOwn(settings.keywords||{},word)?word:'';};
+  const plain=text=>{const node=document.createElement('span');node.textContent=text;return node.innerHTML;};
   const typedPath=text=>/^\s*"?(~([\\/]|"?\s*$)|[A-Za-z]:[\\/]|\\\\|%[^%]+%)/.test(text);
   async function openTyped(){
     if(pending||!visible[selected]?.typed_path)await search(false);
@@ -99,6 +102,14 @@
       try{const found=await call('local_path',{text:query});if(ticket!==sequence||dismissed)return;rows=found.results;pending=false;localBridge.feedback(rows.length?'Enter opens '+rows[0].file_path+' in Explorer':'No such file or folder',!rows.length);render();}
       catch(error){if(ticket===sequence){rows=[];pending=false;localBridge.feedback(error.message,true);render();}}
       return;
+    }
+    const word=keyword(query);
+    if(word){
+      // A keyword opens a path (text), runs a script ({run}) or runs a command line ({command, shell}).
+      const value=settings.keywords[word],command=typeof value!=='string'&&value.command!==undefined,target=typeof value==='string'?value:command?value.command:value.run;
+      const name=command?target:target.split(/[\\/]/).pop()||target,verb=typeof value==='string'?'opens':'runs';
+      rows=[{keyword:word,file_path:target,name,file_name_with_highlight:plain(word)+' → '+plain(name),file_type:1,snippet:'',matches:[command?{pwsh:'PowerShell 7',cmd:'Command Prompt',bash:'Git Bash'}[value.shell]:'Keyword']}];
+      pending=false;localBridge.feedback('Enter '+verb+' '+target,false);render();return;
     }
     if(parsed.error){rows=[];pending=false;localBridge.feedback(parsed.error,true);render();return;}
     const requestText=[parsed.text,$('file-type').value?'ext:'+$('file-type').value:''].filter(Boolean).join(' ');
@@ -123,8 +134,9 @@
 
   function scheduleHistory(query,ticket){clearTimeout(historyTimer);historyTimer=setTimeout(()=>{if(!dismissed&&ticket===sequence&&$('query').value.trim()===query)remember(query);},800);}
   function open(method,row=visible[selected]){if(!row)return;const query=$('query').value.trim();clearTimeout(historyTimer);closeMenu();
+    if(row.keyword){call('local_keyword',{keyword:row.keyword}).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});return;}
     if(row.typed_path){remember(query);call('local_open_path',{path:row.file_path}).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});return;}if(method!=='open_file_folder'){remember(query);if(query&&query.length<=256&&!row.program)openedAt[String(row.file_path).toLowerCase()]=Date.now();}call(method,{file_id:row.file_id,file_path:row.file_path,windows_result:row.windows_result===true,program:row.program===true,query:query.length<=256?query:''}).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});}
-  for(const [id,method] of [['menu-open','open_file'],['menu-reveal','open_file_folder'],['menu-open-with','open_file_with']])$(id).addEventListener('click',()=>open(method,menuRow));
+  for(const [id,method] of [['menu-open','open_file'],['menu-run','run_file'],['menu-reveal','open_file_folder'],['menu-open-with','open_file_with']])$(id).addEventListener('click',()=>open(method,menuRow));
   document.addEventListener('pointerdown',event=>{if(!$('result-menu').contains(event.target))closeMenu();});
   for(const [label,mask] of categories){const button=document.createElement('button');button.textContent=label;button.className=mask===type?'active':'';button.addEventListener('click',()=>{type=mask;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b===button));render();});$('categories').append(button);}
   $('query').addEventListener('input',()=>{++sequence;syncFileType();closeMenu();clearTimeout(historyTimer);rows=[];pending=Boolean($('query').value.trim());localBridge.feedback(pending?'Searching locally…':'Local search · start typing');render();clearTimeout(timer);timer=setTimeout(search,180);});
@@ -139,7 +151,7 @@
     if(event.key==='Escape'){event.preventDefault();if(!$('result-menu').hidden){closeMenu();$('query').focus();}else call('local_hide').catch(()=>{});}
     else if(event.target?.closest?.('[role="menu"],#history,select'))return;
     else if(['ArrowDown','ArrowUp'].includes(event.key)&&visible.length){event.preventDefault();select(selected+(event.key==='ArrowDown'?1:-1));}
-    else if(event.key==='Enter'){event.preventDefault();clearTimeout(timer);if(typedPath($('query').value))openTyped();else search();$('query').focus();}
+    else if(event.key==='Enter'){event.preventDefault();clearTimeout(timer);if(typedPath($('query').value))openTyped();else if(keyword($('query').value))open('open_file',{keyword:keyword($('query').value)});else search();$('query').focus();}
     else if(event.ctrlKey&&event.key.toLowerCase()==='c'&&visible.length&&$('query').selectionStart===$('query').selectionEnd&&!window.getSelection()?.toString()){event.preventDefault();call('copy_file_path_to_clipboard',{file_id:visible[selected].file_id,file_path:visible[selected].file_path,windows_result:visible[selected].windows_result===true}).catch(()=>{});}
   });
   function loadSettings(){call('local_config').then(data=>appearance(data.settings)).catch(error=>{if(!dismissed)localBridge.feedback(error.message,true);});}

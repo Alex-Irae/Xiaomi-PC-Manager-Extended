@@ -124,6 +124,7 @@ public sealed partial class ManagerApplication : ApplicationContext
                 Advanced.Start();
                 advancedInitialized.TrySetResult();
                 XiControl.Log.Write("Resident.Ready");
+                BootRefresh.Sync(Preferences);
                 // Warm the one-time WMI inventory after the immediate control path is ready.
                 // The manager can then show specs without starting eight providers on first open.
                 // The same goes for the processor, graphics and temperature counters behind the big window's full
@@ -462,6 +463,17 @@ public sealed partial class ManagerApplication : ApplicationContext
             }
             catch (Exception ex) { XiControl.Log.Ex("Power.Event", ex); }
             finally { if (held) Queue.Release(); Post(RefreshWindows); }
+            // Right after the charger is plugged in or out the display often refuses the new rate for a second or
+            // two. The next try used to be the 30-second check, so the switch came half a minute (once four minutes)
+            // late. Now it is tried again every second, for up to 20 seconds.
+            for (int attempt = 0; attempt < 20 && Hardware.RefreshPending && !Exiting; attempt++)
+            {
+                await Task.Delay(1000);
+                await Queue.WaitAsync();
+                try { if (!Exiting) lock (Hardware.Sync) Hardware.ApplyPolicies(); }
+                catch (Exception ex) { XiControl.Log.Ex("Refresh.Retry", ex); }
+                finally { Queue.Release(); }
+            }
         });
     }
     private void ReassertPreventSleep(string reason) => Post(() =>

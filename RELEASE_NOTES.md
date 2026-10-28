@@ -1,3 +1,45 @@
+# Xiaomi Revamp 0.3.27
+
+PC Manager 0.2.20. AI Center stays at 0.3.18 and Screen Translator at 0.2.9.
+
+- **PC Manager: the AC/battery refresh rate follows the cable within seconds.** Right after the charger is plugged in or out, the display often refuses a new rate for a second or two. The next try was the 30-second check, so the switch came half a minute late, once four minutes. A refused change is now tried again every second for up to 20 seconds, and the log names Windows' reason for each refusal. The notice that the rate could not be applied waits until about half a minute of refusals and the following checks.
+
+# Xiaomi Revamp 0.3.26
+
+AI Center 0.3.18. PC Manager stays at 0.2.19 and Screen Translator at 0.2.9.
+
+- **AI Center: keyword rows fit the settings page.** In 0.3.25 the Open / Run / Command list took the whole width of AI Center's settings, the path or command field shrank to nothing and the shell and window choices were pushed off the right edge. The word, the list and the choices now keep their own size, the path or command takes the rest, and a narrow window wraps the row.
+
+# Xiaomi Revamp 0.3.25
+
+AI Center 0.3.17. PC Manager stays at 0.2.19 and Screen Translator at 0.2.9.
+
+- **AI Center: keywords can run commands and scripts.** Each keyword row now chooses **Open** (a program, file or folder, as before), **Run** (a .bat, .cmd, .ps1, .py or .sh file) or **Command** (a command line in PowerShell 7, Command Prompt or Git Bash). Run and Command choose **Hidden, notice** (no window; a Windows notice gives the result and the last line printed) or **Terminal window** (titled with the keyword, stays open). Existing keywords keep opening as before.
+- **AI Center: Run for scripts in the results.** The right-click menu of a script has **Run**, in a terminal window that stays open. Scripts still open on click unless their type is listed in the new **Run on click** setting (empty by default).
+
+# Xiaomi Revamp 0.3.24
+
+PC Manager 0.2.19 and AI Center 0.3.16. Screen Translator stays at 0.2.9.
+
+- **PC Manager: the automatic display rate is set on the sign-in screen when the PC starts.** PC Manager itself starts about three seconds after sign-in; its first change was refused while the sign-in animation held the screen, and the switch, with its black frames, came half a minute later. A Windows task of the install (`XiaomiRevampSuiteBoot_<id>`, account SYSTEM, at start) now sets the rate for the power source on the screen that is showing, sign-in screen included, so PC Manager finds it already right. The task exists while "Automatic refresh rate" is on, carries the two rates in its command line, and is removed with PC Manager.
+- **AI Center: a keyword for PowerShell, Windows PowerShell or Command Prompt opens its Windows Terminal profile.** Started directly, the window was titled with the program's full path ("Administrator: C:\Program Files\WindowsApps\...\pwsh.exe") and had no profile icon. It now opens like the Start menu entry ("Administrator: PowerShell"), with the same rights as before.
+
+# Xiaomi Revamp 0.3.23
+
+AI Center 0.3.15. PC Manager stays at 0.2.18 and Screen Translator at 0.2.9.
+
+- **AI Center: keywords are edited as rows, with Browse.** Each keyword has its own row in Search settings: the word, what it opens, a Browse button and a remove button, and an empty row at the end to add one. Browse starts in the Start menu's programs, and choosing a shortcut there gives the program it points to. The text box of 0.3.22 asked for typed paths, and its example path for VS Code was wrong on machines where VS Code is installed for all users.
+- **AI Center: a keyword's program starts in your user folder.** It started in AI Center's own folder, so PowerShell opened by a keyword began in `C:\Program Files\Xiaomi Revamp`.
+- **AI Center: a keyword whose target is missing says which path is missing.**
+- **AI Center: "Show in Explorer" works for programs.** For a program result it was disabled. It now opens the folder with the program's file selected, or the app's install folder for a Store app.
+
+# Xiaomi Revamp 0.3.22
+
+AI Center 0.3.14. PC Manager stays at 0.2.18 and Screen Translator at 0.2.9.
+
+- **AI Center: keywords in the search bar.** In Search settings, "Keywords" takes one line per keyword: `ps = powershell.exe`, `vs = %LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe`, `notes = ~\Documents\notes.md`. One word opens one program, file or folder. Typing the word shows its target as the only row, without a search, and Enter opens it. The window host opens it from the settings it holds, so it works at once even while the search model is not in memory. `%VARIABLES%` and `~` are expanded; a program can be given by name when Windows can find it.
+- The search and translation engines also run on Linux (guarded changes where they assumed Windows, see `linux/README.md`). Nothing changes on Windows.
+
 # Xiaomi Revamp 0.3.21
 
 PC Manager 0.2.18, AI Center 0.3.13, Screen Translator 0.2.9. FileSync 1.3.8 belongs with this release.

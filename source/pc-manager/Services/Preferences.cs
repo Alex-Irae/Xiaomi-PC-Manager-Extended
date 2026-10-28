@@ -117,6 +117,7 @@ public sealed class Preferences
         File.WriteAllText(pending, JsonSerializer.Serialize(this, JsonOptions));
         if (File.Exists(SettingsPath)) File.Replace(pending, SettingsPath, null); else File.Move(pending, SettingsPath);
         }
+        BootRefresh.Sync(this); // the start task follows the automatic display rate setting
     }
 
     public string SaveSnapshot()

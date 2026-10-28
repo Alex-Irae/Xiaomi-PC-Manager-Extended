@@ -21,8 +21,8 @@ using System.Security.AccessControl;
 using System.Runtime.Versioning;
 
 [assembly: AssemblyTitle("Xiaomi Revamp Setup")]
-[assembly: AssemblyVersion("0.3.21.0")]
-[assembly: AssemblyFileVersion("0.3.21.0")]
+[assembly: AssemblyVersion("0.3.27.0")]
+[assembly: AssemblyFileVersion("0.3.27.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
 
 internal static class Setup
@@ -33,8 +33,8 @@ internal static class Setup
     static readonly Dictionary<string, string> Executables = new Dictionary<string, string> { { "pc-manager", "PCManager.exe" }, { "file-search", "AI Center.exe" }, { "screen-translator", "ScreenTranslator.exe" } };
     static string Sid { get { return WindowsIdentity.GetCurrent().User.Value; } }
     static bool Admin { get { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } }
-    const string Version = "0.3.21"; // suite release; tools/build_suite.py refuses to build when these differ from its table
-    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.18" }, { "file-search", "0.3.13" }, { "screen-translator", "0.2.9" } };
+    const string Version = "0.3.27"; // suite release; tools/build_suite.py refuses to build when these differ from its table
+    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.20" }, { "file-search", "0.3.18" }, { "screen-translator", "0.2.9" } };
     static string Uninstaller { get { return "Uninstall.exe"; } }
     static string Expand(string path) { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path).Replace("{sid}", Sid)); }
     static Dictionary<string, object> Marker(string root) { return Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(root, "suite-install.json")))); }
@@ -213,7 +213,8 @@ internal static class Setup
             {
                 using (var process = Process.Start(new ProcessStartInfo(executable, "--register-startup") { UseShellExecute = false, CreateNoWindow = true })) { process.WaitForExit(); if (process.ExitCode != 0) throw new InvalidOperationException("Windows refused PC Manager startup registration."); }
             }
-            else using (var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"), "/Delete /TN " + Quote("XiaomiRevampSuite_" + Identity(root) + "_" + Sid) + " /F") { UseShellExecute = false, CreateNoWindow = true })) process.WaitForExit();
+            else foreach (string task in new[] { "XiaomiRevampSuite_" + Identity(root) + "_" + Sid, "XiaomiRevampSuiteBoot_" + Identity(root) })
+                using (var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"), "/Delete /TN " + Quote(task) + " /F") { UseShellExecute = false, CreateNoWindow = true })) process.WaitForExit();
         }
         else using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
         {
@@ -450,8 +451,9 @@ internal static class Setup
             using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) key.DeleteValue("XiaomiRevampSuite." + (component == "file-search" ? "Search." : "Translator.") + Identity(root), false);
             if (component == "pc-manager")
             {
-                string name = "XiaomiRevampSuite_" + Identity(root) + "_" + Sid;
-                using (var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"), "/Delete /TN " + Quote(name) + " /F") { UseShellExecute = false, CreateNoWindow = true })) process.WaitForExit();
+                // The logon task, and the start task that sets the display rate on the sign-in screen.
+                foreach (string name in new[] { "XiaomiRevampSuite_" + Identity(root) + "_" + Sid, "XiaomiRevampSuiteBoot_" + Identity(root) })
+                    using (var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"), "/Delete /TN " + Quote(name) + " /F") { UseShellExecute = false, CreateNoWindow = true })) process.WaitForExit();
             }
             owned.Remove(component);
         }

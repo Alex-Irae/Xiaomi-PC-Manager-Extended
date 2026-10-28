@@ -6,7 +6,7 @@ Screen Translator recognizes Chinese locally and places an English overlay at th
 
 ![Screen Translator overview with screen, region and translation filter controls](../../docs/screenshots/screen-translator-overview.png)
 
-Current source: **0.2.9**, part of Xiaomi Revamp **0.3.21**. The bundled models support **Chinese to English**.
+Current source: **0.2.9**, part of Xiaomi Revamp **0.3.27**. The bundled models support **Chinese to English**.
 
 ## Translate in a few steps
 

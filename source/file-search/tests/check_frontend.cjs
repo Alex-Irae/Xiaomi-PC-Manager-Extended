@@ -15,7 +15,7 @@ class Element {
   contains(node){return node===this||this.children.some(child=>child.contains(node));}
 }
 function fixture(){
-  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','launch-xiaoai','xiaoai-card','xiaoai-icon','profile-picture','profile-image','reset-picture','toast','home','preferences'].map(key=>[key,new Element()]));
+  const ids=Object.fromEntries(['file-type','query','categories','results','history','result-menu','menu-open','menu-run','menu-reveal','menu-open-with','search-form','local-feedback','window-minimize','window-maximize','window-close','launch-search','launch-playground','launch-xiaoai','xiaoai-card','xiaoai-icon','profile-picture','profile-image','reset-picture','toast','home','preferences'].map(key=>[key,new Element()]));
   ids['search-form'].offsetHeight=76;
   const footer=new Element(),grip=new Element(),document=new Element(),window=new Element();document.body=new Element();document.documentElement=new Element();
   document.getElementById=id=>ids[id];document.createElement=tag=>new Element(tag);
@@ -56,6 +56,14 @@ async function main(){
     assert(!asked.some(([method])=>method==='local_open_path'));
     asked=[];f.ids.query.value='~tilde notes';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
     assert(asked.some(([method])=>method==='local_search')&&!asked.some(([method])=>method==='local_path'),'words that only begin with ~ are searched');
+    // A keyword from Search settings opens its target on Enter without any search; a longer word is searched.
+    f.window.emit('settings-changed',{detail:{...settings,keywords:{ps:'powershell.exe'}}});await flush();
+    asked=[];f.ids.query.value=' PS ';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+    assert.equal(JSON.stringify(asked.filter(([method])=>method==='local_keyword')),JSON.stringify([['local_keyword',{keyword:'ps'}]]));
+    assert(!asked.some(([method])=>method==='local_search'||method==='local_windows_search'),'a keyword must not be searched');
+    asked=[];f.ids.query.value='psx';f.ids.query.emit('input');f.context.document.emit('keydown',{key:'Enter'});await flush();
+    assert(!asked.some(([method])=>method==='local_keyword'),'only the exact word is a keyword');
+    f.window.emit('settings-changed',{detail:settings});await flush();
     f.context.localBridge.call=answer;f.ids.query.value='';f.ids.query.emit('input');await flush();calls.length=0;
   }
   assert.equal(f.ids.query.value,'');assert.equal(f.ids.history.hidden,true);
@@ -126,18 +134,56 @@ async function main(){
   assert.deepEqual(actions,['maximize','fullscreen','fullscreen']);assert(c.context.document.body.classes.has('expanded'));
   console.log('PASS: maximize command, F11 fullscreen, Escape restore');
   const d=fixture(),settingsCalls=[];
-  const fields=['excluded_extensions','content_only_extensions','name_only_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','toast','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
+  const fields=['excluded_extensions','content_only_extensions','name_only_extensions','run_extensions','preferred_device','shortcut','indexing_mode','indexing_frequency','name_enabled','content_enabled','semantic_enabled','theme','index_protection','accent_color','font_family','bar_size','toast','status','scan-pc','settings-form','scan','reset-index','pause-index','reset-dialog','cancel-reset','confirm-reset','settings-undo','settings-redo','paths-include','paths-exclude','paths-summary','path-input','path-add','path-manage','paths-dialog','paths-title','paths-rows','paths-new','paths-undo','paths-redo','paths-save','paths-cancel','paths-error'];
   for(const key of fields)d.ids[key]=new Element();
+  d.ids.keywords=new Element();
   for(const key of ['suite-manager','suite-owner','follow_suite_appearance','model_standby','index-location','index-storage','embedding-model-location','index-folder','backup-index','index-backup-status'])d.ids[key]=new Element();
   for(const key of ['name_enabled','content_enabled','semantic_enabled'])d.ids[key].type='checkbox';
-  const controls={roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],name_only_extensions:['.py','.js'],content_only_extensions:['.json'],model_standby:'keep_loaded',preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
+  const controls={keywords:{ps:'powershell.exe'},roots:['C:/Corpus'],excluded_folders:[],excluded_extensions:['.ini','.dll'],name_only_extensions:['.py','.js'],content_only_extensions:['.json'],run_extensions:[],model_standby:'keep_loaded',preferred_device:'auto',shortcut:'none',indexing_mode:'paused',indexing_frequency:'daily',name_enabled:true,content_enabled:true,semantic_enabled:true,theme:'system',index_protection:'windows',accent_color:'#3482ff',font_family:'MiSans',bar_size:'comfortable'};
   let mode='paused',onStatus,backup={active:false,phase:''},cancelBackup=false;const state=()=>({counts:{files:2,folders:1,vectors:3},indexer:{mode,busy:false},model:{device:null},backup});
   const previews=[];
-  d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_index_info')return {path:'C:/Data/index.sqlite3.dpapi',bytes:2147483648,saved:'2026-10-04T00:00:00Z',model_path:'C:/Models/qwen'};if(method==='local_backup_index'){if(cancelBackup)return {cancelled:true};backup={active:true,phase:'Copying encrypted index'};return {accepted:true};}if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
+  d.context.localBridge={appearance:s=>previews.push(s.theme),native:new Element(),subscribe:(method,fn)=>{onStatus=fn;fn(state());},call:async(method,params)=>{settingsCalls.push({method,params});if(method==='local_index_info')return {path:'C:/Data/index.sqlite3.dpapi',bytes:2147483648,saved:'2026-10-04T00:00:00Z',model_path:'C:/Models/qwen'};if(method==='local_backup_index'){if(cancelBackup)return {cancelled:true};backup={active:true,phase:'Copying encrypted index'};return {accepted:true};}if(method==='local_config')return {settings:controls};if(method==='local_drives')return {roots:['C:/']};if(method==='local_keyword_browse')return {path:'C:\\Apps\\Tool.exe'};if(method==='local_save_config'){Object.assign(controls,params);mode=controls.indexing_mode;onStatus(state());return {saved:true};}return state();}};
   vm.runInContext(fs.readFileSync('frontend/revamp.js','utf8'),d.context);vm.runInContext(fs.readFileSync('frontend/settings.js','utf8'),d.context);await flush();
   assert.equal(d.ids['paths-summary'].children.length,2);
   // The name-only types are an editable list like the excluded types: shown joined, saved as an array.
   assert.equal(d.ids.name_only_extensions.value,'.py, .js');assert.equal(d.ids.content_only_extensions.value,'.json');
+  // Keywords: one row each (word, Open/Run/Command, target, shell, window, Browse, remove) plus an empty row.
+  const [K,A,T,S,M,B,L]=[0,1,2,3,4,5,6];
+  const rowsOf=()=>d.ids.keywords.children,saves=()=>settingsCalls.filter(c=>c.method==='local_save_config'),lastSave=()=>JSON.stringify(saves().at(-1).params);
+  assert.equal(rowsOf().length,2);assert.equal(rowsOf()[0].children[K].value,'ps');assert.equal(rowsOf()[0].children[A].value,'open');assert.equal(rowsOf()[0].children[T].value,'powershell.exe');
+  assert.equal(rowsOf()[0].children[S].hidden,true);assert.equal(rowsOf()[0].children[M].hidden,true,'an Open row has no shell or window choice');
+  rowsOf()[1].children[K].value=' VS ';rowsOf()[1].children[T].value='"C:\\Tools\\Code.exe"';rowsOf()[1].children[L].emit('click');await flush();
+  assert.equal(lastSave(),JSON.stringify({keywords:{ps:'powershell.exe',vs:'C:\\Tools\\Code.exe'}}));assert.equal(rowsOf().length,3);
+  let savesBefore=saves().length;
+  rowsOf()[2].children[K].value='two words';rowsOf()[2].children[T].value='notepad.exe';rowsOf()[2].children[L].emit('click');await flush();
+  rowsOf()[2].children[K].value='ps';rowsOf()[2].children[L].emit('click');await flush();
+  assert.equal(saves().length,savesBefore,'a keyword with a space, or one that exists already, is not saved');
+  // Browse fills the target of the new row and waits for its word; on an existing row it saves at once.
+  rowsOf()[2].children[K].value='';rowsOf()[2].children[B].emit('click');await flush();
+  assert.equal(rowsOf()[2].children[T].value,'C:\\Apps\\Tool.exe');assert.equal(saves().length,savesBefore);
+  rowsOf()[2].children[K].value='tool';rowsOf()[2].children[K].emit('change');await flush();
+  assert.equal(lastSave(),JSON.stringify({keywords:{ps:'powershell.exe',vs:'C:\\Tools\\Code.exe',tool:'C:\\Apps\\Tool.exe'}}));
+  rowsOf()[1].children[B].emit('click');await flush();
+  assert.equal(lastSave(),JSON.stringify({keywords:{ps:'powershell.exe',vs:'C:\\Apps\\Tool.exe',tool:'C:\\Apps\\Tool.exe'}}));
+  rowsOf()[0].children[L].emit('click');await flush();
+  assert.equal(lastSave(),JSON.stringify({keywords:{vs:'C:\\Apps\\Tool.exe',tool:'C:\\Apps\\Tool.exe'}}));
+  // A command keyword keeps the command exactly as typed (quotes included), with its shell and window.
+  let added=rowsOf().at(-1);added.children[A].value='command';added.children[A].emit('change');
+  assert.equal(added.children[S].hidden,false);assert.equal(added.children[B].hidden,true,'a command has no Browse');
+  added.children[K].value='flush';added.children[T].value='ipconfig /flushdns & echo "done"';added.children[S].value='cmd';added.children[L].emit('click');await flush();
+  assert.equal(lastSave(),JSON.stringify({keywords:{vs:'C:\\Apps\\Tool.exe',tool:'C:\\Apps\\Tool.exe',flush:{command:'ipconfig /flushdns & echo "done"',shell:'cmd',window:'hidden'}}}));
+  assert.equal(rowsOf()[2].children[A].value,'command');assert.equal(rowsOf()[2].children[S].value,'cmd');
+  rowsOf()[2].children[M].value='terminal';rowsOf()[2].children[M].emit('change');await flush();
+  assert.equal(JSON.parse(lastSave()).keywords.flush.window,'terminal');
+  // Run takes a script file; anything else is refused with a message instead of being saved.
+  savesBefore=saves().length;added=rowsOf().at(-1);added.children[A].value='run';added.children[A].emit('change');
+  added.children[K].value='notes';added.children[T].value='C:\\notes.txt';added.children[L].emit('click');await flush();
+  assert.equal(saves().length,savesBefore,'Run refuses a file that is not a script');
+  added.children[T].value='C:\\Tools\\flushdns.bat';added.children[L].emit('click');await flush();
+  assert.equal(JSON.stringify(JSON.parse(lastSave()).keywords.notes),JSON.stringify({run:'C:\\Tools\\flushdns.bat',window:'hidden'}));
+  // Run on click is a type list like the others; empty means scripts open.
+  assert.equal(d.ids.run_extensions.value,'');d.ids.run_extensions.value='.bat, .ps1';d.ids.run_extensions.emit('change');await flush();
+  assert.equal(lastSave(),JSON.stringify({run_extensions:['.bat','.ps1']}));
   assert.equal(d.ids.model_standby.value,'keep_loaded');d.ids.model_standby.value='free_idle';d.ids.model_standby.emit('change');await flush();
   assert.equal(JSON.stringify(settingsCalls.filter(c=>c.method==='local_save_config').at(-1).params),JSON.stringify({model_standby:'free_idle'}));
   d.ids.name_only_extensions.value='.py; .ts  .sql';d.ids.name_only_extensions.emit('change');await flush();

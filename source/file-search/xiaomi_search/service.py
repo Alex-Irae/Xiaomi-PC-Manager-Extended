@@ -14,6 +14,7 @@ from .indexer import Indexer
 from .store import Store, file_type
 from .windows_search import WindowsSearch, APP_TYPE, APP_PREFIX
 from .exclusions import canonical_path
+from .config import RUNNABLE
 
 LOG = logging.getLogger(__name__)
 
@@ -343,11 +344,15 @@ class Service:
         if method == "get_filecontent_matchpoints":
             row = self._indexed_file(params)
             return {"txt_match_points": self.store.preview(row["id"], params.get("text", "")), "img_match_points": [], "match_points": []}
-        if method in ("open_file", "open_file_with", "open_doc_highlight_text", "open_doc_jump_image", "open_file_folder", "check_file_exist", "copy_file_path_to_clipboard", "copy_to_clipboard"):
+        if method in ("open_file", "open_file_with", "open_doc_highlight_text", "open_doc_jump_image", "open_file_folder", "check_file_exist", "copy_file_path_to_clipboard", "copy_to_clipboard", "run_file"):
             row = self._indexed_file(params)
             if row['file_type'] == APP_TYPE:
+                if method == 'open_file_folder':
+                    # Show in Explorer: the window host asks Windows where the program's file is.
+                    self.window_action('reveal', {'path': row['path'], 'query': ''})
+                    return {"status": 0, 'opened': True}
                 if method != 'open_file':
-                    raise ValueError('Programs can only be opened')
+                    raise ValueError('Programs can be opened or shown in Explorer')
                 query = params.get('query', '')
                 self.window_action('open', {'path': row['path'], 'query': query if isinstance(query, str) and len(query) <= 256 else ''})
                 return {"status": 0, 'opened': True}
@@ -361,6 +366,12 @@ class Service:
             if not isinstance(query,str) or len(query)>256:
                 raise ValueError('Invalid history query')
             action = "reveal" if method == "open_file_folder" else "copy" if method.startswith("copy") else "open_with" if method=='open_file_with' else "open"
+            # A script runs instead of opening when asked (its menu's Run) or when its type is set to run on click.
+            suffix = Path(row["path"]).suffix.lower()
+            if method == "run_file" or (method == "open_file" and suffix in self.config["run_extensions"]):
+                if suffix not in RUNNABLE or row['file_type'] == 2:
+                    raise ValueError("Only scripts can run: " + ", ".join(RUNNABLE))
+                action = "run"
             result=self.window_action(action, {"path": row["path"], 'query': query})
             return {"status": 0, 'opened': result.get('opened',True) if isinstance(result,dict) else True}
         if method == "window_resize":
@@ -387,7 +398,7 @@ class Service:
             return self.backup_index()
         if method == "local_save_config":
             from .config import validate, write_atomic
-            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "name_only_extensions", "content_only_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled"}
+            allowed = {"indexing_load", "roots", "model_path", "devices", "indexing_mode", "indexing_frequency", "shortcut", "run_at_startup", "center_at_startup", "semantic_enabled", "name_enabled", "content_enabled", "preferred_device", "excluded_folders", "excluded_extensions", "name_only_extensions", "content_only_extensions", "accent_color", "theme", "index_protection", "font_family", "bar_size", "arrow_style", "model_standby", "follow_suite_appearance", "windows_semantic_enabled", "programs_enabled", "keywords", "run_extensions"}
             if set(params) - allowed:
                 raise ValueError("Unsupported setting")
             settings = validate({**self.config, **params}, self.config_path)

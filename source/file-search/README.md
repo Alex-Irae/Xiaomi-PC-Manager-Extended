@@ -6,14 +6,14 @@ File Search combines filename and path matches, document contents and local mean
 
 ![File Search returning PDF documents for an example query](../../docs/screenshots/file-search-results.png)
 
-Current source: **0.3.13**, part of Xiaomi Revamp **0.3.21**. [Install and check compatibility](../../README.md#install-and-start).
+Current source: **0.3.18**, part of Xiaomi Revamp **0.3.27**. [Install and check compatibility](../../README.md#install-and-start).
 
 ## Your first search
 
 1. Open **AI Center**, then Settings, and choose the folders you want indexed.
 2. Let indexing and embedding build the local index. Filename results can become available before meaning search finishes.
 3. Press **Ctrl twice**, or open **File Search** from Windows or PC Manager.
-4. Type a filename, phrase or description and press **Enter**. Click a result to open it; its context menu also provides **Show in Explorer** and **Open with**.
+4. Type a filename, phrase or description and press **Enter**. Click a result to open it; its context menu also provides **Show in Explorer** and **Open with**, and **Run** for scripts (.bat, .cmd, .ps1, .py, .sh).
 
 Enter always submits a search, including when a result is selected. It does not open a document. Double Ctrl opens the compact bar, not the AI Center window. A direct AI Center launch opens the launcher.
 
@@ -35,6 +35,16 @@ Choose **All types** to clear the restriction. A type word in the middle of a qu
 ## Choose what gets indexed
 
 Add included folders and exclusions in Settings. Excluding a folder excludes **that folder and all its descendants**. Name-only file types remain searchable by name without reading their contents; text-only types can be searched as text without generating embeddings.
+
+**Keywords** do something without searching. In Search settings, each keyword is a row: the word, then what it does:
+
+- **Open** a program, file or folder (for example `ps` for `powershell.exe`); **Browse** picks it.
+- **Run** a script file (.bat, .cmd, .ps1, .py, .sh) instead of opening it.
+- **Command**: run a command line in PowerShell 7, Command Prompt or Git Bash, for example `flush` for `ipconfig /flushdns`.
+
+Run and Command rows choose a window: **Hidden, notice** runs without a window and a Windows notice says whether it worked, with the last line it printed; **Terminal window** shows the output in a window titled with the keyword, which stays open. Commands start in your user folder, scripts in their own folder, with AI Center's rights. Type the word in the search bar and press **Enter**.
+
+**Scripts in the results** open by default, like any file. Right-click one for **Run**, or list its type under **Run on click** in Search settings (for example `.bat`) to make a click run it. Results always run in a terminal window.
 
 ![Search settings with included folders and indexing choices](../../docs/screenshots/ai-center-settings.png)
 

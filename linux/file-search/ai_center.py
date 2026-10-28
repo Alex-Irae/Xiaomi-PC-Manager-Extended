@@ -182,6 +182,17 @@ class Center:
         try:
             if method == "local_config":
                 return self.reply(window, data, {"settings": self.settings, "path": str(self.config), "version": "0.3.13-linux"})
+            if method == "local_keyword":
+                # A keyword from Search settings: a program on the PATH is started, anything else is opened.
+                value = self.settings.get("keywords", {})[str(params.get("keyword", "")).strip().lower()]
+                if isinstance(value, dict):
+                    # Command and script keywords (Windows 0.3.25) are not ported yet.
+                    return self.reply(window, data, None, 1, "Command and script keywords run on Windows only for now.")
+                target = os.path.expanduser(os.path.expandvars(value))
+                program = __import__("shutil").which(target)
+                subprocess.Popen([program], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if program else desktop.open_path(target)
+                self.search.hide()
+                return self.reply(window, data, {"opened": True, "path": target})
             if method == "local_xiaoai":
                 return self.reply(window, data, {"installed": False, "icon": None})
             if method == "local_suite_manager":

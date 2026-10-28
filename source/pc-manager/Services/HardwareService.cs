@@ -18,6 +18,8 @@ public sealed class HardwareService : IDisposable
     private PowerLineStatus? lastPower;
     private bool retryPolicies = true;
     private int refreshFailures;
+    /// <summary>The automatic rate for the current power source was refused and is still to be applied.</summary>
+    internal bool RefreshPending { get; private set; }
     private bool travelFullNotified;
     private AppConfig? advanced;
     public IMifsClient SharedFirmware { get; }
@@ -567,7 +569,9 @@ public sealed class HardwareService : IDisposable
                 // notice comes only when four attempts in a row have failed.
                 refreshPending = true;
                 XiControl.Log.Write($"Refresh.Auto source={power.LineStatus} requested={target} not applied, attempt {refreshFailures + 1}");
-                if (++refreshFailures == 4) Notice?.Invoke("The automatic display rate could not be applied.");
+                // Retries come every second after a change of power source, so a notice only after half a minute
+                // of refusals plus the following 30-second checks.
+                if (++refreshFailures == 25) Notice?.Invoke("The automatic display rate could not be applied.");
             }
             else if (RefreshRate.Current() is int confirmed)
             {
@@ -581,6 +585,7 @@ public sealed class HardwareService : IDisposable
         { preferences.LastRefreshPowerSource = power.LineStatus.ToString(); preferences.Save(); }
         lastPower = power.LineStatus;
         retryPolicies = refreshPending;
+        RefreshPending = refreshPending;
         if (advanced is not null)
         {
             // The poll also catches a source that was Unknown during the resume event.

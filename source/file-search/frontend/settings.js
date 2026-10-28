@@ -3,7 +3,7 @@
  * Launch from project root: Launch AI Center.cmd, then Search settings. */
 (() => {
   const $=id=>document.getElementById(id),call=(...args)=>localBridge.call(...args);
-  const lists=['excluded_extensions','content_only_extensions','name_only_extensions'],keys=[...lists,'model_standby','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
+  const lists=['excluded_extensions','content_only_extensions','name_only_extensions','run_extensions'],keys=[...lists,'model_standby','preferred_device','shortcut','follow_suite_appearance','run_at_startup','center_at_startup','indexing_mode','indexing_load','indexing_frequency','name_enabled','content_enabled','semantic_enabled','windows_semantic_enabled','programs_enabled','theme','index_protection','accent_color','font_family','bar_size'].filter(key=>$(key));
   const copy=value=>JSON.parse(JSON.stringify(value)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   let settings=null,committed=null,history=[],position=-1,chain=Promise.resolve(),revision=0,selected='roots',draft=[],draftHistory=[],draftPosition=0,colorTimer;
   const expandedPaths={roots:false,excluded_folders:false};
@@ -20,6 +20,7 @@
     if(!settings)return;
     localBridge.appearance(settings);
     for(const key of keys){const field=$(key);if(field.type==='checkbox')field.checked=settings[key];else field.value=Array.isArray(settings[key])?settings[key].join(', '):String(settings[key]);}
+    keywordRows();
     const paths=settings[selected],summary=$('paths-summary');summary.replaceChildren();
     const count=document.createElement('div');count.className='paths-count';count.textContent=paths.length+' '+(selected==='roots'?'included':'excluded')+' folders'+(selected==='excluded_folders'?' including every subfolder':'');summary.append(count);
     for(const path of paths.slice(0,expandedPaths[selected]?paths.length:4)){const line=document.createElement('div');line.className='scope-path';line.title=path;const split=Math.max(path.lastIndexOf('\\'),path.lastIndexOf('/'))+1,parent=document.createElement('span'),name=document.createElement('span');parent.className='scope-parent';parent.textContent=path.slice(0,split);name.className='scope-leaf';name.textContent=path.slice(split);line.append(parent,name);summary.append(line);}
@@ -49,6 +50,39 @@
   window.addEventListener('suite-owner',event=>{$('suite-owner').textContent=event.detail;});
   $('suite-manager').addEventListener('click',()=>call('local_suite_manager').catch(error));
   for(const key of keys){$(key).addEventListener('change',()=>{clearTimeout(colorTimer);const field=$(key),value=field.type==='checkbox'?field.checked:lists.includes(key)?field.value.split(/[\s,;]+/).filter(Boolean):field.value;apply({...settings,[key]:value});});}
+  // Keywords: one row each and an empty row at the end to add one. A row opens a program, file or folder (stored as
+  // its path), runs a script ({run, window}) or runs a command line ({command, shell, window}).
+  const scriptTypes=/\.(bat|cmd|ps1|py|sh)$/i;
+  function keywordRows(){
+    const host=$('keywords');if(!host)return;
+    const entries=Object.entries(settings.keywords||{}),save=next=>apply({...settings,keywords:Object.fromEntries(next)});
+    const kindOf=value=>typeof value==='string'?'open':value.command!==undefined?'command':'run';
+    const problem=(word,kind,text,index)=>!word||/[\s=]/.test(word)||word.length>32?'A keyword is one word of at most 32 characters.':entries.some(([other],at)=>other===word&&at!==index)?'"'+word+'" is already a keyword.':!text.trim()?(kind==='command'?'Type the command "'+word+'" runs.':'Choose what "'+word+'" '+(kind==='run'?'runs':'opens')+': type a path or use Browse.'):kind==='run'&&!scriptTypes.test(text)?'Run works with .bat, .cmd, .ps1, .py and .sh files; use Open for anything else.':'';
+    const select=(label,options,value)=>{const field=document.createElement('select');field.setAttribute('aria-label',label);for(const [key,text] of options){const option=document.createElement('option');option.value=key;option.textContent=text;field.append(option);}field.value=value;return field;};
+    host.replaceChildren();
+    [...entries,['','']].forEach(([word,value],index)=>{
+      const fresh=index===entries.length,kind=kindOf(value),row=document.createElement('div'),key=document.createElement('input'),target=document.createElement('input'),browse=document.createElement('button'),last=document.createElement('button');
+      const action=select('What '+(word||'the new keyword')+' does',[['open','Open'],['run','Run'],['command','Command']],kind);
+      const shell=select('Shell',[['pwsh','PowerShell 7'],['cmd','Command Prompt'],['bash','Git Bash']],value.shell||'pwsh');
+      const mode=select('Window',[['hidden','Hidden, notice'],['terminal','Terminal window']],value.window||'hidden');
+      row.className='keyword-row';key.type=target.type='text';key.spellcheck=target.spellcheck=false;key.maxLength=32;key.value=word;
+      target.value=typeof value==='string'?value:value.command??value.run;
+      key.placeholder='keyword';key.setAttribute('aria-label',fresh?'New keyword':'Keyword '+word);
+      browse.type=last.type='button';browse.textContent='Browse…';last.textContent=fresh?'+':'−';last.setAttribute('aria-label',fresh?'Add keyword':'Remove keyword '+word);
+      const show=()=>{const now=action.value;shell.hidden=now!=='command';mode.hidden=now==='open';browse.hidden=now==='command';
+        target.placeholder=now==='command'?'command, for example ipconfig /flushdns':now==='run'?'script: .bat, .cmd, .ps1, .py or .sh':'program, file or folder';
+        target.setAttribute('aria-label',(now==='command'?'Command ':'Path ')+(fresh?'of the new keyword':'of '+word));};
+      // A command is kept exactly as typed; a path loses surrounding quotes.
+      const read=()=>{const now=action.value,text=now==='command'?target.value.trim():target.value.trim().replace(/^"|"$/g,'');return [key.value.trim().toLowerCase(),now,text,now==='open'?text:now==='run'?{run:text,window:mode.value}:{command:text,shell:shell.value,window:mode.value}];};
+      // An existing row saves as soon as it is edited; the new row waits until it has both a word and a target.
+      const commit=explicit=>{const [nextWord,nextKind,text,stored]=read();if(fresh&&!explicit&&(!nextWord||!text))return;const wrong=problem(nextWord,nextKind,text,fresh?-1:index);if(wrong){error(new Error(wrong));if(!fresh)render();return;}const next=entries.map(pair=>[...pair]);next[index]=[nextWord,stored];save(next);};
+      for(const field of [key,target,shell,mode])field.addEventListener('change',()=>commit(false));
+      action.addEventListener('change',()=>{show();commit(false);});
+      browse.addEventListener('click',async()=>{try{const chosen=await call('local_keyword_browse');if(!chosen?.path)return;target.value=chosen.path;if(fresh&&!read()[0])key.focus();else commit(false);}catch(e){error(e);}});
+      last.addEventListener('click',()=>{if(fresh)commit(true);else save(entries.filter((_,at)=>at!==index));});
+      show();row.append(key,action,target,shell,mode,browse,last);host.append(row);
+    });
+  }
   $('accent_color').addEventListener('input',()=>{localBridge.appearance({...settings,accent_color:$('accent_color').value});clearTimeout(colorTimer);const value=$('accent_color').value;colorTimer=setTimeout(()=>apply({...settings,accent_color:value}),250);});
   $('settings-form').addEventListener('submit',event=>event.preventDefault());
   function step(delta){const next=position+delta;if(next<0||next>=history.length)return;position=next;apply(copy(history[position]),false);remember();buttons();}
