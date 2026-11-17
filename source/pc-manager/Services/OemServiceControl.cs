@@ -13,7 +13,12 @@ internal static class OemServiceControl
         {
             if (Program.TestMode) return false;
             string sid = WindowsIdentity.GetCurrent().User!.Value;
-            string path = Path.Combine(Preferences.DataDirectory, "service-state", sid, "oem-service-isolation.json");
+            const string intent = "oem-service-isolation.json";
+            // The elevated service tool and its Restore command share machine-facing state
+            // even when the suite puts the manager's preferences in a different profile.
+            string shared = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "XiaomiAIManager", "service-state", sid, intent);
+            string path = File.Exists(shared) ? shared : Path.Combine(Preferences.DataDirectory, "service-state", sid, intent);
             string legacy = Path.Combine(AppContext.BaseDirectory, "service-state", sid, "oem-service-isolation.json");
             string json;
             try

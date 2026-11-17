@@ -1,5 +1,5 @@
-# Purpose: reversibly isolate Xiaomi's UI watchdog, or restore its saved service state.
-# Dependencies: Windows PowerShell, administrator access, installed MiDeviceService.
+# Purpose: reversibly isolate Xiaomi's UI watchdogs, or restore their saved service states.
+# Dependencies: Windows PowerShell, administrator access, installed Xiaomi PC Manager services.
 # Outputs: original service JSON, isolation intent and timestamped action records; no files deleted.
 # Command: powershell -NoProfile -File tools/oem-service.ps1 -Action Disable (or Restore/Tools/Status).
 param([ValidateSet('Disable','Restore','Tools','Status')][string]$Action = 'Status')
@@ -30,13 +30,31 @@ if ($Action -ne 'Status') {
 }
 $backupPath = Join-Path $dataRoot 'oem-service-original.json'
 $intentPath = Join-Path $dataRoot 'oem-service-isolation.json'
+$managerRoots = @((Join-Path $env:ProgramFiles 'MI\XiaomiPCManager'),(Join-Path ${env:ProgramFiles(x86)} 'MI\XiaomiPCManager'))
+$v6 = Get-CimInstance Win32_Service -Filter "Name='XiaomiService'"
+if ($v6) {
+    # Xiaomi PC Manager 6 runs a separate service under the versioned manager directory.
+    if ($v6.PathName -notmatch '^"([^"]+)"\s+--service\s*$') {
+        throw 'Unexpected XiaomiService command; no service was changed.'
+    }
+    $v6Image = $Matches[1]
+    $v6Directory = Split-Path -Parent $v6Image
+    if ((Split-Path -Leaf $v6Image) -ne 'XiaomiService.exe' -or
+        (Split-Path -Leaf $v6Directory) -notmatch '^6(\.\d+){1,3}$' -or
+        (Split-Path -Parent $v6Directory) -notin $managerRoots) {
+        throw 'XiaomiService is outside the verified 6.x manager directory; no service was changed.'
+    }
+}
 $serviceName = 'MiDeviceService'
 $service = Get-CimInstance Win32_Service -Filter "Name='MiDeviceService'"
 if (!$service) { throw 'MiDeviceService is not installed.' }
 $image = $service.PathName.Trim('"')
 $expectedRoot = Join-Path ${env:ProgramFiles(x86)} 'Timi Personal Computing\MiService'
 if (!$image.StartsWith($expectedRoot + '\',[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($image) -ne 'MiDeviceService.exe') { throw 'Unexpected service executable; no change made.' }
-if ($Action -eq 'Status') { $service | Select-Object Name,State,StartMode,PathName | ConvertTo-Json; exit 0 }
+if ($Action -eq 'Status') {
+    @($service, $v6) | Where-Object { $_ } | Select-Object Name,State,StartMode,PathName | ConvertTo-Json
+    exit 0
+}
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 if (!(Test-Path -LiteralPath $backupPath)) {
     if ($Action -eq 'Restore') { throw 'No saved original service state exists; no guessed restoration made.' }
@@ -45,11 +63,57 @@ if (!(Test-Path -LiteralPath $backupPath)) {
 }
 $original = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
 if ($original.name -ne $serviceName -or $original.image -ne $image) { throw 'The installed service changed since the backup; original state preserved for manual review.' }
-function Set-Startup([string]$value) {
-    & (Join-Path $env:SystemRoot 'System32\sc.exe') config $serviceName 'start=' $value | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'Service startup change failed.' }
+function Set-Startup([string]$name,[string]$value) {
+    & (Join-Path $env:SystemRoot 'System32\sc.exe') config $name 'start=' $value | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Service startup change failed: $name" }
 }
-$originalStartup = switch ($original.startMode) { 'Auto' {if($original.delayedAutoStart){'delayed-auto'}else{'auto'}} 'Manual' {'demand'} 'Disabled' {'disabled'} default {throw 'Unsupported saved startup mode.'} }
+function Original-Startup($original) {
+    switch ($original.startMode) {
+        'Auto' { if($original.delayedAutoStart){'delayed-auto'}else{'auto'} }
+        'Manual' { 'demand' }
+        'Disabled' { 'disabled' }
+        default { throw 'Unsupported saved startup mode.' }
+    }
+}
+function Set-V6Service {
+    if (!$v6) { return }
+    $path = Join-Path $dataRoot 'oem-v6-service-original.json'
+    if (!(Test-Path -LiteralPath $path)) {
+        # Restore can be called before the 6.x service has ever been isolated.
+        if ($Action -eq 'Restore') { return }
+        $delayed = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\XiaomiService' -Name DelayedAutoStart -ErrorAction SilentlyContinue).DelayedAutoStart
+        @{name='XiaomiService';image=$v6Image;startMode=$v6.StartMode;wasRunning=($v6.State -eq 'Running');delayedAutoStart=($delayed -eq 1)} |
+            ConvertTo-Json | Set-Content -LiteralPath $path -Encoding UTF8
+    }
+    $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    if ($state.name -ne 'XiaomiService' -or (Split-Path -Leaf $state.image) -ne 'XiaomiService.exe' -or
+        (Split-Path -Parent (Split-Path -Parent $state.image)) -notin $managerRoots) {
+        throw 'Unexpected saved XiaomiService identity; no change was made to that service.'
+    }
+    $startup = Original-Startup $state
+    switch ($Action) {
+        'Disable' {
+            Set-Startup 'XiaomiService' 'disabled'
+            try { Stop-Service -Name 'XiaomiService' }
+            catch {
+                Set-Startup 'XiaomiService' (Original-Startup @{
+                    startMode=$v6.StartMode;delayedAutoStart=$state.delayedAutoStart
+                })
+                throw
+            }
+        }
+        'Tools' {
+            Set-Startup 'XiaomiService' 'demand'
+            Start-Service -Name 'XiaomiService'
+        }
+        'Restore' {
+            Set-Startup 'XiaomiService' $startup
+            if ($state.wasRunning) { Start-Service -Name 'XiaomiService' }
+            else { Stop-Service -Name 'XiaomiService' }
+        }
+    }
+}
+$originalStartup = Original-Startup $original
 $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
 $sddl = @(& $sc sdshow $serviceName) | Where-Object { $_.Trim().StartsWith('D:') } | Select-Object -First 1
 if ($LASTEXITCODE -ne 0 -or !$sddl) { throw 'Could not preserve the service permissions.' }
@@ -75,12 +139,13 @@ $sddl = $savedSddl
 if ($LASTEXITCODE -ne 0) { throw 'Windows refused temporary service permissions; original state unchanged.' }
 try {
 if ($Action -eq 'Disable') {
-    Set-Startup 'disabled'
+    Set-V6Service
+    Set-Startup $serviceName 'disabled'
     try { Stop-Service -Name $serviceName -ErrorAction Stop }
-    catch { Set-Startup $originalStartup; throw }
+    catch { Set-Startup $serviceName $originalStartup; throw }
     # Limit UI cleanup to this session and the verified installed manager directory.
     $oemDirectories = @()
-    foreach ($root in @((Join-Path $env:ProgramFiles 'MI\XiaomiPCManager'),(Join-Path ${env:ProgramFiles(x86)} 'MI\XiaomiPCManager'))) {
+    foreach ($root in $managerRoots) {
         if (!(Test-Path -LiteralPath $root)) { continue }
         $oemDirectories += $root
         $oemDirectories += @(Get-ChildItem -LiteralPath $root -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | ForEach-Object { $_.FullName })
@@ -134,7 +199,7 @@ public static class XiaomiNativeProcessImage {
 }
 '@
     }
-    foreach ($process in Get-Process OSDLauncher,OSDUtility,XiaomiPcManager,XiaomiPcHost -ErrorAction SilentlyContinue) {
+    foreach ($process in Get-Process OSDLauncher,OSDUtility,XiaomiPcManager,XiaomiPcHost,XiaomiHost,XiaomiClipboard -ErrorAction SilentlyContinue) {
         if ($process.SessionId -ne $session) { continue }
         $expectedImages = @($oemDirectories | ForEach-Object { Join-Path $_ ($process.ProcessName + '.exe') })
         $actualImage = [XiaomiNativeProcessImage]::Read($process.Id)
@@ -143,11 +208,13 @@ public static class XiaomiNativeProcessImage {
     }
     @{enabled=$true;time=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $intentPath -Encoding UTF8
 } elseif ($Action -eq 'Tools') {
-    Set-Startup 'demand'
+    Set-Startup $serviceName 'demand'
     Start-Service -Name $serviceName
+    Set-V6Service
 } else {
-    Set-Startup $originalStartup
+    Set-Startup $serviceName $originalStartup
     if ($original.wasRunning) { Start-Service -Name $serviceName } else { Stop-Service -Name $serviceName }
+    Set-V6Service
     $taskRecord = Join-Path $dataRoot 'oem-host-task.json'
     if (Test-Path -LiteralPath $taskRecord) {
         $savedTask = Get-Content -LiteralPath $taskRecord -Raw | ConvertFrom-Json
@@ -183,6 +250,7 @@ if ($Action -eq 'Disable') {
     }
 }
 $record = Join-Path $dataRoot ('oem-service-' + (Get-Date -Format 'yyyyMMddTHHmmssfff') + '-' + $Action + '.json')
-Get-CimInstance Win32_Service -Filter "Name='MiDeviceService'" | Select-Object Name,State,StartMode,PathName | ConvertTo-Json | Set-Content -LiteralPath $record -Encoding UTF8
+Get-CimInstance Win32_Service -Filter "Name='MiDeviceService' OR Name='XiaomiService'" |
+    Select-Object Name,State,StartMode,PathName | ConvertTo-Json | Set-Content -LiteralPath $record -Encoding UTF8
 Write-Host ('Completed ' + $Action + '; saved original state: ' + $backupPath)
 

@@ -38,6 +38,22 @@ work. Follow its instructions to re-enable the installed app afterward. The
 packaging scripts stage into build/install/packages directories; they do not
 edit the installed EXE in place.
 
+## Package the PC Manager-only update
+
+Build PC Manager first using the existing offline toolchain. Then give the
+packaging command the verified 0.3.27 package folder, the directory containing
+the 0.2.21 build output, and a new output directory:
+
+```powershell
+python -B tools/package_pc_manager_update.py --base PATH_TO_0_3_27_PACKAGES --build "build/test/PC Manager/output" --output NEW_RELEASE_DIRECTORY
+```
+
+It reuses the prior PC Manager runtime, verifies the base payload, stages the
+new build and compiles the shared installer. Its standalone EXE and ZIP contain
+only PC Manager. Keep the separate Development checkout for edits; the release
+archive also supplies an editable component copy. A local upgrade keeps the
+previous app folder and user profile.
+
 Detailed component references: [PC Manager](source/pc-manager/DEVELOPMENT.md),
 [AI Center](source/file-search/DEVELOPMENT.md),
 [Screen Translator](source/screen-translator/DEVELOPMENT.md).

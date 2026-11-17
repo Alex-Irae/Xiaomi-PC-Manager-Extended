@@ -1,3 +1,9 @@
+# PC Manager 0.2.21
+
+- **Xiaomi 6.x compatibility.** The optional OEM isolation tool recognizes the versioned Xiaomi 6.x background service and saves its original startup state separately for restoration. Revamp now reads the same isolation preference as the service tool in an installed profile.
+- **PC Manager-only upgrade.** The offline EXE and alternative ZIP replace PC Manager in an existing Xiaomi Revamp 0.3.27 installation. Settings and the previous PC Manager folder are retained. AI Center remains at 0.3.18 and Screen Translator at 0.2.9.
+- **If both apps respond to the Mi key:** setup does not change the original Xiaomi app or automatically disable its launcher. The [PC Manager guide](source/pc-manager/README.md#when-the-mi-key-also-opens-xiaomis-control-center) explains the reversible stock-only workaround and what it affects.
+
 # Xiaomi Revamp 0.3.27
 
 PC Manager 0.2.20. AI Center stays at 0.3.18 and Screen Translator at 0.2.9.

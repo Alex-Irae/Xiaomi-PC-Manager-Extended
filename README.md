@@ -117,13 +117,13 @@ Xiaomi Revamp is a set of three Windows apps that work well together and can als
 
 ## Install and start
 
-1. Open [Downloads](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases) and choose a release.
-2. Run **Xiaomi-Revamp-Installer.exe**. Choose where to install, where your settings and data go, and which apps start with Windows. PC Manager is always installed; AI Center and Screen Translator are optional.
+1. For all three apps, open the [Xiaomi Revamp 0.3.27 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/v0.3.27). Run **Xiaomi-Revamp-Installer.exe** and choose which optional apps to install.
+2. For just PC Manager, or to update an existing Revamp installation, download **PC-Manager-Installer.exe** from the [PC Manager 0.2.21 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.21). Quit Revamp PC Manager from its tray before updating. Choose your existing Xiaomi Revamp folder and keep the same user scope and startup option. Setup retains your settings and the previous PC Manager folder.
 3. Open **PC Manager**, **AI Center**, **File Search** or **Screen Translator** from the Start menu. PC Manager's Toolbox opens them too.
 
 To remove an app, use Windows Settings or the app's **Uninstall.exe**, and read its choices before deleting saved settings or a search index you want to keep.
 
-**Versions.** This page describes Xiaomi Revamp **0.3.27** (PC Manager **0.2.20**, AI Center **0.3.18**, Screen Translator **0.2.9**). The installer for this version is release **v0.3.27** on the [Downloads](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases) page.
+**Versions.** The full Xiaomi Revamp **0.3.27** installer includes PC Manager **0.2.20**, AI Center **0.3.18**, and Screen Translator **0.2.9**. The smaller **0.2.21** update replaces only PC Manager. If Xiaomi's original Control Center also opens when you press the Mi key, see the [PC Manager troubleshooting guide](source/pc-manager/README.md#when-the-mi-key-also-opens-xiaomis-control-center).
 
 ## Before you install
 
