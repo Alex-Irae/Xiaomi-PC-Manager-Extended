@@ -6,7 +6,7 @@ Change performance, look after your battery, adjust the display and keep frequen
 
 ![PC Manager overview](../../docs/screenshots/pc-manager-overview.png)
 
-Current version: **0.2.21**, available as a [PC Manager-only installer](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.21) for new installs and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
+Current release: **0.2.22**, available as a [PC Manager-only installer](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.22) for new installs and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
 
 ## Quick controls when you need them
 
@@ -26,6 +26,8 @@ Choose a daily charge target in **Battery**. For a trip, enable travel charging 
 
 Open **Keyboard** to choose a shortcut from the list, or choose **Press a shortcut** and press the combination yourself. Changes apply as you make them; the bottom notice confirms the result.
 
+Choose **Open File Search** next to **Copilot key**, or **Translate screen** next to **XiaoAI key (F7)** to open the translation toolbox. **No action** tells Revamp to ignore the F7 firmware event. The other Xiaomi action keys and the Xiaomi key's press, double press and hold can also open installed apps, run PC Manager actions or do nothing. Keys that change hardware directly, such as performance mode on some models, can still make that change. Fn itself is not a Windows shortcut modifier.
+
 ![Keyboard settings with recorded and connected app shortcuts](../../docs/screenshots/pc-manager-shortcuts.png)
 
 Assigning a shortcut already used by a connected action swaps the two actions' keys. Windows-reserved or externally occupied combinations can be refused. PC Manager owns connected shortcuts while running; each optional app takes over when it is closed.
@@ -38,7 +40,7 @@ The **Toolbox** lists installed connected apps, with opening, settings and start
 
 On Xiaomi PC Manager **6.0.2.30**, Xiaomi's background helper also listens to the dedicated Mi/Control Center key. This is separate from the Ctrl key and the Double Ctrl shortcut for File Search. Revamp's installer does not change the stock app or its shortcuts.
 
-If you want to keep only Revamp on that key and the stock app offers no toggle, quit **Xiaomi PC Manager** in Task Manager. Verify its executable is inside the stock `C:\Program Files\MI\XiaomiPCManager\<version>` folder, then rename `XiaomiPCManager.exe` to `XiaomiPCManager.exe.revamp-disabled` with administrator permission. Leave the Revamp executable alone. This also prevents opening the original manager manually, including from Revamp's Toolbox. Restore the original filename to use it again. A Xiaomi update can put back the stock launcher.
+If you want to keep only Revamp on that key and the stock app offers no toggle, quit **Xiaomi PC Manager** in Task Manager. Verify its executable is inside the stock `C:\Program Files\MI\XiaomiPCManager\<version>` folder, then rename `XiaomiPCManager.exe` to `XiaomiPCManager.exe.revamp-disabled` with administrator permission. Leave the Revamp executable alone. Revamp's explicit Toolbox and Driver Scan actions can discover the renamed binary without restoring the old filename. A Xiaomi update can put back the stock launcher.
 
 Stopping the stock app's background helpers is separate. If you also rename `OSDLauncher.exe` to `OSDLauncher.exe.revamp-disabled` to keep its helper from respawning, the stock OSD stops too. Restore that filename to bring it back. Services stopped for the current session can start again after a reboot.
 
@@ -48,11 +50,13 @@ The separate **Disable Xiaomi service.cmd** option is for users who want broader
 
 ## Installation, settings and limits
 
-Run **PC-Manager-Installer.exe** from the [0.2.21 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.21), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
+Run **PC-Manager-Installer.exe** from the [0.2.22 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.22), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
 
 If PC Manager reopens on its own, turn off **Restart automatically if the app exits** in Settings, then quit it again. You can turn the option back on after updating.
 
 The tested hardware is **Xiaomi Book Pro 14 2026**, on Windows 11 x64. Other Xiaomi models may expose different controls. On a non-Xiaomi PC the interface can open, but Xiaomi firmware controls are unavailable. WebView2 is required; the packaged app includes its private runtime. See [requirements](../../REQUIREMENTS.txt).
+
+If WebView2 disconnects, PC Manager retries with a fresh browser control while keeping the same settings and browser profile. If it still reports an error, reopen the window to retry and check the `native-*.log` file in the PC Manager data folder.
 
 Preferences, artwork and logs are kept in the installer-selected profile's `pc-manager` folder. Theme, accent, saved palettes and quick-panel choices are available in Settings. Use the app's uninstaller for removal and review its data-removal options.
 

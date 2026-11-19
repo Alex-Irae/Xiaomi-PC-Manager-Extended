@@ -36,7 +36,7 @@ internal sealed class OemSession : IDisposable
             {
                 while (!token.IsCancellationRequested && CleanupEnabled())
                 {
-                    var processes = VerifiedProcesses(directory);
+                    var processes = VerifiedProcesses(executable);
                     lastWindows = Snapshot(processes);
                     bool mainVisible = MainVisible(processes, includeQuickPanel);
                     if (mainVisible) { seenMain = true; closedAt = null; status = "Xiaomi main window is open; automatic cleanup is armed."; }
@@ -69,14 +69,18 @@ internal sealed class OemSession : IDisposable
             catch (Exception ex) { status = "Automatic Xiaomi cleanup failed: " + ex.Message; XiControl.Log.Ex("OEM session", ex); }
         }, token);
     }
-    private static HashSet<int> VerifiedProcesses(string directory)
+    private static HashSet<int> VerifiedProcesses(string executable)
     {
         var ids = new HashSet<int>();
-        foreach (string name in new[] { "XiaomiPcManager", "XiaomiPcHost" })
-        foreach (var process in Process.GetProcessesByName(name))
+        string host = Path.Combine(Path.GetDirectoryName(executable)!, "XiaomiPcHost.exe");
+        int session = Process.GetCurrentProcess().SessionId;
+        foreach (var process in XiaomiBridge.ManagerProcesses(executable).Concat(Process.GetProcessesByName("XiaomiPcHost")))
         using (process)
-            if (process.SessionId == Process.GetCurrentProcess().SessionId &&
-                string.Equals(ProcessImage.PathFor(process.Id), Path.Combine(directory, name + ".exe"), StringComparison.OrdinalIgnoreCase)) ids.Add(process.Id);
+        {
+            string? image = ProcessImage.PathFor(process.Id);
+            if (process.SessionId == session && (string.Equals(image, executable, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(image, host, StringComparison.OrdinalIgnoreCase))) ids.Add(process.Id);
+        }
         return ids;
     }
     private static bool MainVisible(HashSet<int> ids, bool includeQuickPanel = false)

@@ -34,7 +34,7 @@ internal static class Setup
     static string Sid { get { return WindowsIdentity.GetCurrent().User.Value; } }
     static bool Admin { get { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); } }
     const string Version = "0.3.27"; // suite release; tools/build_suite.py refuses to build when these differ from its table
-    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.21" }, { "file-search", "0.3.18" }, { "screen-translator", "0.2.9" } };
+    static readonly Dictionary<string, string> Versions = new Dictionary<string, string> { { "pc-manager", "0.2.22" }, { "file-search", "0.3.18" }, { "screen-translator", "0.2.9" } };
     static string Uninstaller { get { return "Uninstall.exe"; } }
     static string Expand(string path) { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path).Replace("{sid}", Sid)); }
     static Dictionary<string, object> Marker(string root) { return Object(Json.DeserializeObject(File.ReadAllText(Path.Combine(root, "suite-install.json")))); }

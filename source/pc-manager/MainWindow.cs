@@ -33,7 +33,7 @@ public sealed class MainWindow : Form
     private readonly bool compact;
     private WebView2 web = new() { Dock = DockStyle.Fill };
     private bool recoveringWeb;
-    private long lastWebRecovery;
+    private bool webInitializationFailed;
     private bool webReady, modalOpen;
     private bool managerPlaced;
     private MouseHook? mouseCallback;
@@ -79,7 +79,12 @@ public sealed class MainWindow : Form
             if (Visible) StartOutsideClicks();
             else { StopOutsideClicks(); ClosingPopup = false; motionEpoch++; }
         };
-        VisibleChanged += async (_, _) => await UpdateVisibilityAsync();
+        VisibleChanged += async (_, _) =>
+        {
+            if (!Visible || app.Exiting || initialization is null) return;
+            await EnsureWebAsync();
+            if (Visible && !IsDisposed) Send(new { activated = true });
+        };
         VisibleChanged += (_, _) => TrimHiddenMemory();
         FormClosing += (_, e) =>
         {
@@ -117,7 +122,8 @@ public sealed class MainWindow : Form
         int logicalHeight = (app.Preferences.CompactPanel ? 650 : 730) + rows * 83 + (systemRows - 2) * 75;
         int height = Math.Min((int)(logicalHeight * scale * DeviceDpi / 96f), area.Height - 24);
         Size = new Size(width, height);
-        if (web.CoreWebView2 is not null) web.ZoomFactor = scale;
+        try { if (web.CoreWebView2 is not null) web.ZoomFactor = scale; }
+        catch (Exception ex) when (IsWebDisconnected(ex)) { QueueWebRecovery(web); }
         int margin = (int)Math.Round(5 * DeviceDpi / 96f);
         var desired = XiControl.Ui.OsdPlacement.Locate(area, Size, app.Preferences.PopupPosition, margin);
         desired.Offset((int)Math.Round(app.Preferences.PopupOffsetX * DeviceDpi / 96f), (int)Math.Round(app.Preferences.PopupOffsetY * DeviceDpi / 96f));
@@ -268,7 +274,15 @@ public sealed class MainWindow : Form
         if (compact && keyData == Keys.Escape && !webReady) { Hide(); return true; }
         return base.ProcessCmdKey(ref message, keyData);
     }
-    private Task EnsureWebAsync() => initialization ??= InitializeWebAsync();
+    private Task EnsureWebAsync()
+    {
+        if (webInitializationFailed && initialization?.IsCompleted == true && !IsDisposed && !app.Exiting)
+        {
+            ReplaceWeb();
+            initialization = null;
+        }
+        return initialization ??= InitializeWebAsync();
+    }
     internal Task PreloadAsync() => EnsureWebAsync();
     internal async Task<object> ProbeQuickAsync(string? imagePath = null)
     {
@@ -406,93 +420,124 @@ public sealed class MainWindow : Form
         }
         catch (Exception ex) when (ex is InvalidOperationException or COMException or ObjectDisposedException) { XiControl.Log.Ex("Window.Memory", ex); }
     }
-    private Task UpdateVisibilityAsync()
+    private static bool IsWebDisconnected(Exception ex) => ex.HResult is unchecked((int)0x80010108)
+        or unchecked((int)0x800706BA) or unchecked((int)0x80004004)
+        || ex is InvalidOperationException && ex.Message.Contains("disposed", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsCurrentWeb(WebView2 control) => !IsDisposed && !Disposing && !app.Exiting && !control.IsDisposed && ReferenceEquals(web, control);
+
+    private void ReplaceWeb()
     {
-        // WinForms owns controller visibility. Explicit suspend/resume repeatedly invalidated
-        // the controller on this device; hidden frontend refreshes already skip their work.
-        if (IsDisposed || web.IsDisposed || app.Exiting || !Visible) return Task.CompletedTask;
-        try { Send(new { activated = true }); }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("disposed", StringComparison.OrdinalIgnoreCase))
-        {
-            XiControl.Log.Ex("Window.Visibility", ex);
-            return RecoverWebAsync();
-        }
-        return Task.CompletedTask;
+        var previous = web;
+        webReady = false;
+        webInitializationFailed = false;
+        web = new WebView2 { Dock = DockStyle.Fill };
+        Controls.Remove(previous);
+        Controls.Add(web);
+        previous.Dispose();
     }
-    private async Task RecoverWebAsync()
+
+    private void QueueWebRecovery(WebView2 control) => app.Post(async () => await RecoverWebAsync(control));
+
+    private async Task RecoverWebAsync(WebView2 control)
     {
-        if (recoveringWeb || IsDisposed || app.Exiting || Environment.TickCount64 - lastWebRecovery < 2000) return;
+        if (recoveringWeb || !IsCurrentWeb(control)) return;
         recoveringWeb = true;
-        lastWebRecovery = Environment.TickCount64;
         try
         {
+            await Task.Delay(350);
+            if (!IsCurrentWeb(control)) return;
             XiControl.Log.Write("Window.Recover " + DocumentPath);
-            var previous = web;
-            webReady = false;
-            initialization = null;
-            web = new WebView2 { Dock = DockStyle.Fill };
-            Controls.Remove(previous);
-            Controls.Add(web);
-            previous.Dispose();
-            await EnsureWebAsync();
+            ReplaceWeb();
+            initialization = InitializeWebAsync();
+            await initialization;
         }
+        catch (Exception ex) { XiControl.Log.Ex("Window.Recover", ex); }
         finally { recoveringWeb = false; }
     }
     private async Task InitializeWebAsync()
     {
-        try
+        for (int attempt = 0; ; attempt++)
         {
-            string assets = Path.Combine(AppContext.BaseDirectory, "www");
-            if (!File.Exists(Path.Combine(assets, DocumentPath.TrimStart('/'))))
-                throw new FileNotFoundException("The www UI folder is missing beside the application.");
-            // The pages are served from disk under made-up host names. Chromium still tried to resolve those
-            // names for every window and waited about two seconds for the lookup to fail before loading
-            // scripts and styles. Nothing here uses the network, so every lookup fails at once instead.
-            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Services.Preferences.DataDirectory, "WebView2"), new CoreWebView2EnvironmentOptions("--host-resolver-rules=\"MAP * ~NOTFOUND\""));
-            await web.EnsureCoreWebView2Async(environment);
-            web.CoreWebView2.SetVirtualHostNameToFolderMapping("xiaomi-ai.local", assets, CoreWebView2HostResourceAccessKind.DenyCors);
-            Directory.CreateDirectory(Services.AppLinks.IconDirectory);
-            web.CoreWebView2.SetVirtualHostNameToFolderMapping("xiaomi-icons.local", Services.AppLinks.IconDirectory, CoreWebView2HostResourceAccessKind.DenyCors);
-            web.CoreWebView2.SetVirtualHostNameToFolderMapping("xiaomi-assets.local", Path.Combine(AppContext.BaseDirectory, "assets"), CoreWebView2HostResourceAccessKind.DenyCors);
-            Directory.CreateDirectory(Services.AppAssets.CustomDirectory);
-            web.CoreWebView2.SetVirtualHostNameToFolderMapping("xiaomi-custom-assets.local", Services.AppAssets.CustomDirectory, CoreWebView2HostResourceAccessKind.DenyCors);
-            web.CoreWebView2.Settings.AreDevToolsEnabled = false;
-            web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-            web.CoreWebView2.Settings.AreHostObjectsAllowed = false;
-            web.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            web.CoreWebView2.Settings.IsSwipeNavigationEnabled = false;
-            web.CoreWebView2.Settings.IsZoomControlEnabled = false;
-            if (compact) web.ZoomFactor = app.Preferences.PopupScale / 100f;
-            web.CoreWebView2.NavigationStarting += (_, e) => { if (!Trusted(e.Uri)) e.Cancel = true; };
-            web.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
-            web.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
-            web.CoreWebView2.WebMessageReceived += OnMessage;
-            web.CoreWebView2.ProcessFailed += (_, e) =>
+            var control = web;
+            if (!IsCurrentWeb(control)) return;
+            try { await InitializeWebControlAsync(control); return; }
+            catch (Exception ex)
             {
-                XiControl.Log.Write("Window.ProcessFailed " + e.ProcessFailedKind);
-                if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
-                    app.Post(async () => await RecoverWebAsync());
-                else if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited)
-                    app.Post(() => web.CoreWebView2?.Reload());
-            };
-            web.CoreWebView2.NavigationCompleted += (_, e) =>
-            {
-                webReady = e.IsSuccess;
-                if (!compact) XiControl.Log.Write($"Window.Loaded manager {lifetime.ElapsedMilliseconds} ms");
-                Send(new { activated = true, backendReady = app.Ready.IsCompletedSuccessfully });
-                if (!compact) SelectManagerPage(StartPage);
-                _ = UpdateVisibilityAsync();
-                TrimHiddenMemory();
-            };
-            web.Source = new Uri(LocalOrigin + DocumentPath);
+                if (!IsCurrentWeb(control)) return;
+                XiControl.Log.Ex($"Window.Initialize {DocumentPath} attempt {attempt + 1}", ex);
+                if (attempt < 2 && IsWebDisconnected(ex))
+                {
+                    ReplaceWeb();
+                    await Task.Delay(attempt == 0 ? 350 : 1000);
+                    continue;
+                }
+                webInitializationFailed = true;
+                webReady = false;
+                if (Visible)
+                {
+                    MessageBox.Show(this, "PC Manager could not load its interface. Close and reopen it to retry.\n\n" + ex.Message,
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    if (!IsDisposed) Hide();
+                }
+                return;
+            }
         }
-        catch (Exception ex)
+    }
+    private async Task InitializeWebControlAsync(WebView2 control)
+    {
+        string assets = Path.Combine(AppContext.BaseDirectory, "www");
+        if (!File.Exists(Path.Combine(assets, DocumentPath.TrimStart('/'))))
+            throw new FileNotFoundException("The www UI folder is missing beside the application.");
+        // The pages are served from disk under made-up host names. Chromium still tried to resolve those
+        // names for every window and waited about two seconds for the lookup to fail before loading
+        // scripts and styles. Nothing here uses the network, so every lookup fails at once instead.
+        var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Services.Preferences.DataDirectory, "WebView2"), new CoreWebView2EnvironmentOptions("--host-resolver-rules=\"MAP * ~NOTFOUND\""));
+        if (!IsCurrentWeb(control)) return;
+        await control.EnsureCoreWebView2Async(environment);
+        if (!IsCurrentWeb(control)) return;
+        var core = control.CoreWebView2;
+        core.SetVirtualHostNameToFolderMapping("xiaomi-ai.local", assets, CoreWebView2HostResourceAccessKind.DenyCors);
+        Directory.CreateDirectory(Services.AppLinks.IconDirectory);
+        core.SetVirtualHostNameToFolderMapping("xiaomi-icons.local", Services.AppLinks.IconDirectory, CoreWebView2HostResourceAccessKind.DenyCors);
+        core.SetVirtualHostNameToFolderMapping("xiaomi-assets.local", Path.Combine(AppContext.BaseDirectory, "assets"), CoreWebView2HostResourceAccessKind.DenyCors);
+        Directory.CreateDirectory(Services.AppAssets.CustomDirectory);
+        core.SetVirtualHostNameToFolderMapping("xiaomi-custom-assets.local", Services.AppAssets.CustomDirectory, CoreWebView2HostResourceAccessKind.DenyCors);
+        core.Settings.AreDevToolsEnabled = false;
+        core.Settings.AreDefaultContextMenusEnabled = false;
+        core.Settings.AreHostObjectsAllowed = false;
+        core.Settings.IsStatusBarEnabled = false;
+        core.Settings.IsSwipeNavigationEnabled = false;
+        core.Settings.IsZoomControlEnabled = false;
+        if (compact) control.ZoomFactor = app.Preferences.PopupScale / 100f;
+        core.NavigationStarting += (_, e) => { if (!Trusted(e.Uri)) e.Cancel = true; };
+        core.NewWindowRequested += (_, e) => e.Handled = true;
+        core.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+        core.WebMessageReceived += OnMessage;
+        core.ProcessFailed += (_, e) =>
         {
-            XiControl.Log.Ex("Window.Initialize", ex);
-            MessageBox.Show("The local interface could not initialize. Check the WebView2 Runtime and the www folder.\n\n" + ex.Message,
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Hide();
-        }
+            if (!IsCurrentWeb(control)) return;
+            XiControl.Log.Write("Window.ProcessFailed " + e.ProcessFailedKind);
+            if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+                QueueWebRecovery(control);
+            else if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited)
+                app.Post(() =>
+                {
+                    if (!IsCurrentWeb(control)) return;
+                    try { core.Reload(); }
+                    catch (Exception ex) when (IsWebDisconnected(ex)) { QueueWebRecovery(control); }
+                });
+        };
+        core.NavigationCompleted += (_, e) =>
+        {
+            if (!IsCurrentWeb(control)) return;
+            webReady = e.IsSuccess;
+            if (!compact) XiControl.Log.Write($"Window.Loaded manager {lifetime.ElapsedMilliseconds} ms");
+            Send(new { activated = true, backendReady = app.Ready.IsCompletedSuccessfully });
+            if (!compact) SelectManagerPage(StartPage);
+            TrimHiddenMemory();
+        };
+        control.Source = new Uri(LocalOrigin + DocumentPath);
     }
     private bool Trusted(string source) => Uri.TryCreate(source, UriKind.Absolute, out var uri)
         && uri.Scheme == "https" && uri.Host == "xiaomi-ai.local" && uri.IsDefaultPort
@@ -510,7 +555,7 @@ public sealed class MainWindow : Form
         {
             using var picker = new OpenFileDialog
             {
-                Title = $"Select {file}", Filter = $"{file}|{file}", CheckFileExists = true
+                Title = $"Select {file}", Filter = kind == "manager" ? "Xiaomi PC Manager executable|*.exe;*.exe.revamp-disabled" : $"{file}|{file}", CheckFileExists = true
             };
             if (picker.ShowDialog(this) != DialogResult.OK) return false;
             string selected = Services.XiaomiBridge.ValidateSelection(kind, picker.FileName);
@@ -824,8 +869,13 @@ public sealed class MainWindow : Form
     {
         // Deferred page scripts can issue requests before NavigationCompleted fires. Dropping
         // those replies caused a full 30-second timeout before the popup could retry.
-        if (IsDisposed || app.Exiting || web.CoreWebView2 is null || !Trusted(web.CoreWebView2.Source)) return;
-        web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions));
+        var control = web;
+        if (!IsCurrentWeb(control)) return;
+        try
+        {
+            if (control.CoreWebView2 is { } core && Trusted(core.Source)) core.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions));
+        }
+        catch (Exception ex) when (IsWebDisconnected(ex)) { QueueWebRecovery(control); }
     }
     internal void RefreshIfVisible() { if (Visible) Send(new { activated = true }); }
     internal async Task<object> ProbeLayoutAsync()

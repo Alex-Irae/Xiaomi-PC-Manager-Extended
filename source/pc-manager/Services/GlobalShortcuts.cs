@@ -39,7 +39,8 @@ internal sealed class GlobalShortcuts : NativeWindow, IDisposable
         }
         return items;
     }
-    internal static readonly string[] Actions = ["none", "panel", .. XiControl.Input.KeyRouter.ManagerPages.Select(page => "page." + page), "windowssettings", "modes", "hz", "screenoff", "travel", "touchpad", "touchscreen", "monitor", "owl", "projection", "screenshot", "calc", "xiaoai", "app", "suite.file-search.open", "suite.screen-translator.toggle", "suite.screen-translator.region"];
+    internal static readonly string[] ConnectedActions = ["suite.file-search.open", "suite.screen-translator.screen", "suite.screen-translator.toggle", "suite.screen-translator.region", "suite.screen-translator.original", "suite.screen-translator.filter"];
+    internal static readonly string[] Actions = ["none", "panel", .. XiControl.Input.KeyRouter.ManagerPages.Select(page => "page." + page), "windowssettings", "modes", "hz", "screenoff", "travel", "touchpad", "touchscreen", "monitor", "owl", "projection", "screenshot", "taskview", "charge", "autobright", "play", "next", "prev", "stop", "calc", "xiaoai", "app", .. ConnectedActions];
     internal bool Configure(IEnumerable<KeyboardShortcut> items)
     {
         keyboard?.Dispose(); keyboard=null; Error=null;

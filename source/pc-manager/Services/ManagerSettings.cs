@@ -19,7 +19,7 @@ public sealed partial class AdvancedControls
     private sealed record Setting(string Key, string Group, string Label, string Kind, Func<object?> Read,
         Action<JsonElement> Write, double Min = 0, double Max = 0, string[]? Options = null, string Description = "");
     private List<Setting>? definitions;
-    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey", "ShotKey"];
+    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey", "ShotKey", "TaskViewKey", "TouchpadKey", "PerformanceKey", "CalculatorKey", "RefreshRateKey"];
     private static readonly JsonSerializerOptions SettingJson = new()
     { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
     private List<Setting> Definitions => definitions ??= BuildSettings();
@@ -353,13 +353,14 @@ public sealed partial class AdvancedControls
         Add("AwakeOverrideLid", "settings", "Stay awake overrides AC lid sleep", description: "The previous AC lid action is saved and restored when Stay awake ends.");
 
         Add("KeyboardRoutingEnabled", "keyboard", "Handle Xiaomi firmware keys without the OEM manager");
-        // F7 is a full action slot. Until one is chosen it reports what the older switch would do.
-        Add("ShotKeyAction", "keyboard", "F7 key action", "choice", options: [.. actions, "app"], read: () => cfg.ShotKeyAction ?? (cfg.HandleScreenshotKey ? "screenshot" : "xiaoai"));
+        string[] keyActions = [.. actions, "app", .. GlobalShortcuts.ConnectedActions];
+        Add("ShotKeyAction", "keyboard", "XiaoAI key (F7) action", "choice", options: keyActions,
+            read: () => cfg.ShotKeyAction ?? (cfg.HandleScreenshotKey ? "screenshot" : cfg.AiKeyAction ?? "xiaoai"));
         Text("ShotKeyCommand", "keyboard", "F7 key custom command");
         Int("MiHoldMs", "keyboard", "Mi key hold time (ms)", 150, 2000);
         Int("MiDoubleClickMs", "keyboard", "Mi key double-click interval (ms)", 100, 1000);
-        foreach (var (id, label) in new[] { ("MiClick", "Mi key press"), ("MiDouble", "Mi key double press"), ("MiHold", "Mi key hold"), ("SettingsKey", "Settings key"), ("AiKey", "AI key"), ("ProjKey", "Projection key") })
-        { Choice(id + "Action", "keyboard", label + " action", [.. actions, "app"]); Text(id + "Command", "keyboard", label + " custom command"); }
+        foreach (var (id, label) in new[] { ("MiClick", "Mi key press"), ("MiDouble", "Mi key double press"), ("MiHold", "Mi key hold"), ("SettingsKey", "Settings key"), ("AiKey", "AI key"), ("ProjKey", "Projection key"), ("TaskViewKey", "Task View key"), ("TouchpadKey", "Touchpad key"), ("PerformanceKey", "Performance key"), ("CalculatorKey", "Calculator key"), ("RefreshRateKey", "Display rate key") })
+        { Choice(id + "Action", "keyboard", label + " action", keyActions); Text(id + "Command", "keyboard", label + " custom command"); }
         Add("KeyCodes", "keyboard", "Firmware event-code overrides", "keymap", description: "Use the last observed event shown above. Example: {\"Settings\":\"0x1B\"}. An empty object restores the model defaults.");
 
         Add("PerformanceOsdEnabled", "notifications", "Performance notifications");
@@ -483,6 +484,7 @@ public sealed partial class AdvancedControls
         if (!keyboard.HandleScreenshotKey) throw new InvalidOperationException("F7 migration overwrote a later custom mapping.");
         var screenshotRouter = new KeyRouter(keyboard, null!);
         byte screenshotCode = (byte)Enumerable.Range(0, 256).First(code => KeyMap.Default().Kind((byte)code) == KeyKind.Screenshot);
+        byte aiCode = (byte)Enumerable.Range(0, 256).First(code => KeyMap.Default().Kind((byte)code) == KeyKind.Ai);
         bool screenshot = false;
         bool aiLaunched = false; screenshotRouter.XiaoAi = () => aiLaunched = true;
         screenshotRouter.Screenshot = () => screenshot = true;
@@ -493,6 +495,16 @@ public sealed partial class AdvancedControls
         bool panel = false; screenshotRouter.TogglePanel = () => panel = true;
         screenshot = false; keyboard.ShotKeyAction = "panel"; screenshotRouter.Handle(screenshotCode, 0);
         if (screenshot || !panel) throw new InvalidOperationException("A chosen F7 action did not replace the older switch.");
+        keyboard.AiKeyAction = "xiaoai";
+        keyboard.ShotKeyAction = "none";
+        aiLaunched = false; panel = false;
+        screenshotRouter.Handle(aiCode, 1);
+        if (aiLaunched || panel || screenshot) throw new InvalidOperationException("F7 No action did not suppress the AI firmware event.");
+        keyboard.ShotKeyAction = "suite.screen-translator.screen";
+        string? invoked = null;
+        var connectedRouter = new KeyRouter(keyboard, null!) { SuiteAction = action => invoked = action };
+        connectedRouter.Handle(aiCode, 1);
+        if (invoked != "screen-translator.screen") throw new InvalidOperationException("F7 did not route the chosen connected app action.");
         try { AppLinks.OpenKey(new Preferences(), "invalid"); throw new InvalidOperationException("Unknown app slot accepted."); }
         catch (ArgumentException) { }
         try { AppLinks.OpenKey(new Preferences(), "AiKey"); throw new InvalidOperationException("Unassigned app slot accepted."); }

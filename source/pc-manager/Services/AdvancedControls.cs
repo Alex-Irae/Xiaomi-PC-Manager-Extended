@@ -285,6 +285,7 @@ public sealed partial class AdvancedControls : IDisposable
             Calculator = KeyActions.Calculator, Launch = KeyActions.LaunchCommand,
             XiaoAi = () => { try { XiaomiBridge.OpenCompanion("ai", app.Preferences); } catch (Exception ex) { app.Notify(ex.Message); } },
             AppLink = slot => { try { AppLinks.OpenKey(app.Preferences, slot); } catch (Exception ex) { app.Notify(ex.Message); } },
+            SuiteAction = action => { try { app.SuiteOpen(action); } catch (Exception ex) { app.Notify(ex.Message); } },
             ManagerPage = app.OpenManager,
             PanelVisible = () => app.PopupVisible, AutoBrightnessAvailable = () => als.Available,
             MicKey = value => Flash(value == 0 ? OsdKind.MicOn : OsdKind.MicOff, value == 0 ? "Microphone on" : "Microphone muted"),

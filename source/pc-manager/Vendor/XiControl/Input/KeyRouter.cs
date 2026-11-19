@@ -42,6 +42,7 @@ public sealed class KeyRouter
     public Action<string>? Launch;
     public Action<string>? AppLink;
     public Action<string>? ManagerPage;
+    public Action<string>? SuiteAction { get; init; }
     public static readonly string[] ManagerPages = ["home", "performance", "battery", "display", "touchpad", "keyboard", "notifications", "monitor", "tools", "settings"];
 
     // --- клавиши-уведомления (прошивка уже всё сделала — показать OSD) ---
@@ -86,27 +87,32 @@ public sealed class KeyRouter
                 Run(_cfg.ProjKeyAction, _cfg.ProjKeyCommand); break;
             case KeyKind.Projection: ProjectionWarningKey?.Invoke(value); break;
             case KeyKind.Screenshot:
-                // A chosen action wins; without one the older screenshot/XiaoAI switch still decides.
-                if (_cfg.ShotKeyAction is { } shot) Run(shot, _cfg.ShotKeyCommand);
-                else if (_cfg.HandleScreenshotKey) Screenshot?.Invoke(); else XiaoAi?.Invoke();
-                break;
-            case KeyKind.TaskView: TaskView?.Invoke(); break;
-            case KeyKind.Settings: OnSettingsKey(); break; // одиночное событие, удержание не ловится
             case KeyKind.Ai:
-                Run(_cfg.AiKeyAction, _cfg.AiKeyCommand); break;
+                if (_cfg.ShotKeyAction is { } shot) Run(shot, _cfg.ShotKeyCommand);
+                else if (_cfg.HandleScreenshotKey) Screenshot?.Invoke();
+                else Run(_cfg.AiKeyAction ?? "xiaoai", _cfg.AiKeyCommand);
+                break;
+            case KeyKind.TaskView: Run(_cfg.TaskViewKeyAction, _cfg.TaskViewKeyCommand); break;
+            case KeyKind.Settings: OnSettingsKey(); break; // одиночное событие, удержание не ловится
             case KeyKind.Mic: MicKey?.Invoke(value); break;
             case KeyKind.Backlight: BacklightKey?.Invoke(value); break;
             case KeyKind.TouchpadState: TouchpadStateKey?.Invoke(value); break;
             case KeyKind.TouchpadToggle:
-                if (_cfg.TouchpadFeature) ToggleTouchpad?.Invoke();
+                Run(_cfg.TouchpadKeyAction, _cfg.TouchpadKeyCommand);
                 break;
             case KeyKind.FnLock: FnLockKey?.Invoke(value); break;
             case KeyKind.CapsLock: CapsLockKey?.Invoke(value); break;
-            case KeyKind.Performance: PerformanceKey?.Invoke(value); break;
-            case KeyKind.Calculator: Calculator?.Invoke(); break;
+            case KeyKind.Performance:
+                PerformanceKey?.Invoke(value);
+                Run(_cfg.PerformanceKeyAction, _cfg.PerformanceKeyCommand);
+                break;
+            case KeyKind.Calculator: Run(_cfg.CalculatorKeyAction, _cfg.CalculatorKeyCommand); break;
             case KeyKind.LowPower: LowPowerKey?.Invoke(value); break;
             case KeyKind.NumLock: NumLockKey?.Invoke(value); break;
-            case KeyKind.RefreshRate: RefreshRateKey?.Invoke(value); break;
+            case KeyKind.RefreshRate:
+                if (_cfg.RefreshRateKeyAction == "hz") RefreshRateKey?.Invoke(value);
+                else Run(_cfg.RefreshRateKeyAction, _cfg.RefreshRateKeyCommand);
+                break;
             case KeyKind.WinKeyLock: WinKeyLockKey?.Invoke(value); break;
             case KeyKind.CameraPrivacy: CameraPrivacyKey?.Invoke(value); break;
             case KeyKind.AiUp:
@@ -167,6 +173,7 @@ public sealed class KeyRouter
                 break;
             default:
                 if (action?.StartsWith("page.", StringComparison.Ordinal) == true && ManagerPages.Contains(action[5..])) ManagerPage?.Invoke(action[5..]);
+                else if (action?.StartsWith("suite.", StringComparison.Ordinal) == true) SuiteAction?.Invoke(action[6..]);
                 break;
         }
     }

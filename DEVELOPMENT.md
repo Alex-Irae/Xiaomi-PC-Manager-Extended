@@ -42,7 +42,7 @@ edit the installed EXE in place.
 
 Build PC Manager first using the existing offline toolchain. Then give the
 packaging command the verified 0.3.27 package folder, the directory containing
-the 0.2.21 build output, and a new output directory:
+the current PC Manager Release build output, and a new output directory:
 
 ```powershell
 python -B tools/package_pc_manager_update.py --base PATH_TO_0_3_27_PACKAGES --build "build/test/PC Manager/output" --output NEW_RELEASE_DIRECTORY

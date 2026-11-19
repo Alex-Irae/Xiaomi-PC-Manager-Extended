@@ -1,3 +1,10 @@
+# PC Manager 0.2.22
+
+- **Choose what the Xiaomi keys do.** Assign Copilot to File Search, F7 to the screen translation toolbox, or pick another action. On laptops that report F7 as the XiaoAI firmware event, it now follows the F7 mapping, including **No action**.
+- **Find the original Xiaomi manager after an update.** Toolbox and Driver Scan look in versioned folders and recognize renamed stock executables, including the reversible filename workaround in the guide.
+- **Recover after WebView2 disconnects.** PC Manager retries with a fresh browser control and preserves the existing profile.
+- **Upgrade PC Manager alone.** The offline installer keeps your settings and the previous PC Manager folder. AI Center and Screen Translator stay installed as they are.
+
 # PC Manager 0.2.21
 
 - **Xiaomi 6.x compatibility.** The optional OEM isolation tool recognizes the versioned Xiaomi 6.x background service and saves its original startup state separately for restoration. Revamp now reads the same isolation preference as the service tool in an installed profile.

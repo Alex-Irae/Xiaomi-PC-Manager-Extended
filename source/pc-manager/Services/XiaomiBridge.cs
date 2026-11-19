@@ -54,9 +54,21 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
     internal static string ValidateSelection(string kind, string path)
     {
         string file = Path.GetFullPath(path);
-        if (!File.Exists(file) || !Path.GetFileName(file).Equals(ExpectedFileName(kind), StringComparison.OrdinalIgnoreCase))
+        if (!IsComponentExecutable(kind, file))
             throw new ArgumentException($"Select an installed {ExpectedFileName(kind)} file.");
         return file;
+    }
+
+    private static bool IsComponentExecutable(string kind, string file)
+    {
+        if (!File.Exists(file)) return false;
+        if (Path.GetFileName(file).Equals(ExpectedFileName(kind), StringComparison.OrdinalIgnoreCase)) return true;
+        if (kind != "manager" || !(file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".exe.revamp-disabled", StringComparison.OrdinalIgnoreCase))) return false;
+        var version = FileVersionInfo.GetVersionInfo(file);
+        return (string.Equals(version.OriginalFilename, "XiaomiPcManager.exe", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(version.OriginalFilename, "XiaomiPcManager.dll", StringComparison.OrdinalIgnoreCase))
+            && Matches(kind, version.ProductName ?? "");
     }
 
     private static string? LocateComponent(string kind, Preferences? settings = null)
@@ -66,9 +78,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
             "manager" => settings?.XiaomiExecutable, "store" => settings?.MiAppStoreExecutable,
             "ai" => settings?.XiaoAiExecutable, _ => throw new ArgumentException("Unknown Xiaomi component.")
         };
-        string file = ExpectedFileName(kind);
-        if (!string.IsNullOrWhiteSpace(selected) && File.Exists(selected)
-            && Path.GetFileName(selected).Equals(file, StringComparison.OrdinalIgnoreCase)) return selected;
+        if (!string.IsNullOrWhiteSpace(selected) && IsComponentExecutable(kind, selected)) return selected;
         string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
         foreach (string root in kind switch
@@ -77,7 +87,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
             "store" => new[] { Path.Combine(programFilesX86, "MiAppStore"), Path.Combine(programFiles, "MiAppStore") },
             _ => new[] { Path.Combine(programFiles, "MI", "XiaoaiAgent"), Path.Combine(programFilesX86, "MI", "XiaoaiAgent") }
         })
-            if (NewestExecutable(root, file) is { } installed) return installed;
+            if (NewestExecutable(root, kind) is { } installed) return installed;
         foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
         foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
         try
@@ -91,7 +101,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
                 string display = entry?.GetValue("DisplayName") as string ?? "";
                 if (!Matches(kind, display)) continue;
                 string location = entry?.GetValue("InstallLocation") as string ?? "";
-                if (NewestExecutable(location, file) is { } installed) return installed;
+                if (NewestExecutable(location, kind) is { } installed) return installed;
             }
         }
         catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
@@ -107,18 +117,25 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
     };
 
     // Version folders are checked numerically; a stale older install never wins by directory order.
-    private static string? NewestExecutable(string root, string file)
+    private static string? NewestExecutable(string root, string kind)
     {
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) return null;
         try
         {
-            string? versioned = Directory.EnumerateDirectories(root)
+            var directories = Directory.EnumerateDirectories(root)
                 .Select(path => (path, version: Version.TryParse(Path.GetFileName(path), out var version) ? version : null))
                 .Where(item => item.version is not null).OrderByDescending(item => item.version)
-                .Select(item => Path.Combine(item.path, file)).FirstOrDefault(File.Exists);
-            if (versioned is not null) return versioned;
-            string direct = Path.Combine(root, file);
-            return File.Exists(direct) ? direct : null;
+                .Select(item => item.path).Append(root);
+            foreach (string directory in directories)
+            {
+                string direct = Path.Combine(directory, ExpectedFileName(kind));
+                if (File.Exists(direct)) return direct;
+                if (kind != "manager") continue;
+                if (Directory.EnumerateFiles(directory, "*.exe").FirstOrDefault(file => IsComponentExecutable(kind, file)) is { } renamed)
+                    return renamed;
+                if (IsComponentExecutable(kind, direct + ".revamp-disabled")) return direct + ".revamp-disabled";
+            }
+            return null;
         }
         catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         { XiControl.Log.Ex("Xiaomi.Discovery", ex); return null; }
@@ -129,8 +146,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
         if (section == "popup")
         {
             string file = Locate() ?? throw new MissingXiaomiComponentException("manager");
-            if (!Path.GetFileName(file).Equals("XiaomiPcManager.exe", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Select XiaomiPcManager.exe.");
-            var popupStart = new ProcessStartInfo(file) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(file)! };
+            var popupStart = ManagerStartInfo(file);
             popupStart.ArgumentList.Add("--open_controlcenter"); // Verified Options.IsOpenControlCenter attribute in the local assembly.
             lock (session.Sync) { session.Cancel(); OemServiceControl.PrepareExplicitTools(); Process.Start(popupStart)?.Dispose(); session.Watch(file, includeQuickPanel: true); }
             return new { message = "Requested the original Xiaomi popup.", exactPage = false };
@@ -141,9 +157,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
             throw new ArgumentException("Use Open Xiaomi Manager explicitly for proprietary OEM settings. Ordinary controls never launch the OEM manager.");
         if (!Sections.TryGetValue(section, out string? destination)) throw new ArgumentException("Unknown Xiaomi tool.");
         string executable = Locate() ?? throw new MissingXiaomiComponentException("manager");
-        if (!Path.GetFileName(executable).Equals("XiaomiPcManager.exe", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Select XiaomiPcManager.exe in Settings. A launcher wrapper cannot be assumed to forward the driver command.");
-        var start = new ProcessStartInfo(executable) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(executable)! };
+        var start = ManagerStartInfo(executable);
         // Verified in the supplied 5.8.1.121 Options and MainHelper IL, not guessed from frontend route IDs.
         if (section == "drivers") start.ArgumentList.Add("--scan_driver");
         lock (session.Sync)
@@ -170,6 +184,15 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
         return new { message = sent ? $"Requested Xiaomi {string.Join(" > ", navigation)}." : $"Xiaomi navigation was unavailable. Open {destination} in the original manager.", exactPage = false, navigationRequested = sent };
     }
 
+    private static ProcessStartInfo ManagerStartInfo(string executable) => new(executable)
+    {
+        UseShellExecute = executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase), WorkingDirectory = Path.GetDirectoryName(executable)!
+    };
+
+    internal static IEnumerable<Process> ManagerProcesses(string executable) =>
+        Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable))
+            .Concat(executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? [] : Process.GetProcessesByName(Path.GetFileName(executable)));
+
     internal static string? LocateCompanion(string kind, Preferences? settings = null) => LocateComponent(kind, settings);
     internal static object OpenCompanion(string kind, Preferences? settings = null)
     {
@@ -188,7 +211,7 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
             var timeout = Stopwatch.StartNew();
             while (!invoked && timeout.Elapsed < TimeSpan.FromSeconds(5))
             {
-                foreach (var process in Process.GetProcessesByName("XiaomiPcManager"))
+                foreach (var process in ManagerProcesses(executable))
                 {
                     using (process)
                     try
@@ -198,7 +221,14 @@ public sealed class XiaomiBridge(Preferences preferences) : IDisposable
                             new PropertyCondition(AutomationElement.ProcessIdProperty, process.Id));
                         foreach (AutomationElement window in windows)
                         {
-                            var matches = window.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, label));
+                            var condition = new PropertyCondition(AutomationElement.NameProperty, label);
+                            Condition names = label switch
+                            {
+                                "Home" => new OrCondition(condition, new PropertyCondition(AutomationElement.NameProperty, "首页")),
+                                "Toolbox" => new OrCondition(condition, new PropertyCondition(AutomationElement.NameProperty, "工具箱")),
+                                _ => condition
+                            };
+                            var matches = window.FindAll(TreeScope.Descendants, names);
                             foreach (AutomationElement match in matches)
                             {
                                 AutomationElement? control = match;

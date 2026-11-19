@@ -267,13 +267,30 @@ public sealed partial class ManagerApplication : ApplicationContext
         string? appId = args.TryGetProperty("appId", out var id) ? id.GetString() : null;
         if (action != "system" && !GlobalShortcuts.Actions.Contains(action)) throw new ArgumentException("Choose a listed Copilot key action.");
         if (action == "app" && !Preferences.QuickLinks.Any(link => link.Id == appId)) throw new ArgumentException("Choose an existing app link.");
-        if (action != "system" && copilot.Error is not null) throw new InvalidOperationException(copilot.Error);
-        var next = new KeyboardShortcut { Chord = "Win+Shift+F23", Action = action, AppId = action == "app" ? appId : null };
-        if (XiaomiRevamp.Suite.SuiteEnvironment.Enabled) XiaomiRevamp.Suite.SuiteStore.Reserve(SuiteReservations(Preferences.Shortcuts, next));
-        Preferences.CopilotShortcut = next;
-        Preferences.Save();
-        copilot.Configure(EffectiveCopilot(next));
-        return new { message = action == "system" ? "Windows handles the Copilot key again." : "Copilot key mapping updated." };
+        if (XiaomiRevamp.Suite.SuiteEnvironment.Enabled)
+        {
+            if (action.StartsWith("suite.", StringComparison.Ordinal))
+            {
+                string target = action[6..];
+                if (!XiaomiRevamp.Suite.SuiteEnvironment.Installed(target.Split('.')[0]))
+                    throw new ArgumentException("That optional application is not installed.");
+                return SuiteSave(System.Text.Json.JsonSerializer.SerializeToElement(new { action = target, chord = "Copilot" }));
+            }
+            if (action == "system" && XiaomiRevamp.Suite.SuiteStore.Read().Bindings.FirstOrDefault(item => item.Value == "Copilot").Key is { } owner)
+                XiaomiRevamp.Suite.SuiteStore.SetBinding(owner, "none");
+        }
+        var entries = Preferences.Shortcuts.ToList();
+        int index = entries.FindIndex(item => XiaomiRevamp.Suite.SuiteChord.Parse(item.Chord).Text == "Copilot");
+        if (index >= 0 || action != "system")
+        {
+            var next = new KeyboardShortcut { Chord = action == "system" ? "none" : "Copilot", Action = action == "system" ? entries[index].Action : action,
+                AppId = action == "system" ? entries[index].AppId : action == "app" ? appId : null };
+            if (index >= 0) entries[index] = next; else entries.Add(next);
+            return SaveShortcuts(System.Text.Json.JsonSerializer.SerializeToElement(new { shortcuts = entries }));
+        }
+        Preferences.CopilotShortcut = new() { Chord = "Win+Shift+F23", Action = "system" };
+        Preferences.Save(); ReapplyShortcuts();
+        return new { message = "Windows handles the Copilot key again." };
     }
     internal void ReapplyShortcuts()
     {

@@ -39,10 +39,12 @@ def package(base, build, output):
         "runtime/dotnet/" + name: build / name
         for name in ("PCManager.dll", "PCManager.exe", "PCManager.deps.json", "tools/oem-service.ps1")
     }
-    for name in ("README.md", "Services/OemServiceControl.cs", "XiaomiAIManager.csproj", "tools/oem-service.ps1"):
-        path = "source/pc-manager/" + name
-        replacements["Development/" + path] = ROOT / path
-    replacements["Development/source/shared/Setup.cs"] = ROOT / "source/shared/Setup.cs"
+    for name in component["files"]:
+        if name.startswith("Development/source/"):
+            replacements[name] = ROOT / name.removeprefix("Development/")
+    for path in (build / "www").rglob("*"):
+        if path.is_file():
+            replacements["runtime/dotnet/" + path.relative_to(build).as_posix()] = path
 
     output.mkdir(parents=True, exist_ok=False)
     # Keep intermediates available to inspect and regenerate the self-extracting EXE.
