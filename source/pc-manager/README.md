@@ -6,7 +6,7 @@ Change performance, look after your battery, adjust the display and keep frequen
 
 ![PC Manager overview](../../docs/screenshots/pc-manager-overview.png)
 
-Current release: **0.2.22**, available as a [PC Manager-only installer](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.22) for new installs and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
+Current release: **0.2.23**, available as a [PC Manager-only installer](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23) for new installs and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
 
 ## Quick controls when you need them
 
@@ -30,6 +30,8 @@ Choose **Open File Search** next to **Copilot key**, or **Translate screen** nex
 
 ![Keyboard settings with recorded and connected app shortcuts](../../docs/screenshots/pc-manager-shortcuts.png)
 
+**Open PC Manager** opens the Home page and is the default for holding the Xiaomi key. A short press still opens quick controls by default. Shared shortcuts appear in the same list, only for installed apps. If a shared action uses Copilot, edit it in the **Copilot key** row.
+
 Assigning a shortcut already used by a connected action swaps the two actions' keys. Windows-reserved or externally occupied combinations can be refused. PC Manager owns connected shortcuts while running; each optional app takes over when it is closed.
 
 ## Open your other apps
@@ -50,7 +52,7 @@ The separate **Disable Xiaomi service.cmd** option is for users who want broader
 
 ## Installation, settings and limits
 
-Run **PC-Manager-Installer.exe** from the [0.2.22 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.22), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
+Run **PC-Manager-Installer.exe** from the [0.2.23 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
 
 If PC Manager reopens on its own, turn off **Restart automatically if the app exits** in Settings, then quit it again. You can turn the option back on after updating.
 

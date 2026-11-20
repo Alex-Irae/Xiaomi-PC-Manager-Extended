@@ -19,14 +19,14 @@ public sealed partial class AdvancedControls
     private sealed record Setting(string Key, string Group, string Label, string Kind, Func<object?> Read,
         Action<JsonElement> Write, double Min = 0, double Max = 0, string[]? Options = null, string Description = "");
     private List<Setting>? definitions;
-    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey", "ShotKey", "TaskViewKey", "TouchpadKey", "PerformanceKey", "CalculatorKey", "RefreshRateKey"];
+    internal static readonly string[] KeyAppSlots = ["MiClick", "MiDouble", "MiHold", "SettingsKey", "AiKey", "ProjKey", "ShotKey"];
     private static readonly JsonSerializerOptions SettingJson = new()
     { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
     private List<Setting> Definitions => definitions ??= BuildSettings();
     private static AppConfig Defaults() => new()
     {
         Language = "en", FlyoutTheme = "light", CheckUpdates = false, AutoStart = true,
-        MiClickAction = "panel", MiDoubleAction = "page.home", MiHoldAction = "panel",
+        MiClickAction = "panel", MiDoubleAction = "page.home", MiHoldAction = "page.home",
         SettingsKeyAction = "windowssettings", AiKeyAction = "xiaoai", ProjKeyAction = "projection", ShotKeyAction = "xiaoai",
         OsdPosition = OsdPosition.Bottom, MonitorView = "", MonitorCompactMetric = "power", TrayMetricKind = "power"
     };
@@ -359,7 +359,7 @@ public sealed partial class AdvancedControls
         Text("ShotKeyCommand", "keyboard", "F7 key custom command");
         Int("MiHoldMs", "keyboard", "Mi key hold time (ms)", 150, 2000);
         Int("MiDoubleClickMs", "keyboard", "Mi key double-click interval (ms)", 100, 1000);
-        foreach (var (id, label) in new[] { ("MiClick", "Mi key press"), ("MiDouble", "Mi key double press"), ("MiHold", "Mi key hold"), ("SettingsKey", "Settings key"), ("AiKey", "AI key"), ("ProjKey", "Projection key"), ("TaskViewKey", "Task View key"), ("TouchpadKey", "Touchpad key"), ("PerformanceKey", "Performance key"), ("CalculatorKey", "Calculator key"), ("RefreshRateKey", "Display rate key") })
+        foreach (var (id, label) in new[] { ("MiClick", "Mi key press"), ("MiDouble", "Mi key double press"), ("MiHold", "Mi key hold"), ("SettingsKey", "Settings key"), ("AiKey", "AI key"), ("ProjKey", "Projection key") })
         { Choice(id + "Action", "keyboard", label + " action", keyActions); Text(id + "Command", "keyboard", label + " custom command"); }
         Add("KeyCodes", "keyboard", "Firmware event-code overrides", "keymap", description: "Use the last observed event shown above. Example: {\"Settings\":\"0x1B\"}. An empty object restores the model defaults.");
 

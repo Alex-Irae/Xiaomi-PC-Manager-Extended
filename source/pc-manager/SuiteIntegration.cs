@@ -104,6 +104,11 @@ public sealed partial class ManagerApplication
         {
             enabled = true, hubRunning = suite is not null && SuiteClient.HubRunning(), error = suite?.Error,
             sharedAppearance = document.SharedAppearance, theme = document.Theme, accent = document.Accent,
+            companionShortcutLinks = new[] { "file-search", "screen-translator" }.SelectMany(component =>
+                Preferences.QuickLinks.Where(link => string.Equals(link.Path, SuiteEnvironment.Executable(component), StringComparison.OrdinalIgnoreCase))
+                    .Select(link => new { link.Id, component, action = component == "file-search" && link.Arguments == "--search" ? "file-search.open"
+                        : component == "screen-translator" && link.Arguments is "--screen" or "--toggle" or "--region"
+                            ? component + "." + link.Arguments[2..] : null })),
             bindings = document.Bindings.Where(item => SuiteEnvironment.Installed(item.Key.Split('.')[0])).Select(item => new { action = item.Key, chord = item.Value }),
             components = new[] { "file-search", "screen-translator" }.Select(component =>
             {
@@ -204,6 +209,8 @@ public sealed partial class ManagerApplication
     {
         if (!SuiteEnvironment.Enabled) throw new InvalidOperationException("This installation is not a suite.");
         string action=args.GetProperty("action").GetString()??"",chord=SuiteChord.Parse(args.GetProperty("chord").GetString()??"").Text;
+        if (!SuiteStore.Defaults.ContainsKey(action)) throw new ArgumentException("Unknown suite shortcut action.");
+        if (!SuiteEnvironment.Installed(action.Split('.')[0])) throw new ArgumentException("That optional application is not installed.");
         SuiteStore.SetBinding(action,chord);
         suite?.Poll(); RefreshWindows();
         bool saved=SuiteStore.Read().Bindings.GetValueOrDefault(action)==chord;
@@ -236,7 +243,7 @@ public sealed partial class ManagerApplication
         string component = action.Split('.')[0];
         if (component is not ("file-search" or "screen-translator")) throw new ArgumentException("Unknown suite application.");
         string path = SuiteEnvironment.Executable(component);
-        if (!File.Exists(path)) throw new InvalidOperationException("That optional application is not installed.");
+        if (!SuiteEnvironment.Installed(component)) throw new InvalidOperationException("That optional application is not installed.");
         bool settings = action == component + ".settings";
         var status=SuiteRunning(component);
         if(!settings&&status is not null)

@@ -92,27 +92,21 @@ public sealed class KeyRouter
                 else if (_cfg.HandleScreenshotKey) Screenshot?.Invoke();
                 else Run(_cfg.AiKeyAction ?? "xiaoai", _cfg.AiKeyCommand);
                 break;
-            case KeyKind.TaskView: Run(_cfg.TaskViewKeyAction, _cfg.TaskViewKeyCommand); break;
+            case KeyKind.TaskView: TaskView?.Invoke(); break;
             case KeyKind.Settings: OnSettingsKey(); break; // одиночное событие, удержание не ловится
             case KeyKind.Mic: MicKey?.Invoke(value); break;
             case KeyKind.Backlight: BacklightKey?.Invoke(value); break;
             case KeyKind.TouchpadState: TouchpadStateKey?.Invoke(value); break;
             case KeyKind.TouchpadToggle:
-                Run(_cfg.TouchpadKeyAction, _cfg.TouchpadKeyCommand);
+                if (_cfg.TouchpadFeature) ToggleTouchpad?.Invoke();
                 break;
             case KeyKind.FnLock: FnLockKey?.Invoke(value); break;
             case KeyKind.CapsLock: CapsLockKey?.Invoke(value); break;
-            case KeyKind.Performance:
-                PerformanceKey?.Invoke(value);
-                Run(_cfg.PerformanceKeyAction, _cfg.PerformanceKeyCommand);
-                break;
-            case KeyKind.Calculator: Run(_cfg.CalculatorKeyAction, _cfg.CalculatorKeyCommand); break;
+            case KeyKind.Performance: PerformanceKey?.Invoke(value); break;
+            case KeyKind.Calculator: Calculator?.Invoke(); break;
             case KeyKind.LowPower: LowPowerKey?.Invoke(value); break;
             case KeyKind.NumLock: NumLockKey?.Invoke(value); break;
-            case KeyKind.RefreshRate:
-                if (_cfg.RefreshRateKeyAction == "hz") RefreshRateKey?.Invoke(value);
-                else Run(_cfg.RefreshRateKeyAction, _cfg.RefreshRateKeyCommand);
-                break;
+            case KeyKind.RefreshRate: RefreshRateKey?.Invoke(value); break;
             case KeyKind.WinKeyLock: WinKeyLockKey?.Invoke(value); break;
             case KeyKind.CameraPrivacy: CameraPrivacyKey?.Invoke(value); break;
             case KeyKind.AiUp:

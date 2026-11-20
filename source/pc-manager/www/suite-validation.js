@@ -7,10 +7,10 @@ globalThis.runSuiteValidation=async function(token) {
   try {
     suiteState=await Native.call('suite.read');settingState=await Native.call('settings.read');showPage('keyboard');
     check('hub-running',suiteState.hubRunning&&!suiteState.error,{state:suiteState});
-    const choices=[...document.querySelectorAll('.suite-shortcut-list select')];
-    check('preset-list-and-last-recorder',choices.length===6&&choices.every(node=>node.options[node.options.length-1].value==='record'&&[...node.options].some(option=>option.value==='Copilot')));
+    const choices=[...document.querySelectorAll('#shortcut-list select[data-suite-action]')];
+    check('preset-list-and-last-recorder',choices.length>0&&choices.every(node=>node.options[node.options.length-1].value==='record'&&[...node.options].some(option=>option.value==='Copilot')));
     check('redundant-copilot-section-removed',![...document.querySelectorAll('.MiCard h2')].some(node=>node.textContent==='Copilot key'));
-    const intro=document.querySelector('.shortcut-intro').getBoundingClientRect(), first=document.querySelector('.suite-shortcut-list .fixed-key-row').getBoundingClientRect();
+    const intro=document.querySelector('.shortcut-intro').getBoundingClientRect(), first=document.getElementById('copilot-action').getBoundingClientRect();
     check('intro-spacing',first.top-intro.bottom>=10,{gap:first.top-intro.bottom});
     const old=Object.fromEntries(suiteState.bindings.map(item=>[item.action,item.chord]));
     const source=Object.keys(old).find(action=>old[action]==='Copilot')||'screen-translator.screen';
@@ -27,7 +27,7 @@ globalThis.runSuiteValidation=async function(token) {
     settingState=saved;showPage('keyboard');
     check('custom-preset-and-recorder',[...document.querySelectorAll('.shortcut-row [data-chord]')].every(node=>node.tagName==='SELECT'&&node.options[node.options.length-1].value==='record'));
     suiteState=await Native.call('suite.read');showPage('keyboard');
-    const action='screen-translator.original',selected=document.getElementById('suite-'+action.replaceAll('.','-'));
+    const action=suiteState.bindings.find(item=>item.action.startsWith('screen-translator.')&&!isCopilot(item.chord)&&item.chord!=='none').action;
     const confirmation=await performAction('suite-shortcut',{action});
     const savedLabel=document.querySelector(`[data-action="suite-shortcut"][data-args*="${action}"]`)?.textContent;
     check('toast-only-after-persistence-and-registration',confirmation.saved===true&&confirmation.active===true&&!document.getElementById('toast').hidden&&document.getElementById('toast').textContent==='Shortcut saved.',{confirmation,savedLabel});

@@ -48,6 +48,8 @@ const settingRows = [{ key: 'OsdPosition', group: 'notifications', label: 'Posit
   { key: 'KeyboardRoutingEnabled', group: 'keyboard', label: 'Handle keys', kind: 'toggle', value: true },
   { key: 'AiKeyAction', group: 'keyboard', label: 'AI action', kind: 'choice', options: ['none','panel','app','page.battery'], value: 'panel' },
   { key: 'ShotKeyAction', group: 'keyboard', label: 'F7 key action', kind: 'choice', options: ['none','xiaoai','screenshot','app'], value: 'xiaoai' },
+  { key: 'ShotKeyCommand', group: 'keyboard', label: 'F7 custom command', kind: 'text', value: '' },
+  { key: 'MiHoldAction', group: 'keyboard', label: 'Mi key hold action', kind: 'choice', options: ['none','page.home'], value: 'page.home' },
   { key: 'AiKeyCommand', group: 'keyboard', label: 'AI custom command', kind: 'text', value: '' }];
 const keyApps = {};
 let hostMessage;
@@ -164,13 +166,15 @@ assert(!element('page').innerHTML.includes('AI custom command'));
 assert(element('page').innerHTML.includes('XiaoAI key (F7)') && !element('page').innerHTML.includes('Special keys'), 'The shortcut list must offer the XiaoAI key.');
 assert.equal(element('page').innerHTML.split('data-setting="ShotKeyAction"').length, 2, 'A special key must appear once.');
 // Connected apps' shortcuts are rows of the same card, shown only for installed apps, with no Save button.
-assert(!element('page').innerHTML.includes('suite-rows'), 'No connected-app rows without the suite.');
-evaluate("suiteState = { enabled: true, bindings: [{ action: 'screen-translator.screen', chord: 'Copilot' }] }; render()");
-assert(element('page').innerHTML.includes('suite-rows') && element('page').innerHTML.includes('Translate screen · Screen Translator') && !element('page').innerHTML.includes('Connected app shortcuts') && !element('page').innerHTML.includes('data-action="suite-shortcut"'), 'Connected-app shortcuts must be rows of the one shortcut list.');
+assert(!element('page').innerHTML.includes('data-suite-action='), 'No connected-app rows without the suite.');
+assert(element('page').innerHTML.includes('value="page.home" selected>Open PC Manager</option>'), 'Holding the Xiaomi key opens PC Manager by default.');
+evaluate("suiteState = { enabled: true, components: [{ component: 'screen-translator', installed: true }], bindings: [{ action: 'screen-translator.screen', chord: 'Copilot' }, { action: 'screen-translator.filter', chord: 'Ctrl+Alt+D' }, { action: 'file-search.open', chord: 'double_ctrl' }] }; render()");
+assert(element('page').innerHTML.includes('value="suite.screen-translator.screen" selected') && !element('page').innerHTML.includes('data-suite-action="screen-translator.screen"'), 'Show the Copilot assignment only in its key row.');
+assert(element('page').innerHTML.includes('data-suite-action="screen-translator.filter"') && !element('page').innerHTML.includes('Open File Search'), 'The list must include the installed app only.');
 evaluate("suiteState = { enabled: false }; render()");
-listeners.get('change')({target:{dataset:{setting:'AiKeyAction'},value:'app'}});
+listeners.get('change')({target:{dataset:{setting:'ShotKeyAction'},value:'app'}});
 await settle('!busy && !reading');
-assert.equal(requests.find(r=>r.method==='settings.keyApp').args.slot, 'AiKey');
+assert.equal(requests.find(r=>r.method==='settings.keyApp').args.slot, 'ShotKey');
 assert(element('page').innerHTML.includes('Fixture app · C:/fixture/app.exe'));
 assert(buttons().some(b=>b.dataset.action==='settings.keyApp'));
 console.log('PASS key app selection uses native picker contract, selected app readback and manager page labels.');

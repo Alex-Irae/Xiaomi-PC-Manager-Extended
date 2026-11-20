@@ -118,14 +118,14 @@ Xiaomi Revamp is a set of three Windows apps that work well together and can als
 ## Install and start
 
 1. For all three apps, open the [Xiaomi Revamp 0.3.27 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/v0.3.27). Run **Xiaomi-Revamp-Installer.exe** and choose which optional apps to install.
-2. For just PC Manager, or to update it after installing the full set, download **PC-Manager-Installer.exe** from the [PC Manager 0.2.22 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.22). Quit Revamp PC Manager from its tray before updating. Choose your existing Xiaomi Revamp folder and keep the same user scope and startup option. Setup retains your settings and the previous PC Manager folder.
+2. For just PC Manager, or to update it after installing the full set, download **PC-Manager-Installer.exe** from the [PC Manager 0.2.23 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23). Quit Revamp PC Manager from its tray before updating. Choose your existing Xiaomi Revamp folder and keep the same user scope and startup option. Setup retains your settings and the previous PC Manager folder.
 3. Open **PC Manager**, **AI Center**, **File Search** or **Screen Translator** from the Start menu. PC Manager's Toolbox opens them too.
 
 To remove an app, use Windows Settings or the app's **Uninstall.exe**, and read its choices before deleting saved settings or a search index you want to keep.
 
-**What's new in PC Manager 0.2.22.** In **Keyboard**, map **Copilot key** to **Open File Search** and **XiaoAI key (F7)** to **Translate screen** or **No action**. Toolbox and Driver Scan look for Xiaomi's manager across versioned install folders, and the PC Manager window retries when WebView2 disconnects. See the [PC Manager guide](source/pc-manager/README.md).
+**What's new in PC Manager 0.2.23.** The **Keyboard** page shows shortcuts in one list. Hold the Xiaomi key to open PC Manager at Home, or press it briefly for Quick Controls. File Search and Screen Translator actions appear when the corresponding app is installed. See the [PC Manager guide](source/pc-manager/README.md).
 
-**Versions.** The full Xiaomi Revamp **0.3.27** installer includes PC Manager **0.2.20**, AI Center **0.3.18**, and Screen Translator **0.2.9**. The smaller **0.2.22** update replaces only PC Manager.
+**Versions.** The full Xiaomi Revamp **0.3.27** installer includes PC Manager **0.2.20**, AI Center **0.3.18**, and Screen Translator **0.2.9**. The smaller **0.2.23** update replaces only PC Manager.
 
 ## Before you install
 

@@ -1,3 +1,9 @@
+# PC Manager 0.2.23
+
+- **One shortcut list.** Copilot's assignment appears once. File Search and Screen Translator actions appear only when their apps are installed.
+- **Hold the Xiaomi key to open PC Manager.** The new **Open PC Manager** action opens Home. A short press still opens Quick Controls by default.
+- Removed the Performance, Calculator, Touchpad, Task View and Display Rate remapping rows added in 0.2.22. Those keys keep their previous behavior.
+
 # PC Manager 0.2.22
 
 - **Choose what the Xiaomi keys do.** Assign Copilot to File Search, F7 to the screen translation toolbox, or pick another action. On laptops that report F7 as the XiaoAI firmware event, it now follows the F7 mapping, including **No action**.

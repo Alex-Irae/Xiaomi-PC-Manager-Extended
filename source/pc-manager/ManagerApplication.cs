@@ -272,8 +272,6 @@ public sealed partial class ManagerApplication : ApplicationContext
             if (action.StartsWith("suite.", StringComparison.Ordinal))
             {
                 string target = action[6..];
-                if (!XiaomiRevamp.Suite.SuiteEnvironment.Installed(target.Split('.')[0]))
-                    throw new ArgumentException("That optional application is not installed.");
                 return SuiteSave(System.Text.Json.JsonSerializer.SerializeToElement(new { action = target, chord = "Copilot" }));
             }
             if (action == "system" && XiaomiRevamp.Suite.SuiteStore.Read().Bindings.FirstOrDefault(item => item.Value == "Copilot").Key is { } owner)

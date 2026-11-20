@@ -536,16 +536,6 @@ public sealed class AppConfig
     /// <summary>F7 (XiaoAI/screenshot key). null keeps the older HandleScreenshotKey choice.</summary>
     public string? ShotKeyAction { get; set; }
     public string? ShotKeyCommand { get; set; }
-    public string TaskViewKeyAction { get; set; } = "taskview";
-    public string? TaskViewKeyCommand { get; set; }
-    public string TouchpadKeyAction { get; set; } = "touchpad";
-    public string? TouchpadKeyCommand { get; set; }
-    public string PerformanceKeyAction { get; set; } = "none";
-    public string? PerformanceKeyCommand { get; set; }
-    public string CalculatorKeyAction { get; set; } = "calc";
-    public string? CalculatorKeyCommand { get; set; }
-    public string RefreshRateKeyAction { get; set; } = "hz";
-    public string? RefreshRateKeyCommand { get; set; }
 
     /// <summary>
     /// «Управление тачпадом» как фича: ячейка в панели и действие для клавиш.
@@ -644,7 +634,7 @@ public sealed class AppConfig
         }
         MiDoubleAction ??= Charge;
         // до XIC-28 удержание было зашито на панель — старые конфиги ведут себя как прежде
-        MiHoldAction ??= "panel";
+        MiHoldAction ??= "page.home";
         SettingsKeyAction ??= string.Equals(SettingsKey, "settings", StringComparison.OrdinalIgnoreCase)
             ? "settings" : Charge;
         if (AiKeyAction is null)

@@ -540,6 +540,11 @@ public sealed partial class AdvancedControls : IDisposable
                 config.OsdPosition = OsdPosition.Bottom;
                 preferences.ResidentSetupVersion = 6;
             }
+            if (preferences.ResidentSetupVersion < 7)
+            {
+                if (config.MiHoldAction is "panel" or "settings") config.MiHoldAction = "page.home";
+                preferences.ResidentSetupVersion = 7;
+            }
             // Stay awake is a choice for the current session and starts off whenever the manager
             // starts; the controller then restores any lid action it had changed. Prevent sleep
             // is saved separately and comes back.
