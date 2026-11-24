@@ -37,6 +37,7 @@ public sealed partial class ManagerApplication : ApplicationContext
     internal bool Exiting { get; private set; }
     internal bool RestartAfterImport { get; private set; }
     private SettingsBackup.Prepared? pendingBackup;
+    private int touchWakeRecoveryPending;
 
     internal void ImportOnRestart(SettingsBackup.Prepared backup) => pendingBackup = backup;
 
@@ -57,6 +58,24 @@ public sealed partial class ManagerApplication : ApplicationContext
         popup = new(this, compact: true);
         _ = popup.Handle; // Hidden activation target also exists when started with --tray.
         ManualDisplay = new(popup.Handle);
+        ManualDisplay.DisplayWoke = () =>
+        {
+            if (Exiting || Interlocked.Exchange(ref touchWakeRecoveryPending, 1) != 0) return;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    // Let the I2C host resume first. Never run SetupAPI on the UI thread.
+                    await Task.Delay(800);
+                    if (Exiting || ManualDisplay.CurrentDisplayState != 1) return;
+                    await Queue.WaitAsync();
+                    try { if (!Exiting && ManualDisplay.CurrentDisplayState == 1) Hardware.RecoverTouchscreenAfterDisplayWake(); }
+                    finally { Queue.Release(); }
+                }
+                catch (Exception ex) { XiControl.Log.Ex("Touchscreen.WakeRecovery", ex); Notify("Touchscreen recovery failed. Toggle Touchscreen off and on to restore it."); }
+                finally { Interlocked.Exchange(ref touchWakeRecoveryPending, 0); }
+            });
+        };
         try { sleepGuard.Set(Preferences.PreventSleep); }
         catch (Exception ex) { Preferences.PreventSleep = false; XiControl.Log.Ex("SleepGuard.Restore", ex); }
         if (Preferences.CopilotShortcut.Action is not ("none" or "system"))

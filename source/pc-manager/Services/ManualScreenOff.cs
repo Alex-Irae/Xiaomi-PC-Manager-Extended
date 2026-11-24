@@ -39,6 +39,8 @@ internal sealed class ManualScreenOff : IDisposable
     internal bool Active => active;
     internal bool DisplayOffSeen => sawOff;
     internal int CurrentDisplayState => displayState;
+    internal Action? DisplayWoke;
+    internal static bool IsWakeTransition(int previous, int current) => previous == 0 && current == 1;
     private void Save(Journal state) { Directory.CreateDirectory(Preferences.DataDirectory); File.WriteAllText(journalPath, JsonSerializer.Serialize(state)); }
     private static void Check(uint result) { if (result != 0) throw new System.ComponentModel.Win32Exception((int)result); }
     private static Guid CurrentScheme()
@@ -143,8 +145,10 @@ internal sealed class ManualScreenOff : IDisposable
     {
         if (Marshal.PtrToStructure<Guid>(data) != DisplayState || Marshal.ReadInt32(data, 16) != 4) return;
         int value = Marshal.ReadInt32(data, 20);
+        int previous = displayState;
         displayState = value;
         XiControl.Log.Write($"ScreenOff.Display state={value} active={active}");
+        if (IsWakeTransition(previous, value)) DisplayWoke?.Invoke();
         if (idleActive)
         {
             if (value == 0) sawIdleOff = true;

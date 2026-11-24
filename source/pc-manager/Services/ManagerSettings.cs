@@ -333,6 +333,7 @@ public sealed partial class AdvancedControls
         Add("TouchscreenFeature", "touchpad", "Show touchscreen controls");
         Add("TouchpadKeepOff", "touchpad", "Keep touchpad disabled after restarting", description: "Off restores an input device disabled by this app on its next launch. On keeps your disabled device off, including after Windows restarts.");
         Add("TouchscreenKeepOff", "touchpad", "Keep touchscreen disabled after restarting", description: "Off restores an input device disabled by this app on its next launch. On keeps your disabled device off, including after Windows restarts.");
+        Add("TouchscreenWakeRecovery", "touchpad", "Recover touch after display wakes", description: "On: briefly restart this laptop's Intel touch device after the display wakes if Windows reports it enabled but touch has stalled.\nOff: leave the device to Windows.\nDefault: on.");
         Bool("TouchpadDeadZone", "touchpad", "Ignore touches at the bottom edge", controller.SetTouchpadDeadZone);
         Int("TouchpadDeadZoneMm", "touchpad", "Bottom-edge dead zone (mm)", 1, 40, controller.SetTouchpadDeadZoneMm);
         Bool("TouchpadEdgeSliders", "touchpad", "Brightness and volume edge swipes", controller.SetTouchpadEdgeSliders);

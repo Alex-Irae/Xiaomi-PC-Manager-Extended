@@ -11,6 +11,18 @@ public sealed partial class AdvancedControls
 {
     private static void CheckFeedback()
     {
+        if (!ManualScreenOff.IsWakeTransition(0, 1) || ManualScreenOff.IsWakeTransition(-1, 1)
+            || ManualScreenOff.IsWakeTransition(1, 1) || ManualScreenOff.IsWakeTransition(0, 0))
+            throw new InvalidOperationException("Display wake transitions were misidentified.");
+        const string touchId = @"HID\VEN_8086&DEV_E448&COL01\EXAMPLE";
+        if (!HardwareService.ShouldRecoverTouchscreen(true, false, false, true, touchId)
+            || HardwareService.ShouldRecoverTouchscreen(false, false, false, true, touchId)
+            || HardwareService.ShouldRecoverTouchscreen(true, true, false, true, touchId)
+            || HardwareService.ShouldRecoverTouchscreen(true, false, true, true, touchId)
+            || HardwareService.ShouldRecoverTouchscreen(true, false, false, false, touchId)
+            || HardwareService.ShouldRecoverTouchscreen(true, false, false, true, @"PCI\VEN_8086&DEV_E448")
+            || HardwareService.ShouldRecoverTouchscreen(true, false, false, true, @"HID\VEN_1234&DEV_5678"))
+            throw new InvalidOperationException("Touchscreen wake recovery did not respect the user or device guard.");
         var source = new CheckPower { IsOnline = true };
         var debounce = new CheckTimer(); var watchdog = new CheckTimer(); int applied = 0;
         using var guard = new RefreshRateGuard(new AppConfig { RefreshRateFeature = true, AutoRefreshRate = true, HoldRefreshRate = true }, source, source, debounce, watchdog, () => applied++);
@@ -64,7 +76,7 @@ public sealed partial class AdvancedControls
             pressWindow.Fire();
             if (!presses.SequenceEqual(new[] { "click" })) throw new InvalidOperationException("A single press did not act after the window.");
         }
-        Console.WriteLine("PASS refresh transitions/manual override, shortcut parsing and palette rename/delete boundaries.");
+        Console.WriteLine("PASS display wake and touch recovery guards, refresh transitions, shortcut parsing and palette boundaries.");
     }
     private sealed class CheckPower : IPowerEvents, IDisplayEvents
     {

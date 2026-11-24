@@ -107,6 +107,32 @@ public sealed class HardwareService : IDisposable
         }
     }
 
+    internal static bool ShouldRecoverTouchscreen(bool configured, bool keepOff, bool persistOff, bool? enabled, string? deviceId)
+        => configured && !keepOff && !persistOff && enabled == true
+            && deviceId?.StartsWith(@"HID\", StringComparison.OrdinalIgnoreCase) == true
+            && deviceId.Contains("VEN_8086&DEV_E448", StringComparison.OrdinalIgnoreCase);
+
+    // The Intel touch HID collection may remain logically Started after S0 display-off
+    // while no longer delivering touches. The user's manual off/on recovers it.
+    internal void RecoverTouchscreenAfterDisplayWake()
+    {
+        lock (Sync)
+        {
+            bool? enabled = touchscreen.IsEnabled(); // Also resolves and remembers the safe HID node.
+            if (!ShouldRecoverTouchscreen(preferences.XiControl?.TouchscreenWakeRecovery == true,
+                preferences.XiControl?.TouchscreenKeepOff == true, preferences.TouchscreenPersistOff,
+                enabled, preferences.TouchscreenDeviceId)) return;
+            XiControl.Log.Write("Touchscreen.WakeRecovery restarting HID collection");
+            if (touchscreen.Toggle() != false) throw new InvalidOperationException("Touchscreen wake recovery could not disable the HID collection.");
+            // PersistOff remains set if enable fails, allowing startup recovery.
+            if (touchscreen.Toggle() != true) throw new InvalidOperationException("Touchscreen wake recovery could not re-enable the HID collection.");
+            cachedTouchscreen = true;
+            Interlocked.Increment(ref diagnosticVersion);
+            diagnosticUntil = 0;
+            XiControl.Log.Write("Touchscreen.WakeRecovery completed");
+        }
+    }
+
     private void RefreshDiagnostics()
     {
         if (Environment.TickCount64 < diagnosticUntil || Interlocked.CompareExchange(ref diagnosticsRunning, 1, 0) != 0) return;

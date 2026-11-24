@@ -27,7 +27,7 @@ SKIP = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', 'bin', 'obj', 'te
 PRIVATE = {'bin', 'obj', '__pycache__', 'model_cache', '.git', '.venv', 'data', 'results', '.test-environment'}
 PRIVATE_FILES = {'config.json', 'included-folders.txt', 'excluded-folders.txt'}
 RELEASE = '0.3.27'
-VERSIONS = {'pc-manager': '0.2.23', 'file-search': '0.3.18', 'screen-translator': '0.2.9'}
+VERSIONS = {'pc-manager': '0.2.24', 'file-search': '0.3.18', 'screen-translator': '0.2.9'}
 
 
 def public_source(directory):

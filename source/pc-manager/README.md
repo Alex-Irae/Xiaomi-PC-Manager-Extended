@@ -6,7 +6,7 @@ Change performance, look after your battery, adjust the display and keep frequen
 
 ![PC Manager overview](../../docs/screenshots/pc-manager-overview.png)
 
-Current release: **0.2.23**, available as a [PC Manager-only installer](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23) for new installs and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
+Current version: **0.2.24**. Download the PC Manager-only installer from [Releases](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases). It supports new installations and upgrades of Xiaomi Revamp **0.3.27**. [Installation and requirements](../../README.md#install-and-start).
 
 ## Quick controls when you need them
 
@@ -52,11 +52,13 @@ The separate **Disable Xiaomi service.cmd** option is for users who want broader
 
 ## Installation, settings and limits
 
-Run **PC-Manager-Installer.exe** from the [0.2.23 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
+Run **PC-Manager-Installer.exe** from [Releases](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases), or extract the installer ZIP and run **Xiaomi-Revamp-Setup.exe** with the payload beside it. For an upgrade, quit Revamp PC Manager from its tray first. Point setup at the existing Xiaomi Revamp folder and keep the same user scope and startup choice. The installer preserves settings and leaves AI Center and Screen Translator installed. Start PC Manager from Windows or `PC Manager\PCManager.exe`. Hardware controls and startup integration can require administrator approval.
 
 If PC Manager reopens on its own, turn off **Restart automatically if the app exits** in Settings, then quit it again. You can turn the option back on after updating.
 
 The tested hardware is **Xiaomi Book Pro 14 2026**, on Windows 11 x64. Other Xiaomi models may expose different controls. On a non-Xiaomi PC the interface can open, but Xiaomi firmware controls are unavailable. WebView2 is required; the packaged app includes its private runtime. See [requirements](../../REQUIREMENTS.txt).
+
+On the tested Xiaomi Book Pro 14, Windows can show the touchscreen as enabled after a display wake even when touch stops responding. **Recover touch after display wakes** in Touch and input briefly restarts that Intel touch device on wake. The setting is on by default and can be turned off. Other touch controllers are left alone.
 
 If WebView2 disconnects, PC Manager retries with a fresh browser control while keeping the same settings and browser profile. If it still reports an error, reopen the window to retry and check the `native-*.log` file in the PC Manager data folder.
 

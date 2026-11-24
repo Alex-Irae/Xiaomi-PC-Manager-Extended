@@ -19,7 +19,7 @@ Xiaomi Revamp is a set of three Windows apps that work well together and can als
 **Performance and power**
 - Switch performance modes from the window, the quick panel or the Mi key. On mains power: Silent, Smart, Full speed and Eco. On battery: Eco, Quiet, Auto and Turbo.
 - Choose one mode for mains power and another for battery; PC Manager switches when you plug in or unplug.
-- **Stay awake** keeps the laptop working; **Prevent sleep** keeps it working while still letting the screen turn off.
+- **Stay awake** keeps the display on; **Prevent sleep** lets the display turn off while requesting that Windows keep the laptop running. Windows may still limit that request on battery.
 
 **Battery**
 - Set a daily charge limit (80, 70, 60, 50 or 40 %) to make the battery last longer.
@@ -30,17 +30,18 @@ Xiaomi Revamp is a set of three Windows apps that work well together and can als
 - Brightness, with optional automatic brightness from the light sensor.
 - Refresh rate: pick one, cycle with a key, or let PC Manager use one rate on mains power and another on battery. When the PC starts, the right rate is set at the sign-in screen, so the screen does not flicker once you are at work.
 - A pop-up confirms a refresh rate change, and only appears when the rate actually changes.
-- **Screen off now** turns the screen off without locking or sleeping.
+- **Screen off now** turns the display off without requesting sleep. Windows' own sleep rules still apply.
 
 **Keyboard and keys**
 - Up to 16 shortcuts of your own: open an app, a file, a PC Manager page or a device action. Record the keys you press or pick from a list.
-- The Mi key: a short press changes the performance mode, a long press opens the quick panel. The Copilot key can be given another action.
+- The Mi key opens Quick Controls with a short press and PC Manager with a long press by default. Both actions can be remapped. The Copilot key can be given another action.
 - Xiaomi-style pop-ups for the special keys: microphone, Caps Lock, Fn lock, keyboard backlight, performance mode and more. Choose Xiaomi's original look or the XiControl style.
 - In developer mode, key diagnostics show the last event each special key sent.
 
 **Touch and input**
 - Turn the touchpad and the touchscreen on or off.
 - Adjust the touchpad's haptic strength and click force.
+- On the tested Xiaomi Book Pro 14, recover an unresponsive touchscreen after the display wakes. The recovery is on by default, can be turned off, and leaves other touch controllers alone.
 
 **Quick panel and tray**
 - A compact panel in the tray for the controls you use most, plus links to apps and files.
@@ -118,14 +119,14 @@ Xiaomi Revamp is a set of three Windows apps that work well together and can als
 ## Install and start
 
 1. For all three apps, open the [Xiaomi Revamp 0.3.27 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/v0.3.27). Run **Xiaomi-Revamp-Installer.exe** and choose which optional apps to install.
-2. For just PC Manager, or to update it after installing the full set, download **PC-Manager-Installer.exe** from the [PC Manager 0.2.23 release](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases/tag/pc-manager-v0.2.23). Quit Revamp PC Manager from its tray before updating. Choose your existing Xiaomi Revamp folder and keep the same user scope and startup option. Setup retains your settings and the previous PC Manager folder.
+2. For just PC Manager, or to update it after installing the full set, download **PC-Manager-Installer.exe** from [Releases](https://github.com/Alex-Irae/Xiaomi-PC-Manager-Extended/releases). Quit Revamp PC Manager from its tray before updating. Choose your existing Xiaomi Revamp folder and keep the same user scope and startup option. Setup retains your settings and the previous PC Manager folder.
 3. Open **PC Manager**, **AI Center**, **File Search** or **Screen Translator** from the Start menu. PC Manager's Toolbox opens them too.
 
 To remove an app, use Windows Settings or the app's **Uninstall.exe**, and read its choices before deleting saved settings or a search index you want to keep.
 
-**What's new in PC Manager 0.2.23.** The **Keyboard** page shows shortcuts in one list. Hold the Xiaomi key to open PC Manager at Home, or press it briefly for Quick Controls. File Search and Screen Translator actions appear when the corresponding app is installed. See the [PC Manager guide](source/pc-manager/README.md).
+**What's new in PC Manager 0.2.24.** On the tested Xiaomi Book Pro 14, the touchscreen can stop responding when Windows turns the display off, even while Windows still calls it enabled. PC Manager now refreshes that touch device after wake. You can turn this off in **Touch and input**. See the [PC Manager guide](source/pc-manager/README.md).
 
-**Versions.** The full Xiaomi Revamp **0.3.27** installer includes PC Manager **0.2.20**, AI Center **0.3.18**, and Screen Translator **0.2.9**. The smaller **0.2.23** update replaces only PC Manager.
+**Versions.** The full Xiaomi Revamp **0.3.27** installer includes PC Manager **0.2.20**, AI Center **0.3.18**, and Screen Translator **0.2.9**. The smaller **0.2.24** update replaces only PC Manager.
 
 ## Before you install
 

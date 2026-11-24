@@ -1,3 +1,8 @@
+# PC Manager 0.2.24
+
+- **Recover touch after the display wakes.** On the tested Xiaomi Book Pro 14, the Intel touch device could report enabled while no longer responding after Windows turned the display off. PC Manager now restarts only that touch HID collection after a confirmed display-off-to-on transition. The option is in Touch and input and can be turned off. The workaround does not disable or restart the PCI host controller.
+- Verified on the tested laptop with the Screen off button and Windows' scheduled display timeout.
+
 # PC Manager 0.2.23
 
 - **One shortcut list.** Copilot's assignment appears once. File Search and Screen Translator actions appear only when their apps are installed.

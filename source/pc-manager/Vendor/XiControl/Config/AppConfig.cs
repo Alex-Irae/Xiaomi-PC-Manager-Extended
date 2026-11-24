@@ -595,6 +595,10 @@ public sealed class AppConfig
     /// </summary>
     public bool TouchscreenKeepOff { get; set; }
 
+    /// <summary>Refresh the Intel touch HID collection after the display wakes. Some
+    /// controllers report Started but stop delivering touches after S0 display-off.</summary>
+    public bool TouchscreenWakeRecovery { get; set; } = true;
+
     // ---- Устаревшие поля клавиш (до v0.8) — читаются только для миграции ----
 
     /// <summary>Устаревшее: см. SettingsKeyAction. "charge"/"settings".</summary>
